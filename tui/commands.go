@@ -65,6 +65,12 @@ func (m *Model) notice(level, text string) {
 	m.addItem(&noticeItem{level: level, text: text})
 }
 
+// noticeAfterReload shows a notice once the pending session change has
+// reloaded the transcript.
+func (m *Model) noticeAfterReload(level, text string) {
+	m.postReload = append(m.postReload, &noticeItem{level: level, text: text})
+}
+
 func (m *Model) async(f func() error, done func(m *Model) tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		return asyncResultMsg{err: f(), done: done}
@@ -101,10 +107,11 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		if !idle() {
 			return nil
 		}
+		m.noticeAfterReload("info", "new session")
 		if err := m.agent.SetSession(m.app.NewSession()); err != nil {
+			m.postReload = nil
 			m.notice("error", err.Error())
 		}
-		m.notice("info", "new session")
 	case "resume":
 		if !idle() {
 			return nil
@@ -381,7 +388,7 @@ func (m *Model) rewindPicker() {
 			m.notice("error", err.Error())
 			return nil
 		}
-		m.notice("banner", "Rewound the conversation. Files on disk were NOT reverted.")
+		m.noticeAfterReload("banner", "Rewound the conversation. Files on disk were NOT reverted.")
 		m.input.SetValue(text)
 		m.afterInputChange()
 		return nil
@@ -401,11 +408,11 @@ func (m *Model) forkPicker() {
 			m.notice("error", err.Error())
 			return nil
 		}
+		m.noticeAfterReload("info", "forked into a new session: "+shortenHome(s.Path()))
 		if err := m.agent.SetSession(s); err != nil {
+			m.postReload = nil
 			m.notice("error", err.Error())
-			return nil
 		}
-		m.notice("info", "forked into a new session")
 		return nil
 	})
 }
@@ -449,11 +456,11 @@ func (m *Model) treePicker() {
 		return
 	}
 	p := newPicker("Session tree", items, func(it pickerItem) tea.Cmd {
+		m.noticeAfterReload("banner", "Moved to another point in the conversation. Files on disk were NOT changed.")
 		if err := m.agent.Checkout(it.value.(string)); err != nil {
+			m.postReload = nil
 			m.notice("error", err.Error())
-			return nil
 		}
-		m.notice("banner", "Moved to another point in the conversation. Files on disk were NOT changed.")
 		return nil
 	})
 	p.hint = "enter check out · ctrl+l label · esc close"

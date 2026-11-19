@@ -109,6 +109,9 @@ type Model struct {
 	quitting      bool
 	ext           ExtensionCommands
 	pendingSelect func()
+	// postReload items are shown after the next transcript reload (for
+	// notices about the session change that causes the reload).
+	postReload []item
 }
 
 type searchState struct {

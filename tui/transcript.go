@@ -75,6 +75,10 @@ func (m *Model) loadTranscript() {
 	if cv.Aside {
 		m.addItem(&noticeItem{level: "warn", text: "side conversation: read-only tools; nothing here joins the main conversation. /back to return."})
 	}
+	for _, it := range m.postReload {
+		m.addItem(it)
+	}
+	m.postReload = nil
 	m.usage = events.Usage{
 		ContextTokens: m.agent.EstimateContext(cv),
 		ContextWindow: m.agent.Model().ContextWindow,
