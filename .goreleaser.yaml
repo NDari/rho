@@ -22,7 +22,8 @@ archives:
     files:
       - LICENSE
       - README.md
-      - docs/*
+      - docs/configuration.md
+      - docs/extensions.md
 
 checksum:
   name_template: checksums.txt
