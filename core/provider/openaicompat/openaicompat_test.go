@@ -3,12 +3,15 @@ package openaicompat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -234,5 +237,26 @@ func TestResponsesIntegration(t *testing.T) {
 	}
 	if !strings.Contains(resp2.Message.TextContent(), "example.com/x") {
 		t.Errorf("second response did not use the tool result: %q", resp2.Message.TextContent())
+	}
+}
+
+func TestIsConnReset(t *testing.T) {
+	tests := []struct {
+		err  error
+		want bool
+	}{
+		{io.EOF, true},
+		{syscall.ECONNRESET, true},
+		{fmt.Errorf("post: %w", net.ErrClosed), true},
+		// As seen when a server closed an idle keep-alive connection mid-send.
+		{errors.New(`Post "http://localhost:8080/v1/chat/completions": readfrom tcp 127.0.0.1:1->127.0.0.1:2: write tcp 127.0.0.1:1->127.0.0.1:2: use of closed network connection`), true},
+		{errors.New("http2: server closed idle connection"), true},
+		{errors.New("401 Unauthorized"), false},
+		{errors.New("context length exceeded"), false},
+	}
+	for _, tc := range tests {
+		if got := isConnReset(tc.err); got != tc.want {
+			t.Errorf("isConnReset(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }

@@ -114,11 +114,12 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 }
 
 func isConnReset(err error) bool {
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, net.ErrClosed) {
 		return true
 	}
 	s := err.Error()
-	return strings.Contains(s, "connection reset") || strings.Contains(s, "server closed idle connection") || strings.HasSuffix(s, ": EOF")
+	return strings.Contains(s, "connection reset") || strings.Contains(s, "server closed idle connection") ||
+		strings.Contains(s, "use of closed network connection") || strings.HasSuffix(s, ": EOF")
 }
 
 func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionNewParams, onEvent func(provider.StreamEvent)) (provider.Response, bool, error) {
