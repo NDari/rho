@@ -113,3 +113,23 @@ func TestHistory(t *testing.T) {
 		t.Errorf("draft not restored: %q", s)
 	}
 }
+
+func TestPickerKeepsDetailForLongTitles(t *testing.T) {
+	rc := &renderCtx{width: 60, theme: DarkTheme, st: newStyles(DarkTheme)}
+	long := strings.Repeat("a very long message title ", 10)
+	items := []pickerItem{{title: long, detail: "● current · Nov 19 12:00", value: "a"}, {title: long, detail: "│ Nov 19 11:00", value: "b"}}
+	p := newPicker("Session tree", items, nil)
+	for _, cursor := range []int{0, 1} {
+		p.cursor = cursor
+		lines := p.render(rc, 10)
+		joined := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(joined, "● current") {
+			t.Errorf("cursor=%d: current marker missing:\n%s", cursor, joined)
+		}
+		for _, l := range lines {
+			if w := ansi.StringWidth(l); w > rc.width {
+				t.Errorf("cursor=%d: line width %d > %d: %q", cursor, w, rc.width, ansi.Strip(l))
+			}
+		}
+	}
+}

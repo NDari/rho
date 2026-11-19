@@ -118,18 +118,25 @@ func (p *picker) render(rc *renderCtx, height int) []string {
 	for i := start; i < len(p.filtered) && i < start+listH; i++ {
 		it := p.items[p.filtered[i]]
 		prefix := "  "
-		title := strings.Repeat("  ", it.depth) + it.title
-		line := title
+		// Shorten the title before the detail, so markers such as
+		// "● current" stay visible next to long titles.
+		avail := max(0, rc.width-3)
+		detail := ""
 		if it.detail != "" {
-			line += "  " + rc.st.muted.Render(it.detail)
+			detail = ansi.Truncate(it.detail, avail/2, "…")
 		}
-		line = ansi.Truncate(line, rc.width-3, "…")
+		titleW := avail
+		if detail != "" {
+			titleW = max(0, avail-2-ansi.StringWidth(detail))
+		}
+		title := ansi.Truncate(strings.Repeat("  ", it.depth)+it.title, titleW, "…")
+		line := title
 		if i == p.cursor {
 			prefix = rc.st.accent.Render("▸ ")
-			line = rc.st.selected.Render(ansi.Truncate(title, rc.width-3, "…"))
-			if it.detail != "" {
-				line += "  " + rc.st.muted.Render(ansi.Truncate(it.detail, max(0, rc.width-6-ansi.StringWidth(title)), "…"))
-			}
+			line = rc.st.selected.Render(title)
+		}
+		if detail != "" {
+			line += "  " + rc.st.muted.Render(detail)
 		}
 		out = append(out, prefix+line)
 	}
