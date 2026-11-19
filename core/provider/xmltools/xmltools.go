@@ -69,6 +69,11 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 	defer cancel()
 	b := &builder{onEvent: onEvent, schemas: schemas, decode: p.opts.Decode}
 	sp := &splitter{}
+	if p.opts.SystemInUser {
+		// Models copy the closing tag of the wrapper around the system
+		// prompt onto their replies.
+		sp.drop = []string{"</instructions>"}
+	}
 	halted := false
 	resp, err := p.inner.Stream(ictx, inner, func(e provider.StreamEvent) {
 		switch e.Kind {

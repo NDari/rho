@@ -123,3 +123,21 @@ func TestPlainAnswer(t *testing.T) {
 		t.Fatalf("resp = %+v, %v", resp, err)
 	}
 }
+
+func TestCopiedInstructionsTagIsStripped(t *testing.T) {
+	text := "Done.\n</instructions>"
+	for _, inUser := range []bool{true, false} {
+		fp := fake.New("fake", fake.Step{Text: text})
+		resp, err := Wrap(fp, Options{SystemInUser: inUser}).Stream(context.Background(), provider.Request{Messages: []provider.Message{provider.UserText("hi")}}, func(provider.StreamEvent) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "Done."
+		if !inUser {
+			want = text // only stripped when the prompt uses the wrapper
+		}
+		if got := resp.Message.TextContent(); got != want {
+			t.Errorf("inUser=%v: text = %q, want %q", inUser, got, want)
+		}
+	}
+}

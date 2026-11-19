@@ -67,6 +67,9 @@ var (
 // (or, for a JSON body, at the closing fence), and the closing fence after
 // it is dropped.
 type splitter struct {
+	// drop lists text that is removed wherever it appears outside a call,
+	// e.g. a closing tag the model copies from the prompt.
+	drop              []string
 	buffer            string
 	inTool            bool
 	headerDone        bool
@@ -133,6 +136,13 @@ func (s *splitter) drain(events *[]splitEvent, final bool) {
 				open = fo
 			}
 			halt, _ := findFirst(s.buffer, haltMarkers)
+			if d, marker := findFirst(s.buffer, s.drop); d != -1 && (open == -1 || d < open) && (halt == -1 || d < halt) {
+				if d > 0 {
+					*events = append(*events, splitEvent{kind: splitText, text: s.buffer[:d]})
+				}
+				s.buffer = s.buffer[d+len(marker):]
+				continue
+			}
 			if halt != -1 && (open == -1 || halt < open) {
 				if halt > 0 {
 					*events = append(*events, splitEvent{kind: splitText, text: s.buffer[:halt]})
@@ -145,7 +155,7 @@ func (s *splitter) drain(events *[]splitEvent, final bool) {
 			if open == -1 {
 				keep := 0
 				if !final {
-					keep = partialSuffix(s.buffer, append([]string{openTag, fenceOpen}, haltMarkers...))
+					keep = partialSuffix(s.buffer, append(append([]string{openTag, fenceOpen}, haltMarkers...), s.drop...))
 				}
 				if emit := s.buffer[:len(s.buffer)-keep]; emit != "" {
 					*events = append(*events, splitEvent{kind: splitText, text: emit})

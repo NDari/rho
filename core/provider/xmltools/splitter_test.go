@@ -169,3 +169,33 @@ func TestSplitterOrdinaryFencesPassThrough(t *testing.T) {
 		}
 	})
 }
+
+func TestSplitterDropsCopiedClosingTag(t *testing.T) {
+	in := "Checking.\n<tool_call name=\"bash\">\n<parameter name=\"command\">ls</parameter>\n</tool_call>\n</instructions>"
+	for seed := 1; seed <= 200; seed++ {
+		s := seed
+		sp := &splitter{drop: []string{"</instructions>"}}
+		var text string
+		var calls int
+		feed := func(evs []splitEvent) {
+			for _, e := range evs {
+				switch e.kind {
+				case splitText:
+					text += e.text
+				case splitToolEnd:
+					calls++
+				}
+			}
+		}
+		for i := 0; i < len(in); {
+			s = (s*1103515245 + 12345) & 0x7fffffff
+			end := min(i+1+s%7, len(in))
+			feed(sp.push(in[i:end]))
+			i = end
+		}
+		feed(sp.finish())
+		if strings.Contains(text, "instructions") || calls != 1 || strings.TrimSpace(text) != "Checking." {
+			t.Fatalf("seed %d: text %q, calls %d", seed, text, calls)
+		}
+	}
+}
