@@ -537,7 +537,15 @@ func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
 		return provider.Request{}, nil, err
 	}
 	cv := a.Session().BuildContext()
-	ts := a.activeTools(cv.Aside)
+	req, err := a.requestFor(cv.Messages, cv.Aside)
+	return req, prov, err
+}
+
+// requestFor builds a request with the current system prompt and tools for
+// the given messages.
+func (a *Agent) requestFor(msgs []provider.Message, aside bool) (provider.Request, error) {
+	model := a.Model()
+	ts := a.activeTools(aside)
 	specs := make([]provider.ToolSpec, len(ts))
 	for i, t := range ts {
 		specs[i] = t.Spec()
@@ -545,19 +553,19 @@ func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
 	a.mu.Lock()
 	skills := a.skills
 	a.mu.Unlock()
-	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: cv.Aside})
+	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: aside})
 	if err != nil {
-		return provider.Request{}, nil, err
+		return provider.Request{}, err
 	}
 	return provider.Request{
 		Model:           model.APIName(),
 		System:          sys.Text,
-		Messages:        RepairToolPairs(cv.Messages),
+		Messages:        RepairToolPairs(msgs),
 		Tools:           specs,
 		MaxTokens:       model.MaxOutput,
 		ReasoningEffort: model.ReasoningEffort,
 		SupportsImages:  model.SupportsImages,
-	}, prov, nil
+	}, nil
 }
 
 // RepairToolPairs makes sure every tool call has a result and every result
@@ -773,8 +781,7 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 			a.emit(events.CompactionEnd{TokensBefore: before, Error: err.Error()})
 			return err
 		}
-		s, usage, err := compact.Summarize(ctx, prov, model, toSummarize, compact.Instructions(a.paths))
-		a.addCost(usage)
+		s, err := a.summarize(ctx, prov, model, toSummarize, cv.Aside)
 		if err != nil {
 			a.emit(events.CompactionEnd{TokensBefore: before, TokensAfter: before, Error: err.Error()})
 			return err
@@ -795,6 +802,29 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 	a.emit(events.CompactionEnd{EntryID: e.ID, TokensBefore: before, TokensAfter: after})
 	a.emitUsage(ncv, provider.Usage{})
 	return nil
+}
+
+// summarize asks for the summary at the end of the conversation (so the
+// provider's prompt cache applies), falling back to a plain transcript if
+// the model calls a tool, returns nothing, or the context overflows.
+func (a *Agent) summarize(ctx context.Context, prov provider.Provider, model config.Model, msgs []provider.Message, aside bool) (string, error) {
+	instructions := compact.Instructions(a.paths)
+	req, err := a.requestFor(msgs, aside)
+	if err != nil {
+		return "", err
+	}
+	s, usage, err := compact.SummarizeInContext(ctx, prov, model, req, instructions)
+	a.addCost(usage)
+	if err == nil || ctx.Err() != nil {
+		return s, err
+	}
+	if !errors.Is(err, compact.ErrNotASummary) && provider.KindOf(err) != provider.ErrContextOverflow {
+		return "", err
+	}
+	a.emit(events.Notice{Level: "info", Text: "compaction: " + err.Error() + "; retrying with a transcript"})
+	s, usage, err = compact.Summarize(ctx, prov, model, msgs, instructions)
+	a.addCost(usage)
+	return s, err
 }
 
 // EstimateContext estimates the tokens the context will use: the last

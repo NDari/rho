@@ -79,7 +79,37 @@ func FindCut(msgs []provider.Message, ids []string, keepTokens int) (int, bool) 
 	return cut, true
 }
 
-// Summarize asks the model to summarize msgs.
+// ErrNotASummary means the model answered the summary request with tool
+// calls or nothing instead of a summary.
+var ErrNotASummary = errors.New("the model did not return a summary")
+
+// SummarizeInContext asks for the summary at the end of the conversation
+// itself. req is the request the agent would send (system prompt, tools,
+// and the messages to summarize), so a provider's prompt cache covers
+// everything except the instruction. Callers should fall back to Summarize
+// on ErrNotASummary or a context overflow.
+func SummarizeInContext(ctx context.Context, prov provider.Provider, model config.Model, req provider.Request, instructions string) (string, provider.Usage, error) {
+	if len(req.Messages) == 0 {
+		return "", provider.Usage{}, errors.New("nothing to summarize")
+	}
+	msgs := make([]provider.Message, len(req.Messages), len(req.Messages)+1)
+	copy(msgs, req.Messages)
+	req.Messages = append(msgs, provider.UserText(
+		"Stop working on the task. Do not call any tools.\n\n"+instructions+"\n\nOutput only the summary."))
+	req.MaxTokens = min(max(model.MaxOutput, 1024), 8192)
+	resp, err := prov.Stream(ctx, req, func(provider.StreamEvent) {})
+	if err != nil {
+		return "", resp.Usage, err
+	}
+	summary := strings.TrimSpace(resp.Message.TextContent())
+	if len(resp.Message.ToolCalls()) > 0 || summary == "" {
+		return "", resp.Usage, ErrNotASummary
+	}
+	return summary, resp.Usage, nil
+}
+
+// Summarize asks the model to summarize msgs, sent as a plain transcript
+// with long tool results shortened.
 func Summarize(ctx context.Context, prov provider.Provider, model config.Model, msgs []provider.Message, instructions string) (string, provider.Usage, error) {
 	if len(msgs) == 0 {
 		return "", provider.Usage{}, errors.New("nothing to summarize")

@@ -288,3 +288,96 @@ func TestAsideUsesReadOnlyTools(t *testing.T) {
 		t.Errorf("back on main: aside=%v messages=%d", cv.Aside, len(cv.Messages))
 	}
 }
+
+func TestCompactionReusesConversationPrefix(t *testing.T) {
+	var turn provider.Request
+	fp := fake.New("fake",
+		fake.Step{Text: "first", Check: func(r provider.Request) { turn = r }},
+		fake.Step{Text: "second"},
+		fake.Step{Text: "SUMMARY", Check: func(r provider.Request) {
+			if r.System != turn.System || len(r.Tools) != len(turn.Tools) {
+				t.Errorf("summary request does not reuse the system prompt and tools")
+			}
+			if len(r.Messages) < 2 || r.Messages[0].TextContent() != "one" {
+				t.Errorf("summary request does not start with the conversation: %+v", r.Messages)
+			}
+			if last := r.Messages[len(r.Messages)-1]; !strings.Contains(last.TextContent(), "Do not call any tools") {
+				t.Errorf("last message is not the instruction: %q", last.TextContent())
+			}
+		}},
+	)
+	a, rec, _ := newTestAgent(t, fp)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.Compact(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if cv := a.Session().BuildContext(); cv.Compaction == nil || cv.Compaction.Summary != "SUMMARY" {
+		t.Fatalf("compaction = %+v", cv.Compaction)
+	}
+	if strings.Contains(strings.Join(rec.types(), ","), "notice") {
+		t.Error("unexpected fallback notice")
+	}
+}
+
+func TestCompactionFallsBackToTranscript(t *testing.T) {
+	for name, step := range map[string]fake.Step{
+		"tool call": {Calls: []fake.Call{{Name: "read", Args: map[string]string{"path": "x"}}}},
+		"empty":     {Text: ""},
+		"overflow":  {Err: &provider.Error{Kind: provider.ErrContextOverflow, Message: "context length exceeded"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fp := fake.New("fake",
+				fake.Step{Text: "first"},
+				fake.Step{Text: "second"},
+				step,
+				fake.Step{Text: "SUMMARY", Check: func(r provider.Request) {
+					if len(r.Tools) != 0 || !strings.Contains(r.Messages[0].TextContent(), "<conversation>") {
+						t.Errorf("fallback did not send a transcript: %+v", r)
+					}
+				}},
+			)
+			a, rec, _ := newTestAgent(t, fp)
+			ctx := context.Background()
+			for _, p := range []string{"one", "two"} {
+				if err := a.Run(ctx, provider.UserText(p)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := a.Compact(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if cv := a.Session().BuildContext(); cv.Compaction == nil || cv.Compaction.Summary != "SUMMARY" {
+				t.Fatalf("compaction = %+v", cv.Compaction)
+			}
+			if !strings.Contains(strings.Join(rec.types(), ","), "notice") {
+				t.Error("no fallback notice")
+			}
+		})
+	}
+}
+
+func TestCompactionDoesNotFallBackOnOtherErrors(t *testing.T) {
+	fp := fake.New("fake",
+		fake.Step{Text: "first"},
+		fake.Step{Text: "second"},
+		fake.Step{Err: &provider.Error{Kind: provider.ErrAuth, Message: "bad key"}},
+	)
+	a, _, _ := newTestAgent(t, fp)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.Compact(ctx); err == nil {
+		t.Fatal("expected an error")
+	}
+	if len(fp.Requests) != 3 {
+		t.Errorf("requests = %d, want 3 (no transcript retry)", len(fp.Requests))
+	}
+}
