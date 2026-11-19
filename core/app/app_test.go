@@ -14,6 +14,7 @@ func TestForkCopiesLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := a.Agent.Session()
+	t.Cleanup(func() { _ = src.Close() }) // Windows cannot remove open files
 	var ids []string
 	for _, text := range []string{"one", "two", "three"} {
 		e, err := src.AppendMessage(provider.UserText(text))
@@ -42,6 +43,7 @@ func TestForkCopiesLabels(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = dst.Close() })
 			labels := dst.Labels()
 			first := dst.PathTo(dst.Leaf())[0]
 			if labels[first.ID] != "start" {
