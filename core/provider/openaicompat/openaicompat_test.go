@@ -187,3 +187,52 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("usage not reported: %+v", resp.Usage)
 	}
 }
+
+// TestResponsesIntegration runs the Responses provider against a real
+// server when RHO_TEST_RESPONSES_URL is set.
+func TestResponsesIntegration(t *testing.T) {
+	base := os.Getenv("RHO_TEST_RESPONSES_URL")
+	if base == "" {
+		t.Skip("RHO_TEST_RESPONSES_URL not set")
+	}
+	model := os.Getenv("RHO_TEST_MODEL")
+	if model == "" {
+		model = "default"
+	}
+	p := NewResponses(Options{Name: "it", BaseURL: base, APIKey: os.Getenv("RHO_TEST_API_KEY")})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	tools := []provider.ToolSpec{{Name: "read", Description: "Read a file", Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)}}
+	var text strings.Builder
+	resp, err := p.Stream(ctx, provider.Request{
+		Model:     model,
+		System:    "You are a helpful assistant.",
+		Messages:  []provider.Message{provider.UserText("Use the read tool to read the file named go.mod.")},
+		Tools:     tools,
+		MaxTokens: 4096,
+	}, func(e provider.StreamEvent) {
+		if e.Kind == provider.EventTextDelta {
+			text.WriteString(e.Text)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := resp.Message.ToolCalls()
+	if len(calls) == 0 {
+		t.Fatalf("expected a tool call, got %+v", resp.Message)
+	}
+	// Second round trip: send the tool result back.
+	msgs := []provider.Message{
+		provider.UserText("Use the read tool to read the file named go.mod."),
+		resp.Message,
+		{Role: provider.RoleToolResult, Content: []provider.Block{provider.ToolResult(calls[0].ID, "module example.com/x\n\ngo 1.24\n", false)}},
+	}
+	resp2, err := p.Stream(ctx, provider.Request{Model: model, Messages: msgs, Tools: tools, MaxTokens: 4096}, func(provider.StreamEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp2.Message.TextContent(), "example.com/x") {
+		t.Errorf("second response did not use the tool result: %q", resp2.Message.TextContent())
+	}
+}

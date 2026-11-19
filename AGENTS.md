@@ -23,7 +23,8 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 ## Testing
 
 - `go build ./...`, `go vet ./...` and `go test ./...` must pass before a change is considered done.
-- Prefer table-driven tests. Tests must not require network access or API keys; use recorded fixtures or a fake provider.
+- Prefer table-driven tests. Tests must not require network access or API keys; use recorded fixtures or the fake provider (`core/provider/fake`).
+- Optional integration tests run against a real server when `RHO_TEST_BASE_URL` (Chat Completions) or `RHO_TEST_RESPONSES_URL` (Responses API) is set, with `RHO_TEST_MODEL` and `RHO_TEST_API_KEY` as needed.
 - End-to-end checks run through headless mode (`rho -p --json`).
 
 ## Writing style

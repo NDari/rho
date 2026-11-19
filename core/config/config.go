@@ -16,7 +16,10 @@ import (
 
 // Provider types understood by the provider registry.
 const (
+	// ProviderOpenAICompat uses the Chat Completions API.
 	ProviderOpenAICompat = "openai-compat"
+	// ProviderOpenAIResponses uses the Responses API.
+	ProviderOpenAIResponses = "openai-responses"
 )
 
 // Config is the merged configuration.
@@ -35,7 +38,8 @@ type Config struct {
 
 // Provider describes an API endpoint.
 type Provider struct {
-	// Type selects the adapter. Only "openai-compat" exists today.
+	// Type selects the adapter: "openai-compat" (Chat Completions, the
+	// default) or "openai-responses" (Responses API).
 	Type string `toml:"type"`
 	// BaseURL is the API root, e.g. "http://localhost:8080/v1".
 	BaseURL string `toml:"base_url"`
@@ -371,7 +375,7 @@ func (c Config) Validate() error {
 		}
 	}
 	for name, p := range c.Providers {
-		if p.Type != ProviderOpenAICompat {
+		if p.Type != ProviderOpenAICompat && p.Type != ProviderOpenAIResponses {
 			errs = append(errs, fmt.Errorf("provider %q: unsupported type %q", name, p.Type))
 		}
 		if p.BaseURL == "" {

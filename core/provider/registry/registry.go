@@ -51,6 +51,14 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 			Headers: pc.Headers,
 			Flavor:  pc.Flavor,
 		})
+	case config.ProviderOpenAIResponses:
+		p = openaicompat.NewResponses(openaicompat.Options{
+			Name:    name,
+			BaseURL: pc.BaseURL,
+			APIKey:  key,
+			Headers: pc.Headers,
+			Flavor:  pc.Flavor,
+		})
 	default:
 		return nil, fmt.Errorf("provider %q: unsupported type %q", name, pc.Type)
 	}
