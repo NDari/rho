@@ -146,7 +146,7 @@ Block    = Text{text}
 ### v1 providers
 - **OpenAI-compatible** (Chat Completions) with configurable `base_url`: covers OpenAI itself, llama.cpp `llama-server`, Ollama, LM Studio, vLLM, OpenRouter, Google Gemini's OpenAI-compatible endpoint and similar.
   - Gemini needs tool call thought signatures preserved (`ToolCall.opaque`) and thought summaries requested explicitly (`include_thoughts`).
-- **OpenAI Responses API:** later (M7), for OpenAI's own reasoning models.
+- **OpenAI Responses API:** later (M8), for OpenAI's own reasoning models.
 - **Anthropic** (Messages API): deferred until after the OpenAI-compatible path is solid.
 - Native Google Gemini API: later, only if the OpenAI-compatible endpoint proves lossy.
 
@@ -323,14 +323,15 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 ## 16. Milestones
 
 1. **M0 - Skeleton:** repo, packages, config loading, event types, CI (macOS/Linux/Windows).
-2. **M1 - Core loop:** neutral messages, OpenAI-compatible provider (Chat Completions), four tools, headless print/JSON mode.
-3. **M2 - Sessions:** JSONL tree store, context assembly, continue/resume.
-4. **M3 - TUI:** transcript, streaming markdown, tool cards, diffs, input editor, status bar, themes.
-5. **M4 - Context & compaction:** AGENTS.md, SYSTEM.md, skills, prompt templates, automatic compaction, `/context`.
-6. **M5 - Branching:** rewind, fork, tree view, side conversations.
-7. **M6 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
-8. **M7 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
-9. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings.
+2. **M1 - Core loop:** neutral messages, OpenAI-compatible provider (Chat Completions), four tools, headless print/JSON mode, fake provider for tests, cancel.
+3. **M2 - Sessions & base context:** JSONL tree store, context assembly, continue/resume, built-in system prompt, AGENTS.md, SYSTEM.md.
+4. **M3 - Compaction:** automatic compaction, compact-and-retry on context overflow, `COMPACT.md` override.
+5. **M4 - TUI:** transcript, streaming markdown, tool cards, diffs, input editor, status bar, themes, steering/follow-up, `/compact`.
+6. **M5 - Skills & templates:** skills, prompt templates, `/context`.
+7. **M6 - Branching:** rewind, fork, tree view, side conversations.
+8. **M7 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
+9. **M8 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
+10. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings.
 
 ## 17. Open questions
 
