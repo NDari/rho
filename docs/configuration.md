@@ -8,7 +8,7 @@ Set `RHO_HOME` to use a directory other than `~/.rho`.
 
 ```toml
 default_model = "local"
-theme = "dark"          # "dark", "light", or a theme in ~/.rho/themes/
+theme = "dark"          # "dark" (Gruvbox), "light", or a theme in ~/.rho/themes/
 max_retries = 3         # retries for 429/5xx/network errors
 
 # A local OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM...)

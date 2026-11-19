@@ -35,8 +35,18 @@ func (m *markdown) renderer(width int) *glamour.TermRenderer {
 	cfg.Document.BlockSuffix = ""
 	cfg.CodeBlock.Theme = m.theme.Chroma
 	cfg.CodeBlock.Chroma = nil
-	text := m.theme.Text
-	cfg.Document.Color = &text
+	// Take headings, links and inline code from the theme, so markdown
+	// matches the rest of the interface.
+	t := m.theme
+	cfg.Document.Color = &t.Text
+	cfg.Heading.Color = &t.Accent
+	cfg.H1.Color = &t.StatusBg
+	cfg.H1.BackgroundColor = &t.Accent
+	cfg.Link.Color = &t.Accent
+	cfg.LinkText.Color = &t.Accent
+	cfg.Code.Color = &t.Warning
+	cfg.Code.BackgroundColor = &t.UserBg
+	cfg.HorizontalRule.Color = &t.Subtle
 	r, err := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(width))
 	if err != nil {
 		return nil
