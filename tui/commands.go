@@ -398,6 +398,11 @@ func (m *Model) rewindPicker() {
 
 func (m *Model) forkPicker() {
 	items := m.pathMessages(provider.RoleUser, provider.RoleAssistant)
+	// The leaf may be a non-message entry (a side-conversation note or a
+	// compaction) that the message list leaves out.
+	if leaf := m.agent.Session().Leaf(); leaf != "" && (len(items) == 0 || items[0].value != leaf) {
+		items = append([]pickerItem{{title: "Current position (everything so far)", detail: "latest", value: leaf}}, items...)
+	}
 	if len(items) == 0 {
 		m.notice("info", "nothing to fork")
 		return
