@@ -4,7 +4,7 @@ A minimal-core, richly presented coding agent harness, written in Go.
 
 Rho keeps the core small (an agent loop, four tools, a session tree, compaction and context files) and puts the effort into a polished terminal experience: streaming markdown, syntax highlighting, word-level diffs and themes. It ships as a single static binary with no runtime dependencies.
 
-> **Status:** early development. Expect rough edges and breaking changes. The [design spec](docs/rho-spec.md) describes where it is going.
+> **Status:** early development. Expect rough edges and breaking changes. The [design spec](https://github.com/NDari/rho/blob/main/docs/rho-spec.md) describes where it is going.
 
 ## Install
 
