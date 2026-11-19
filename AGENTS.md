@@ -16,9 +16,9 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 ## Code conventions
 
 - Standard Go style: `gofmt`, `go vet`, idiomatic error handling (wrap with `%w`, no panics in library code).
-- Keep dependencies minimal. Prefer the standard library and thin hand-written HTTP/SSE clients. Discuss before adding a new module.
+- Prefer libraries over writing our own code. Widely used, actively maintained, modern libraries are preferred: code used by many has fewer bugs than code written fresh. Adding dependencies is fine when they give a better all-in-one experience or let us write less code.
 - Platform-specific code goes in `_unix.go` / `_windows.go` files, not runtime `GOOS` checks scattered through logic.
-- No `CGO`. The release binary must stay static.
+- No `CGO`. The release binary must stay static, so dependencies must be pure Go.
 
 ## Testing
 

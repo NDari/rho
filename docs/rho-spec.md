@@ -1,4 +1,4 @@
-# Rho — Design Spec
+# Rho: Design Spec
 
 *A minimal-core, richly presented coding agent harness, written in Go.*
 
@@ -10,7 +10,7 @@ Status: draft v0.1 · License: MIT
 
 1. **Small core, small concepts.** The harness has few moving parts: an agent loop, four tools, a session tree, compaction, context files. Everything else is a file, an extension, or a patch to your own copy.
 2. **Rich, beautiful UX.** Minimal does not mean bare. Diffs, syntax highlighting, markdown, themes and smooth streaming are first-class. Presentation lives in the frontend, never in the core.
-3. **No runtime dependencies.** One static Go binary. No Node, Bun, Deno or Python required — not for the harness and not for Go extensions.
+3. **No runtime dependencies.** One static Go binary. No Node, Bun, Deno or Python required, neither for the harness nor for Go extensions.
 4. **Transparent context.** The user can always see what goes into the model: system prompt, context files, skills, compaction summaries.
 5. **Cheap features are fine; expensive ones must earn their place.**
 6. **Public tool, personal first.** Built for daily personal use, but documented and stable enough for others (versioned extension protocol, clear config, MIT license).
@@ -147,7 +147,7 @@ Block    = Text{text}
 - **OpenAI-compatible** with configurable `base_url`: covers llama.cpp `llama-server`, Ollama, LM Studio, vLLM, OpenRouter and similar.
 - Google Gemini: later.
 
-Implementation preference: **thin hand-written HTTP + SSE clients** per provider (small, uniform, minimal supply chain). Official SDKs are an acceptable fallback if a provider's API is too complex.
+Implementation preference: use the **official Go SDKs** (or a widely used, well-maintained client library) per provider. Hand-written HTTP + SSE clients only where no good library exists.
 
 ### Models config
 Per model: `id`, `provider`, `context_window`, `max_output`, `supports_images`, `supports_thinking`, optional pricing (for cost display). Local servers often don't report context size, so it's always configurable.
@@ -194,7 +194,7 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 ### 7.5 Operations
 - **Continue** (`rho -c`): reopen the most recent session for this cwd at its current leaf.
 - **Resume** (`rho -r` or `/resume`): pick from a list (title = first user message or label; shows date, model, size).
-- **Rewind** (`/rewind`): pick an earlier entry; append `checkout`. Conversation only — show a clear banner that files on disk are **not** reverted.
+- **Rewind** (`/rewind`): pick an earlier entry; append `checkout`. Conversation only: show a clear banner that files on disk are **not** reverted.
 - **Fork** (`/fork`): create a **new session file** starting from a chosen entry (copies the path), so both sessions continue independently.
 - **Tree** (`/tree`): navigate all branches, check out any entry, add labels.
 - **Side conversation** (`/aside`, return with `/back`):
@@ -271,8 +271,8 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - **Executable extensions:** any program (compiled Go, Python, TS, Rust…) declared in a small manifest (`rho-extension.toml`: name, command, args). The runtime is the extension's own dependency, never Rho's.
 
 ### 12.3 Discovery and trust
-- Global: `~/.rho/extensions/` — loaded automatically.
-- Project: `.rho/extensions/` — require **one-time approval**, keyed to a **content hash** of the extension's files. Changes (e.g., after `git pull`) require re-approval.
+- Global: `~/.rho/extensions/`, loaded automatically.
+- Project: `.rho/extensions/`, requires **one-time approval**, keyed to a **content hash** of the extension's files. Changes (e.g., after `git pull`) require re-approval.
 - Trust store: `~/.rho/trust.json`.
 
 ### 12.4 Protocol (JSON-RPC 2.0, newline-delimited, over stdin/stdout)
@@ -319,14 +319,14 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 
 ## 16. Milestones
 
-1. **M0 — Skeleton:** repo, packages, config loading, event types, CI (macOS/Linux/Windows).
-2. **M1 — Core loop:** neutral messages, Anthropic + OpenAI-compatible providers, four tools, headless print/JSON mode.
-3. **M2 — Sessions:** JSONL tree store, context assembly, continue/resume.
-4. **M3 — TUI:** transcript, streaming markdown, tool cards, diffs, input editor, status bar, themes.
-5. **M4 — Context & compaction:** AGENTS.md, SYSTEM.md, skills, prompt templates, automatic compaction, `/context`.
-6. **M5 — Branching:** rewind, fork, tree view, side conversations.
-7. **M6 — Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
-8. **M7 — Polish & Windows beta:** OpenAI provider, model switching UX, cost tracking, docs, packaging/releases.
+1. **M0 - Skeleton:** repo, packages, config loading, event types, CI (macOS/Linux/Windows).
+2. **M1 - Core loop:** neutral messages, Anthropic + OpenAI-compatible providers, four tools, headless print/JSON mode.
+3. **M2 - Sessions:** JSONL tree store, context assembly, continue/resume.
+4. **M3 - TUI:** transcript, streaming markdown, tool cards, diffs, input editor, status bar, themes.
+5. **M4 - Context & compaction:** AGENTS.md, SYSTEM.md, skills, prompt templates, automatic compaction, `/context`.
+6. **M5 - Branching:** rewind, fork, tree view, side conversations.
+7. **M6 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
+8. **M7 - Polish & Windows beta:** OpenAI provider, model switching UX, cost tracking, docs, packaging/releases.
 9. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Gemini, extension SDK, in-memory extension transport, optional compaction settings.
 
 ## 17. Open questions
