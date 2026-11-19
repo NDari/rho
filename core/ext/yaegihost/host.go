@@ -51,6 +51,7 @@ func Serve(path string, in io.Reader, out io.Writer, logw io.Writer) error {
 	curMu.Lock()
 	curHost = h
 	curMu.Unlock()
+	reg.reset()
 	h.conn = rpc.NewConn(in, out, h.handle)
 
 	func() {

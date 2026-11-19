@@ -102,6 +102,14 @@ type registry struct {
 
 var reg = &registry{hooks: map[string][]func(Event) Response{}}
 
+func (r *registry) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.name, r.version = "", ""
+	r.tools, r.commands = nil, nil
+	r.hooks = map[string][]func(Event) Response{}
+}
+
 // RegisterTool adds a tool.
 func RegisterTool(t Tool) {
 	reg.mu.Lock()

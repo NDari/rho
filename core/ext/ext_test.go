@@ -79,8 +79,13 @@ func TestGoExtensionEndToEnd(t *testing.T) {
 	if len(ts) != 1 || ts[0].Spec().Name != "shout" || !ts[0].ReadOnly() {
 		t.Fatalf("tools = %+v", ts)
 	}
+	var pmu sync.Mutex
 	var progress []string
-	res := ts[0].Execute(ctx, &tools.Env{}, json.RawMessage(`{"text":"hi"}`), func(s string) { progress = append(progress, s) })
+	res := ts[0].Execute(ctx, &tools.Env{}, json.RawMessage(`{"text":"hi"}`), func(s string) {
+		pmu.Lock()
+		defer pmu.Unlock()
+		progress = append(progress, s)
+	})
 	if res.IsError || res.Content[0].Text != "HI" {
 		t.Fatalf("execute = %+v", res)
 	}
@@ -107,9 +112,13 @@ func TestGoExtensionEndToEnd(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	ui.mu.Lock()
 	if len(ui.notified) != 1 || ui.notified[0] != "hello world" {
 		t.Errorf("notified = %v", ui.notified)
 	}
+	ui.mu.Unlock()
+	pmu.Lock()
+	defer pmu.Unlock()
 	if len(progress) != 1 || progress[0] != "shouting" {
 		t.Errorf("progress = %v", progress)
 	}

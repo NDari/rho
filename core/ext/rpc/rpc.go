@@ -39,7 +39,7 @@ const (
 )
 
 // Handler handles incoming requests and notifications. For notifications
-// the result is ignored.
+// the result is ignored and the handler must return quickly.
 type Handler func(ctx context.Context, method string, params json.RawMessage) (any, error)
 
 // ErrClosed is returned when the connection has closed.
@@ -95,8 +95,11 @@ func (c *Conn) readLoop(r io.Reader) {
 		case m.Method != "" && m.ID != nil:
 			go c.serve(m)
 		case m.Method != "":
+			// Notifications are handled in order on the read loop, so a
+			// tool's progress always arrives before its result. Handlers
+			// must not block.
 			if c.handler != nil {
-				go func() { _, _ = c.handler(c.ctx, m.Method, m.Params) }()
+				_, _ = c.handler(c.ctx, m.Method, m.Params)
 			}
 		case m.ID != nil:
 			c.pmu.Lock()
