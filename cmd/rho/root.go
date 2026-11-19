@@ -1,12 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
-	"github.com/NDari/rho/core/config"
+	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/headless"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -46,26 +53,58 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-func run(cmd *cobra.Command, f rootFlags, _ []string) error {
-	cwd, err := os.Getwd()
+func run(cmd *cobra.Command, f rootFlags, args []string) error {
+	text := strings.Join(args, " ")
+	if f.json && !f.print {
+		return errors.New("--json requires -p")
+	}
+	if f.print {
+		return runPrint(cmd, f, text)
+	}
+	return runTUI(f, text)
+}
+
+func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
+	if f.resume {
+		return errors.New("-r needs the interactive TUI; use --session <file> or -c with -p")
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 10<<20))
+		if err != nil {
+			return err
+		}
+		if s := strings.TrimSpace(string(data)); s != "" {
+			if text != "" {
+				text += "\n\n"
+			}
+			text += s
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		return errors.New("no prompt given")
+	}
+	hopts := headless.Options{JSON: f.json, Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
+	a, err := app.New(app.Options{
+		Model:       f.model,
+		Continue:    f.cont,
+		SessionFile: f.sessionF,
+		Version:     version,
+		Sink:        headless.Sink(hopts),
+	})
 	if err != nil {
 		return err
 	}
-	paths, err := config.ResolvePaths(cwd)
-	if err != nil {
-		return err
-	}
-	cfg, warnings, err := config.Load(paths)
-	for _, w := range warnings {
+	for _, w := range a.Warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 	}
-	if err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	defer a.Agent.Session().Close()
+	if err := headless.Run(ctx, a, text, hopts); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return errors.New("cancelled")
+		}
 		return err
 	}
-	model, err := cfg.ResolveModel(f.model)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "model: %s (%s)\n", model.ID, model.Provider)
 	return nil
 }
