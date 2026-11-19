@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/ext/yaegihost"
@@ -78,17 +76,15 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 	if f.resume {
 		return errors.New("-r needs the interactive TUI; use --session <file> or -c with -p")
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		data, err := io.ReadAll(io.LimitReader(os.Stdin, 10<<20))
-		if err != nil {
-			return err
+	piped, err := readStdin(os.Stdin, strings.TrimSpace(text) != "", cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	if s := strings.TrimSpace(piped); s != "" {
+		if text != "" {
+			text += "\n\n"
 		}
-		if s := strings.TrimSpace(string(data)); s != "" {
-			if text != "" {
-				text += "\n\n"
-			}
-			text += s
-		}
+		text += s
 	}
 	if strings.TrimSpace(text) == "" {
 		return errors.New("no prompt given")

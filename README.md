@@ -42,6 +42,7 @@ rho "fix the failing test"  # TUI, starting with a prompt
 rho -c                    # continue the last session in this directory
 rho -r                    # pick a session to resume
 rho -p "summarize README.md"          # print mode: one turn, print the answer
+git diff | rho -p "review this diff"  # piped input is added to the prompt
 rho -p --json "list the TODOs" > events.jsonl  # stream events as JSON lines
 ```
 
