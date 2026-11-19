@@ -53,6 +53,7 @@ See [docs/configuration.md](docs/configuration.md) for all settings.
 - **Interactive TUI** built with Bubble Tea: streaming markdown, collapsible tool cards with live bash output, syntax-highlighted diffs (side by side on wide terminals), transcript search, themes.
 - **Headless mode** for scripting and tests.
 - **Providers:** any OpenAI-compatible Chat Completions endpoint (OpenAI, llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, Gemini), plus the OpenAI Responses API. Anthropic is planned.
+- **XML tool calling** for models and gateways without native tool calls, plus per-provider rate limits. See [docs/configuration.md](docs/configuration.md#models-without-native-tool-calling).
 - **Four tools:** `read`, `write`, `edit` (exact replacement, line endings preserved) and `bash` (process tree killed on cancel).
 - **Session tree:** sessions are append-only JSONL. Continue, resume, rewind, fork, browse every branch with `/tree`, or start a read-only side conversation with `/aside`.
 - **Steering:** while the agent works, Enter interrupts after the current tool and Alt+Enter queues a follow-up.

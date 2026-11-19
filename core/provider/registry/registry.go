@@ -4,12 +4,25 @@ package registry
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/provider/openaicompat"
+	"github.com/NDari/rho/core/provider/ratelimit"
 )
+
+// expandHome expands a leading "~/" in a path.
+func expandHome(path string) string {
+	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, rest)
+		}
+	}
+	return path
+}
 
 // Registry caches provider instances by name.
 type Registry struct {
@@ -41,26 +54,25 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 			return nil, fmt.Errorf("provider %q: environment variable %s is not set", name, pc.APIKeyEnv)
 		}
 	}
+	opts := openaicompat.Options{
+		Name:     name,
+		BaseURL:  pc.BaseURL,
+		APIKey:   key,
+		Headers:  pc.Headers,
+		Flavor:   pc.Flavor,
+		DebugLog: expandHome(pc.DebugLog),
+	}
 	var p provider.Provider
 	switch pc.Type {
 	case config.ProviderOpenAICompat, "":
-		p = openaicompat.New(openaicompat.Options{
-			Name:    name,
-			BaseURL: pc.BaseURL,
-			APIKey:  key,
-			Headers: pc.Headers,
-			Flavor:  pc.Flavor,
-		})
+		p = openaicompat.New(opts)
 	case config.ProviderOpenAIResponses:
-		p = openaicompat.NewResponses(openaicompat.Options{
-			Name:    name,
-			BaseURL: pc.BaseURL,
-			APIKey:  key,
-			Headers: pc.Headers,
-			Flavor:  pc.Flavor,
-		})
+		p = openaicompat.NewResponses(opts)
 	default:
 		return nil, fmt.Errorf("provider %q: unsupported type %q", name, pc.Type)
+	}
+	if pc.RequestsPerMinute > 0 || pc.TokensPerMinute > 0 {
+		p = ratelimit.Wrap(p, ratelimit.New(ratelimit.Limits{Requests: pc.RequestsPerMinute, Tokens: pc.TokensPerMinute}))
 	}
 	r.providers[name] = p
 	return p, nil

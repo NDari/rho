@@ -72,6 +72,8 @@ core/compact/       compaction policy + summarizer
 core/prompt/        system prompt, AGENTS.md, SYSTEM.md, skills, prompt templates
 core/provider/      neutral message types; fake/ (tests), registry/
 core/provider/openaicompat/  Chat Completions and Responses API adapters
+core/provider/xmltools/      XML tool calling for models without native tool calls
+core/provider/ratelimit/     requests/tokens per minute limits
 core/ext/           extension manager, protocol, trust store; rpc/ (JSON-RPC)
 core/ext/yaegihost/ Yaegi-based extension host + `rho` symbol package
 core/config/        config loading, merging, validation
@@ -151,10 +153,23 @@ Block    = Text{text}
 - **Anthropic** (Messages API): deferred until after the OpenAI-compatible path is solid.
 - Native Google Gemini API: later, only if the OpenAI-compatible endpoint proves lossy.
 
+### XML tool calling
+For models or gateways without native tool calls, `tool_format = "xml"` (on a provider or a model) wraps the adapter:
+- Tool definitions and calling instructions are added to the system prompt; no `tools` field is sent. `system_prompt_in = "user"` moves the system prompt into the first user message for gateways that drop system messages.
+- The model writes `<tool_call name="...">` blocks with raw (unescaped) values. They are parsed from the stream into ordinary tool calls, so sessions, hooks and the TUI are unaffected, and switching between native and XML models mid-session works.
+- Earlier calls and results are replayed as XML text; consecutive user messages are merged.
+- A stop sequence (`<tool_result`) ends the response before the model invents a result; if it starts one anyway, the stream is cut there.
+- The parser also accepts common fallbacks: child tags, JSON bodies, CDATA, and calls written as ` ```tool_call ` fences. `decode_entities` handles models that XML-escape values.
+- Calls that cannot be parsed are answered with an error result showing what was received, so the model can retry.
+
+### Rate limits and debugging
+- `requests_per_minute` and `tokens_per_minute` on a provider make requests wait (with a status-bar countdown) until they fit a rolling 60-second window. A 429 is retried up to 5 times with waits sized to the window before the agent's own retry sees it; quota errors are not retried.
+- `debug_log` on a provider appends one JSON line per request with the exact payload and the response.
+
 Implementation preference: use the **official Go SDKs** (or a widely used, well-maintained client library) per provider. Hand-written HTTP + SSE clients only where no good library exists.
 
 ### Models config
-Per model: `id`, `provider`, `context_window`, `max_output`, `supports_images`, `supports_thinking`, optional pricing (for cost display). Local servers often don't report context size, so it's always configurable.
+Per model: `id`, `provider`, `context_window`, `max_output`, `supports_images`, `supports_thinking`, optional pricing (for cost display), and the XML tool options (`tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences`), which default to the provider's. Local servers often don't report context size, so it's always configurable.
 
 ### Mid-session switching
 - `/model` switches the model for subsequent requests; recorded as a `model_change` entry.

@@ -119,6 +119,13 @@ type Notice struct {
 	Text  string `json:"text"`
 }
 
+// Status sets a short status line under Key (empty Text clears it), e.g.
+// a rate-limit countdown.
+type Status struct {
+	Key  string `json:"key"`
+	Text string `json:"text"`
+}
+
 // Queue reports pending steering and follow-up messages.
 type Queue struct {
 	Steering  []string `json:"steering"`
@@ -155,6 +162,7 @@ func (CompactionStart) Type() string { return "compaction_start" }
 func (CompactionEnd) Type() string   { return "compaction_end" }
 func (Notice) Type() string          { return "notice" }
 func (Queue) Type() string           { return "queue" }
+func (Status) Type() string          { return "status" }
 func (ModelChanged) Type() string    { return "model_changed" }
 func (SessionChanged) Type() string  { return "session_changed" }
 

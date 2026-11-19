@@ -41,6 +41,8 @@ type Options struct {
 	Headers    map[string]string
 	Flavor     string
 	HTTPClient *http.Client
+	// DebugLog, if set, is a file that receives one JSON line per request.
+	DebugLog string
 }
 
 // Provider talks to an OpenAI-compatible Chat Completions endpoint.
@@ -49,6 +51,7 @@ type Provider struct {
 	flavor string
 	openai bool
 	client openai.Client
+	log    *debugLog
 }
 
 // New creates a provider.
@@ -68,6 +71,11 @@ func New(o Options) *Provider {
 	if o.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(o.HTTPClient))
 	}
+	var log *debugLog
+	if o.DebugLog != "" {
+		log = &debugLog{path: o.DebugLog}
+		opts = append(opts, option.WithMiddleware(log.middleware()))
+	}
 	flavor := o.Flavor
 	if flavor == "" && strings.Contains(o.BaseURL, "generativelanguage.googleapis.com") {
 		flavor = FlavorGemini
@@ -77,6 +85,7 @@ func New(o Options) *Provider {
 		flavor: flavor,
 		openai: strings.Contains(o.BaseURL, "api.openai.com"),
 		client: openai.NewClient(opts...),
+		log:    log,
 	}
 }
 
@@ -90,6 +99,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 		return provider.Response{}, err
 	}
 	var resp provider.Response
+	ctx, capture := p.log.start(ctx)
 	for attempt := 0; attempt < 2; attempt++ {
 		var gotData bool
 		resp, gotData, err = p.streamOnce(ctx, params, onEvent)
@@ -99,6 +109,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 			break
 		}
 	}
+	p.log.write(p.name, capture, resp, err)
 	return resp, err
 }
 
@@ -157,6 +168,9 @@ func (p *Provider) buildParams(req provider.Request) (openai.ChatCompletionNewPa
 	}
 	if req.ReasoningEffort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(req.ReasoningEffort)
+	}
+	if len(req.Stop) > 0 {
+		params.Stop = openai.ChatCompletionNewParamsStopUnion{OfStringArray: req.Stop}
 	}
 	for _, t := range req.Tools {
 		var schema map[string]any

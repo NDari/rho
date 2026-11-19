@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -52,7 +53,26 @@ type Provider struct {
 	Flavor string `toml:"flavor"`
 	// Headers are extra HTTP headers sent with each request.
 	Headers map[string]string `toml:"headers"`
+	// RequestsPerMinute and TokensPerMinute make Rho wait before sending
+	// a request that would exceed them (0 means no limit).
+	RequestsPerMinute int `toml:"requests_per_minute"`
+	TokensPerMinute   int `toml:"tokens_per_minute"`
+	// DebugLog is a file that receives one JSON line per request with the
+	// exact payload and the response.
+	DebugLog string `toml:"debug_log"`
+
+	// Defaults for this provider's models; see Model.
+	ToolFormat     string `toml:"tool_format"`
+	SystemPromptIn string `toml:"system_prompt_in"`
+	DecodeEntities string `toml:"decode_entities"`
+	StopSequences  *bool  `toml:"stop_sequences"`
 }
+
+// Tool formats.
+const (
+	ToolFormatNative = "native"
+	ToolFormatXML    = "xml"
+)
 
 // Model describes a model available through a provider.
 type Model struct {
@@ -67,7 +87,30 @@ type Model struct {
 	SupportsThinking bool     `toml:"supports_thinking"`
 	ReasoningEffort  string   `toml:"reasoning_effort"`
 	Pricing          *Pricing `toml:"pricing"`
+
+	// ToolFormat is "native" (the API's tool calling, the default) or
+	// "xml": tools are described in the prompt and the model calls them by
+	// writing XML, for models or gateways without native tool calls.
+	ToolFormat string `toml:"tool_format"`
+	// SystemPromptIn is "system" (default) or "user": put the system prompt
+	// at the start of the first user message, for gateways that drop or
+	// override system messages. Only used with tool_format "xml".
+	SystemPromptIn string `toml:"system_prompt_in"`
+	// DecodeEntities is "off" (default), "auto" or "always": decode
+	// &lt; &gt; &amp; &quot; &apos; in XML tool arguments, for models that
+	// escape them. "auto" decodes only values with no raw markup.
+	DecodeEntities string `toml:"decode_entities"`
+	// StopSequences sends a stop sequence so the server ends the response
+	// before the model writes a tool result itself (default true). Turn it
+	// off if a gateway rejects the "stop" field.
+	StopSequences *bool `toml:"stop_sequences"`
 }
+
+// XMLTools reports whether the model uses XML tool calling.
+func (m Model) XMLTools() bool { return m.ToolFormat == ToolFormatXML }
+
+// SendStopSequences reports whether to send XML stop sequences.
+func (m Model) SendStopSequences() bool { return m.StopSequences == nil || *m.StopSequences }
 
 // APIName returns the model name to send to the provider.
 func (m Model) APIName() string {
@@ -344,6 +387,27 @@ func mergeProvider(base, over Provider, defined func(string) bool) Provider {
 	if defined("headers") {
 		out.Headers = over.Headers
 	}
+	if defined("requests_per_minute") {
+		out.RequestsPerMinute = over.RequestsPerMinute
+	}
+	if defined("tokens_per_minute") {
+		out.TokensPerMinute = over.TokensPerMinute
+	}
+	if defined("debug_log") {
+		out.DebugLog = over.DebugLog
+	}
+	if defined("tool_format") {
+		out.ToolFormat = over.ToolFormat
+	}
+	if defined("system_prompt_in") {
+		out.SystemPromptIn = over.SystemPromptIn
+	}
+	if defined("decode_entities") {
+		out.DecodeEntities = over.DecodeEntities
+	}
+	if defined("stop_sequences") {
+		out.StopSequences = over.StopSequences
+	}
 	return out
 }
 
@@ -373,6 +437,7 @@ func (c Config) Validate() error {
 		if _, ok := c.Providers[m.Provider]; !ok {
 			errs = append(errs, fmt.Errorf("model %q: unknown provider %q", m.ID, m.Provider))
 		}
+		errs = append(errs, checkToolOptions("model "+strconv.Quote(m.ID), m.ToolFormat, m.SystemPromptIn, m.DecodeEntities)...)
 	}
 	for name, p := range c.Providers {
 		if p.Type != ProviderOpenAICompat && p.Type != ProviderOpenAIResponses {
@@ -381,8 +446,42 @@ func (c Config) Validate() error {
 		if p.BaseURL == "" {
 			errs = append(errs, fmt.Errorf("provider %q: base_url is required", name))
 		}
+		if p.RequestsPerMinute < 0 || p.TokensPerMinute < 0 {
+			errs = append(errs, fmt.Errorf("provider %q: rate limits must not be negative", name))
+		}
+		errs = append(errs, checkToolOptions("provider "+strconv.Quote(name), p.ToolFormat, p.SystemPromptIn, p.DecodeEntities)...)
 	}
 	return errors.Join(errs...)
+}
+
+func checkToolOptions(what, format, systemIn, decode string) []error {
+	var errs []error
+	check := func(key, v string, allowed ...string) {
+		if v != "" && !slices.Contains(allowed, v) {
+			errs = append(errs, fmt.Errorf("%s: %s must be one of %s, not %q", what, key, strings.Join(allowed, ", "), v))
+		}
+	}
+	check("tool_format", format, ToolFormatNative, ToolFormatXML)
+	check("system_prompt_in", systemIn, "system", "user")
+	check("decode_entities", decode, "off", "auto", "always")
+	return errs
+}
+
+// inherit fills the model's unset tool options from its provider.
+func (m Model) inherit(p Provider) Model {
+	if m.ToolFormat == "" {
+		m.ToolFormat = p.ToolFormat
+	}
+	if m.SystemPromptIn == "" {
+		m.SystemPromptIn = p.SystemPromptIn
+	}
+	if m.DecodeEntities == "" {
+		m.DecodeEntities = p.DecodeEntities
+	}
+	if m.StopSequences == nil {
+		m.StopSequences = p.StopSequences
+	}
+	return m
 }
 
 // Default values for models given only as "provider/name".
@@ -409,25 +508,25 @@ func (c Config) ResolveModel(spec string) (Model, error) {
 	}
 	if spec == "" {
 		if len(c.Models) > 0 {
-			return c.Models[0].withDefaults(), nil
+			return c.Models[0].withDefaults().inherit(c.Providers[c.Models[0].Provider]), nil
 		}
 		return Model{}, errors.New("no model configured: set default_model or [[models]] in config.toml, or pass --model provider/name")
 	}
 	for _, m := range c.Models {
 		if m.ID == spec {
-			return m.withDefaults(), nil
+			return m.withDefaults().inherit(c.Providers[m.Provider]), nil
 		}
 	}
 	prov, name, ok := strings.Cut(spec, "/")
 	if ok {
-		if _, exists := c.Providers[prov]; exists {
+		if pc, exists := c.Providers[prov]; exists {
 			return Model{
 				ID:            spec,
 				Name:          name,
 				Provider:      prov,
 				ContextWindow: DefaultContextWindow,
 				MaxOutput:     DefaultMaxOutput,
-			}, nil
+			}.inherit(pc), nil
 		}
 	}
 	return Model{}, fmt.Errorf("unknown model %q (use a configured id or provider/name)", spec)

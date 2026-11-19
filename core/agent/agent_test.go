@@ -381,3 +381,47 @@ func TestCompactionDoesNotFallBackOnOtherErrors(t *testing.T) {
 		t.Errorf("requests = %d, want 3 (no transcript retry)", len(fp.Requests))
 	}
 }
+
+func TestXMLToolCalling(t *testing.T) {
+	fp := fake.New("fake",
+		fake.Step{Text: "Writing.\n<tool_call name=\"write\">\n<parameter name=\"path\">a.txt</parameter>\n<parameter name=\"content\">\nif a < b && c {\n}\n</parameter>\n</tool_call>"},
+		fake.Step{Text: "<tool_call>no name here</tool_call>", Check: func(r provider.Request) {
+			if len(r.Tools) != 0 || !strings.Contains(r.System, "# Tool use") {
+				t.Errorf("tools were not moved into the prompt")
+			}
+			last := r.Messages[len(r.Messages)-1].TextContent()
+			if !strings.HasPrefix(last, "<tool_result name=\"write\" status=\"ok\">") {
+				t.Errorf("tool result not replayed as XML: %q", last)
+			}
+		}},
+		fake.Step{Text: "done", Check: func(r provider.Request) {
+			last := r.Messages[len(r.Messages)-1].TextContent()
+			if !strings.Contains(last, "status=\"error\"") || !strings.Contains(last, "no name") {
+				t.Errorf("malformed call not answered with an error: %q", last)
+			}
+		}},
+	)
+	a, _, dir := newTestAgent(t, fp)
+	m := a.Model()
+	m.ToolFormat = config.ToolFormatXML
+	a.mu.Lock()
+	a.model = m
+	a.mu.Unlock()
+	if err := a.Run(context.Background(), provider.UserText("write a file")); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(data) != "if a < b && c {\n}" {
+		t.Errorf("file = %q", data)
+	}
+}
+
+func TestEmptyReplyWarns(t *testing.T) {
+	fp := fake.New("fake", fake.Step{Thinking: "thinking only"})
+	a, rec, _ := newTestAgent(t, fp)
+	if err := a.Run(context.Background(), provider.UserText("hi")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(rec.types(), ","), "notice") {
+		t.Error("no warning for an empty reply")
+	}
+}

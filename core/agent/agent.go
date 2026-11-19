@@ -16,6 +16,7 @@ import (
 	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/provider/xmltools"
 	"github.com/NDari/rho/core/session"
 	"github.com/NDari/rho/core/tools"
 )
@@ -468,8 +469,11 @@ func (a *Agent) loop(ctx context.Context) error {
 
 		calls := resp.Message.ToolCalls()
 		if len(calls) == 0 {
-			if resp.StopReason == provider.StopMaxTokens {
+			switch {
+			case resp.StopReason == provider.StopMaxTokens:
 				a.emit(events.Notice{Level: "warn", Text: "the response was cut off at the output token limit"})
+			case strings.TrimSpace(resp.Message.TextContent()) == "":
+				a.emit(events.Notice{Level: "warn", Text: "the model returned no answer and no tool calls"})
 			}
 			if steer := a.popSteering(); len(steer) > 0 {
 				if err := a.appendUserTexts(steer); err != nil {
@@ -532,13 +536,27 @@ func (a *Agent) activeTools(aside bool) []tools.Tool {
 // buildRequest assembles the next model request.
 func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
 	model := a.Model()
-	prov, err := a.providers.Get(model.Provider)
+	prov, err := a.providerFor(model)
 	if err != nil {
 		return provider.Request{}, nil, err
 	}
 	cv := a.Session().BuildContext()
 	req, err := a.requestFor(cv.Messages, cv.Aside)
 	return req, prov, err
+}
+
+// providerFor returns the model's provider, with XML tool calling when the
+// model uses it.
+func (a *Agent) providerFor(model config.Model) (provider.Provider, error) {
+	prov, err := a.providers.Get(model.Provider)
+	if err != nil || !model.XMLTools() {
+		return prov, err
+	}
+	return xmltools.Wrap(prov, xmltools.Options{
+		SystemInUser:  model.SystemPromptIn == "user",
+		Decode:        model.DecodeEntities,
+		StopSequences: model.SendStopSequences(),
+	}), nil
 }
 
 // requestFor builds a request with the current system prompt and tools for
@@ -628,6 +646,8 @@ func (a *Agent) streamWithRetry(ctx context.Context, prov provider.Provider, req
 				a.emit(events.ThinkingDelta{Text: e.Text})
 			case provider.EventToolCallStart, provider.EventToolCallDelta:
 				a.emit(events.ToolCallDelta{Index: e.Index, Name: e.Name})
+			case provider.EventStatus:
+				a.emit(events.Status{Key: "provider", Text: e.Text})
 			}
 		})
 		if err == nil || ctx.Err() != nil {
@@ -695,6 +715,9 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 }
 
 func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call provider.Block, env *tools.Env, aside bool) tools.Result {
+	if call.ArgsError != "" {
+		return tools.Result{Content: []provider.Block{provider.Text(call.ArgsError)}, IsError: true}
+	}
 	t, ok := byName[call.Name]
 	if !ok {
 		if aside {
@@ -776,7 +799,7 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 		}
 	}
 	if summary == "" {
-		prov, err := a.providers.Get(model.Provider)
+		prov, err := a.providerFor(model)
 		if err != nil {
 			a.emit(events.CompactionEnd{TokensBefore: before, Error: err.Error()})
 			return err

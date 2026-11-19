@@ -130,3 +130,62 @@ func containsWarning(ws []string, sub string) bool {
 	}
 	return false
 }
+
+func TestXMLToolOptionsInheritFromProvider(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, "config.toml"), `
+[providers.gw]
+base_url = "http://localhost:8080/v1"
+tool_format = "xml"
+system_prompt_in = "user"
+stop_sequences = false
+requests_per_minute = 60
+
+[[models]]
+id = "a"
+provider = "gw"
+
+[[models]]
+id = "b"
+provider = "gw"
+tool_format = "native"
+decode_entities = "auto"
+`)
+	cfg, warnings, err := Load(Paths{Home: home})
+	if err != nil || len(warnings) > 0 {
+		t.Fatalf("load: %v %v", err, warnings)
+	}
+	a, _ := cfg.ResolveModel("a")
+	if !a.XMLTools() || a.SystemPromptIn != "user" || a.SendStopSequences() {
+		t.Errorf("a = %+v", a)
+	}
+	b, _ := cfg.ResolveModel("b")
+	if b.XMLTools() || b.DecodeEntities != "auto" || b.SystemPromptIn != "user" {
+		t.Errorf("b = %+v", b)
+	}
+	adhoc, _ := cfg.ResolveModel("gw/other")
+	if !adhoc.XMLTools() {
+		t.Errorf("ad-hoc model did not inherit: %+v", adhoc)
+	}
+	if cfg.Providers["gw"].RequestsPerMinute != 60 {
+		t.Errorf("requests_per_minute = %d", cfg.Providers["gw"].RequestsPerMinute)
+	}
+}
+
+func TestXMLToolOptionsValidated(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, "config.toml"), `
+[providers.gw]
+base_url = "http://localhost:8080/v1"
+tool_format = "yaml"
+
+[[models]]
+id = "a"
+provider = "gw"
+decode_entities = "true"
+`)
+	_, _, err := Load(Paths{Home: home})
+	if err == nil || !strings.Contains(err.Error(), "tool_format") || !strings.Contains(err.Error(), "decode_entities") {
+		t.Fatalf("err = %v", err)
+	}
+}

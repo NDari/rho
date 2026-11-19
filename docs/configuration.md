@@ -61,6 +61,9 @@ disabled = []        # extension names not to start
 | `api_key` | a raw key (works, but Rho warns; prefer `api_key_env`) |
 | `flavor` | endpoint-specific handling; `gemini` is detected automatically |
 | `headers` | extra HTTP headers |
+| `requests_per_minute`, `tokens_per_minute` | wait before sending a request that would exceed these limits (0, the default, means no limit) |
+| `debug_log` | a file that receives one JSON line per request with the exact payload and the response; it holds whole conversations, so leave it off normally |
+| `tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences` | defaults for this provider's models, see below |
 
 Built-in providers you can use without configuring them (set the API key variable):
 
@@ -71,6 +74,31 @@ Built-in providers you can use without configuring them (set the API key variabl
 | `gemini` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
 
 Without a `[[models]]` entry you can still use any model as `provider/name`, e.g. `rho --model openrouter/qwen/qwen3-coder`. Ad-hoc models assume a 128k context window.
+
+## Models without native tool calling
+
+Some models and gateways don't support tool calls. Set `tool_format = "xml"` on the provider (or on individual models) and Rho describes the tools in the prompt, the model calls them by writing XML blocks, and Rho turns those into ordinary tool calls:
+
+```toml
+[providers.gateway]
+base_url = "https://gateway.example.com/v1"
+api_key_env = "GATEWAY_API_KEY"
+tool_format = "xml"
+system_prompt_in = "user"   # for gateways that drop or override system messages
+requests_per_minute = 120
+tokens_per_minute = 500000
+```
+
+Values are written raw, without JSON escaping, which also makes code edits more reliable for some models that do support native tools.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `tool_format` | `"native"` | `"xml"` for prompt-based tool calling |
+| `system_prompt_in` | `"system"` | `"user"` puts the system prompt and tool instructions at the start of the first user message |
+| `decode_entities` | `"off"` | `"auto"` decodes `&lt; &gt; &amp; &quot; &apos;` in values that look fully escaped (for models that escape them anyway, such as Gemma 3); `"always"` decodes every value |
+| `stop_sequences` | `true` | sends `stop: ["<tool_result"]` so the server stops before the model invents a tool result; set `false` if a gateway rejects `stop` (Rho still cuts invented results off itself) |
+
+The tool descriptions are part of every request. They sit at the start of the prompt, so prompt caching usually absorbs most of the cost.
 
 ## Local models
 

@@ -19,12 +19,13 @@ import (
 type ResponsesProvider struct {
 	name   string
 	client openai.Client
+	log    *debugLog
 }
 
 // NewResponses creates a Responses API provider.
 func NewResponses(o Options) *ResponsesProvider {
 	p := New(o)
-	return &ResponsesProvider{name: o.Name, client: p.client}
+	return &ResponsesProvider{name: o.Name, client: p.client, log: p.log}
 }
 
 // Name implements provider.Provider.
@@ -34,6 +35,7 @@ func (p *ResponsesProvider) Name() string { return p.name }
 func (p *ResponsesProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (provider.Response, error) {
 	var resp provider.Response
 	var err error
+	ctx, capture := p.log.start(ctx)
 	for attempt := 0; attempt < 2; attempt++ {
 		var gotData bool
 		resp, gotData, err = p.streamOnce(ctx, req, onEvent)
@@ -41,6 +43,7 @@ func (p *ResponsesProvider) Stream(ctx context.Context, req provider.Request, on
 			break
 		}
 	}
+	p.log.write(p.name, capture, resp, err)
 	return resp, err
 }
 

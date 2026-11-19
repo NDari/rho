@@ -51,6 +51,9 @@ type Block struct {
 	ID   string          `json:"id,omitempty"`
 	Name string          `json:"name,omitempty"`
 	Args json.RawMessage `json:"args,omitempty"`
+	// ArgsError explains why a tool call could not be parsed. The call is
+	// answered with this error instead of being run.
+	ArgsError string `json:"args_error,omitempty"`
 
 	// ToolResult.
 	CallID  string  `json:"call_id,omitempty"`

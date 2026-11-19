@@ -24,6 +24,8 @@ type Request struct {
 	MaxTokens       int
 	ReasoningEffort string
 	SupportsImages  bool
+	// Stop lists sequences that end the response early.
+	Stop []string
 }
 
 // StreamEventKind identifies a streaming delta.
@@ -35,6 +37,9 @@ const (
 	EventThinkingDelta
 	EventToolCallStart
 	EventToolCallDelta
+	// EventStatus carries a short status line (Text, empty to clear),
+	// e.g. while a request waits for a rate limit.
+	EventStatus
 )
 
 // StreamEvent is an incremental update while a response streams.

@@ -749,6 +749,12 @@ func (m *Model) handleEvent(e events.Event) {
 			m.compactIt.touch()
 			m.compactIt = nil
 		}
+	case events.Status:
+		if ev.Text == "" {
+			delete(m.statuses, ev.Key)
+		} else {
+			m.statuses[ev.Key] = ev.Text
+		}
 	case events.Queue:
 		m.queue = ev
 	case events.ModelChanged:
