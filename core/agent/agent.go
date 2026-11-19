@@ -105,7 +105,16 @@ func New(o Options) *Agent {
 	return a
 }
 
-func (a *Agent) emit(e events.Event) { a.sink(e) }
+func (a *Agent) emit(e events.Event) {
+	a.mu.Lock()
+	sink := a.sink
+	a.mu.Unlock()
+	sink(e)
+}
+
+// Emit sends an event to the current sink (used by components such as the
+// extension manager that report through the agent's event stream).
+func (a *Agent) Emit(e events.Event) { a.emit(e) }
 
 // SetSink replaces the event sink.
 func (a *Agent) SetSink(s events.Sink) {

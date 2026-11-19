@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/ext/yaegihost"
 	"github.com/NDari/rho/headless"
 )
 
@@ -50,6 +51,15 @@ func newRootCmd() *cobra.Command {
 	fl.StringVarP(&f.model, "model", "m", "", "model id, or provider/name")
 	fl.BoolVar(&f.noExt, "no-extensions", false, "do not load extensions")
 	fl.StringVar(&f.sessionF, "session", "", "open a specific session file")
+	cmd.AddCommand(&cobra.Command{
+		Use:    "ext-host <path>",
+		Short:  "Run a Go source extension (used internally)",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return yaegihost.Main(args[0])
+		},
+	})
 	return cmd
 }
 
@@ -85,11 +95,12 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 	}
 	hopts := headless.Options{JSON: f.json, Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
 	a, err := app.New(app.Options{
-		Model:       f.model,
-		Continue:    f.cont,
-		SessionFile: f.sessionF,
-		Version:     version,
-		Sink:        headless.Sink(hopts),
+		Model:        f.model,
+		Continue:     f.cont,
+		SessionFile:  f.sessionF,
+		Version:      version,
+		Sink:         headless.Sink(hopts),
+		NoExtensions: f.noExt,
 	})
 	if err != nil {
 		return err
@@ -100,6 +111,8 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	defer a.Agent.Session().Close()
+	a.StartExtensions(ctx, headless.UI{ErrOut: cmd.ErrOrStderr()})
+	defer a.StopExtensions()
 	if err := headless.Run(ctx, a, text, hopts); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return errors.New("cancelled")

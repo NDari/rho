@@ -15,10 +15,11 @@ func runTUI(f rootFlags, text string) error {
 		return errors.New("the interactive TUI needs a terminal; use -p for non-interactive use")
 	}
 	a, err := app.New(app.Options{
-		Model:       f.model,
-		Continue:    f.cont,
-		SessionFile: f.sessionF,
-		Version:     version,
+		Model:        f.model,
+		Continue:     f.cont,
+		SessionFile:  f.sessionF,
+		Version:      version,
+		NoExtensions: f.noExt,
 	})
 	if err != nil {
 		return err

@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/events"
+	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider/registry"
 	"github.com/NDari/rho/core/session"
@@ -19,12 +21,13 @@ import (
 
 // Options configure App creation.
 type Options struct {
-	Cwd         string
-	Model       string
-	Continue    bool
-	SessionFile string
-	Version     string
-	Sink        events.Sink
+	Cwd          string
+	Model        string
+	Continue     bool
+	SessionFile  string
+	Version      string
+	Sink         events.Sink
+	NoExtensions bool
 }
 
 // App holds the assembled core.
@@ -37,6 +40,8 @@ type App struct {
 	Skills    []prompt.Skill
 	Warnings  []string
 	Version   string
+	// Ext is nil when extensions are disabled.
+	Ext *ext.Manager
 }
 
 // New loads configuration and opens (or creates) a session.
@@ -92,6 +97,20 @@ func New(o Options) (*App, error) {
 		Skills:    skills,
 		Sink:      o.Sink,
 	})
+	if !o.NoExtensions {
+		var builtin []string
+		for _, t := range tools.Builtins() {
+			builtin = append(builtin, t.Spec().Name)
+		}
+		a.Ext = ext.NewManager(ext.Options{
+			Paths:   paths,
+			Config:  cfg,
+			Version: o.Version,
+			Agent:   a.Agent,
+			Builtin: builtin,
+			Sink:    func(e events.Event) { a.emit(e) },
+		})
+	}
 	if o.Model != "" && sess.BuildContext().Model != "" && sess.BuildContext().Model != model.ID {
 		// An explicit --model wins over the session's recorded model.
 		if err := a.Agent.SetModel(model.ID); err != nil {
@@ -99,6 +118,42 @@ func New(o Options) (*App, error) {
 		}
 	}
 	return a, nil
+}
+
+// emit forwards an event to the agent's current sink.
+func (a *App) emit(e events.Event) { a.Agent.Emit(e) }
+
+// StartExtensions starts extensions with the given UI and registers their
+// tools and hooks with the agent.
+func (a *App) StartExtensions(ctx context.Context, ui ext.UI) {
+	if a.Ext == nil {
+		return
+	}
+	a.Ext.SetUI(ui)
+	a.Ext.Start(ctx)
+	a.refreshTools()
+}
+
+// ReloadExtensions restarts extensions.
+func (a *App) ReloadExtensions(ctx context.Context) error {
+	if a.Ext == nil {
+		return nil
+	}
+	err := a.Ext.Reload(ctx)
+	a.refreshTools()
+	return err
+}
+
+// StopExtensions shuts extensions down.
+func (a *App) StopExtensions() {
+	if a.Ext != nil {
+		a.Ext.Stop()
+	}
+}
+
+func (a *App) refreshTools() {
+	a.Agent.SetTools(append(tools.Builtins(), a.Ext.Tools()...))
+	a.Agent.SetHooks(a.Ext)
 }
 
 // SessionDir is the directory holding sessions for the working directory.

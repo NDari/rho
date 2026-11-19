@@ -15,14 +15,33 @@ type Options struct {
 	Prompt string
 	// Resume opens the session picker at startup.
 	Resume bool
-	// Extensions, if set, provides extension commands.
-	Extensions ExtensionCommands
 }
+
+// extAdapter exposes the app's extension manager to the TUI.
+type extAdapter struct{ a *app.App }
+
+func (e extAdapter) Commands() []ExtensionCommand {
+	var out []ExtensionCommand
+	for _, c := range e.a.Ext.Commands() {
+		out = append(out, ExtensionCommand{Name: c.Name, Description: c.Description + " (" + c.Extension + ")"})
+	}
+	return out
+}
+
+func (e extAdapter) Run(ctx context.Context, name, args string) error {
+	return e.a.Ext.RunCommand(ctx, name, args)
+}
+
+func (e extAdapter) Describe() string { return e.a.Ext.Describe() }
+
+func (e extAdapter) Reload(ctx context.Context) error { return e.a.ReloadExtensions(ctx) }
 
 // Run starts the TUI and blocks until it exits.
 func Run(a *app.App, o Options) error {
 	m := New(a)
-	m.ext = o.Extensions
+	if a.Ext != nil {
+		m.ext = extAdapter{a}
+	}
 	if o.Resume {
 		m.resumePicker()
 	}
@@ -31,9 +50,14 @@ func Run(a *app.App, o Options) error {
 		_ = m.submit(false)
 	}
 	p := tea.NewProgram(m)
+	if a.Ext != nil {
+		// Extensions start once the UI runs, so approval prompts can show.
+		go a.StartExtensions(context.Background(), m.NewUI())
+	}
 	_, err := p.Run()
 	a.Agent.Cancel()
 	a.Agent.Wait()
+	a.StopExtensions()
 	_ = a.Agent.Session().Close()
 	return err
 }

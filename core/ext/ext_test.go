@@ -1,0 +1,186 @@
+package ext_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/NDari/rho/core/config"
+	"github.com/NDari/rho/core/ext"
+	"github.com/NDari/rho/core/ext/yaegihost"
+	"github.com/NDari/rho/core/tools"
+)
+
+// inProcess launches Go extensions in this process via the Yaegi host.
+func inProcess(c ext.Candidate) (io.ReadCloser, io.WriteCloser, io.ReadCloser, func(), error) {
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	go func() {
+		_ = yaegihost.Serve(c.Path, inR, outW, io.Discard)
+		_ = outW.Close()
+	}()
+	return outR, inW, nil, func() { _ = inW.Close() }, nil
+}
+
+type fakeUI struct {
+	mu       sync.Mutex
+	notified []string
+	confirm  bool
+}
+
+func (u *fakeUI) Confirm(context.Context, string, string) (bool, error) { return u.confirm, nil }
+func (u *fakeUI) Select(context.Context, string, []string) (string, error) {
+	return "", nil
+}
+func (u *fakeUI) Input(context.Context, string, string) (string, error) { return "", nil }
+func (u *fakeUI) Notify(_, text string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.notified = append(u.notified, text)
+}
+func (u *fakeUI) SetStatus(string, string) {}
+
+func TestGoExtensionEndToEnd(t *testing.T) {
+	home := t.TempDir()
+	extDir := filepath.Join(home, "extensions", "hello")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join("testdata", "hello", "hello.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "hello.go"), src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ui := &fakeUI{}
+	m := ext.NewManager(ext.Options{
+		Paths:   config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config:  config.Defaults(),
+		UI:      ui,
+		Builtin: []string{"read", "write", "edit", "bash"},
+		Launch:  inProcess,
+	})
+	ctx := context.Background()
+	m.Start(ctx)
+	defer m.Stop()
+
+	exts := m.Extensions()
+	if len(exts) != 1 || exts[0].Status != ext.StatusRunning {
+		t.Fatalf("extension not running: %s", m.Describe())
+	}
+	ts := m.Tools()
+	if len(ts) != 1 || ts[0].Spec().Name != "shout" || !ts[0].ReadOnly() {
+		t.Fatalf("tools = %+v", ts)
+	}
+	var progress []string
+	res := ts[0].Execute(ctx, &tools.Env{}, json.RawMessage(`{"text":"hi"}`), func(s string) { progress = append(progress, s) })
+	if res.IsError || res.Content[0].Text != "HI" {
+		t.Fatalf("execute = %+v", res)
+	}
+	res = m.AfterToolCall(ctx, "shout", nil, res)
+	if res.Content[0].Text != "HI!" {
+		t.Errorf("after hook = %q", res.Content[0].Text)
+	}
+	if _, reason := m.BeforeToolCall(ctx, "bash", json.RawMessage(`{"command":"rm -rf /"}`)); !strings.Contains(reason, "dangerous") {
+		t.Errorf("before hook did not block: %q", reason)
+	}
+	if args, reason := m.BeforeToolCall(ctx, "bash", json.RawMessage(`{"command":"ls"}`)); reason != "" || string(args) != `{"command":"ls"}` {
+		t.Errorf("before hook changed a safe call: %s %q", args, reason)
+	}
+	if err := m.RunCommand(ctx, "greet", "world"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ui.mu.Lock()
+		n := len(ui.notified)
+		ui.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(ui.notified) != 1 || ui.notified[0] != "hello world" {
+		t.Errorf("notified = %v", ui.notified)
+	}
+	if len(progress) != 1 || progress[0] != "shouting" {
+		t.Errorf("progress = %v", progress)
+	}
+}
+
+func TestProjectExtensionNeedsApproval(t *testing.T) {
+	home := t.TempDir()
+	proj := t.TempDir()
+	extFile := filepath.Join(proj, ".rho", "extensions", "x.go")
+	if err := os.MkdirAll(filepath.Dir(extFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(extFile, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths := config.Paths{Home: home, Cwd: proj, ProjectRoot: proj, ProjectDir: filepath.Join(proj, ".rho")}
+	launched := 0
+	launch := func(c ext.Candidate) (io.ReadCloser, io.WriteCloser, io.ReadCloser, func(), error) {
+		launched++
+		return inProcess(c)
+	}
+	ui := &fakeUI{confirm: false}
+	m := ext.NewManager(ext.Options{Paths: paths, Config: config.Defaults(), UI: ui, Launch: launch})
+	m.Start(context.Background())
+	if launched != 0 || m.Extensions()[0].Status != ext.StatusNotApproved {
+		t.Fatalf("unapproved extension was started: %s", m.Describe())
+	}
+	m.Stop()
+
+	ui.confirm = true
+	m = ext.NewManager(ext.Options{Paths: paths, Config: config.Defaults(), UI: ui, Launch: launch})
+	m.Start(context.Background())
+	m.Stop()
+	if launched != 1 {
+		t.Fatalf("approved extension not started")
+	}
+	// Approval is remembered until the content changes.
+	ui.confirm = false
+	m = ext.NewManager(ext.Options{Paths: paths, Config: config.Defaults(), UI: ui, Launch: launch})
+	m.Start(context.Background())
+	m.Stop()
+	if launched != 2 {
+		t.Fatalf("trusted extension not started")
+	}
+	if err := os.WriteFile(extFile, []byte("package main\n\nfunc main() { println() }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = ext.NewManager(ext.Options{Paths: paths, Config: config.Defaults(), UI: ui, Launch: launch})
+	m.Start(context.Background())
+	m.Stop()
+	if launched != 2 {
+		t.Fatalf("changed extension started without re-approval")
+	}
+}
+
+func TestDiscoverManifest(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "extensions", "py")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), []byte("name = \"pyext\"\ncommand = \"python3\"\nargs = [\"${dir}/main.py\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := ext.NewManager(ext.Options{Paths: config.Paths{Home: home, ProjectDir: filepath.Join(home, "nope")}, Config: config.Defaults()})
+	cands, warnings := m.Discover()
+	if len(warnings) != 0 || len(cands) != 1 {
+		t.Fatalf("cands=%+v warnings=%v", cands, warnings)
+	}
+	c := cands[0]
+	if c.Name != "pyext" || c.Kind != ext.KindExec || c.Command != "python3" || c.Args[0] != filepath.Join(dir, "main.py") && c.Args[0] != dir+"/main.py" {
+		t.Errorf("candidate = %+v", c)
+	}
+}

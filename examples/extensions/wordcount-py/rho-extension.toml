@@ -1,0 +1,3 @@
+name = "wordcount"
+command = "python3"
+args = ["${dir}/main.py"]
