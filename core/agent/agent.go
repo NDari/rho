@@ -663,9 +663,16 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 		}
 		block := provider.Block{Type: provider.BlockToolResult, CallID: call.ID, Content: res.Content, IsError: res.IsError}
 		a.emit(events.ToolEnd{ID: call.ID, Name: call.Name, Result: block, Display: res.Display, Duration: dur})
-		if err := a.appendMessage(provider.Message{Role: provider.RoleToolResult, Content: []provider.Block{block}}); err != nil {
-			return err
+		msg := provider.Message{Role: provider.RoleToolResult, Content: []provider.Block{block}}
+		entry := session.Entry{Type: session.TypeMessage, Message: &msg}
+		if res.Display != nil {
+			entry.Display, _ = json.Marshal(res.Display)
 		}
+		e, err := a.Session().Append(entry)
+		if err != nil {
+			return fmt.Errorf("save session: %w", err)
+		}
+		a.emit(events.MessageEnd{EntryID: e.ID, Message: msg})
 	}
 	return nil
 }
@@ -860,4 +867,43 @@ func (a *Agent) sessionCost() float64 {
 		total += cost(m, *e.Message.Meta.Usage)
 	}
 	return total
+}
+
+// ContextReport describes what is sent to the model, for /context.
+type ContextReport struct {
+	Parts         []prompt.Part
+	ToolTokens    int
+	MessageTokens int
+	Messages      int
+	Total         int
+	Window        int
+	Compacted     bool
+}
+
+// ContextReport builds a report of the current context.
+func (a *Agent) ContextReport() (ContextReport, error) {
+	cv := a.Session().BuildContext()
+	ts := a.activeTools(cv.Aside)
+	specs := make([]provider.ToolSpec, len(ts))
+	toolTokens := 0
+	for i, t := range ts {
+		specs[i] = t.Spec()
+		toolTokens += prompt.EstimateTokens(specs[i].Name + specs[i].Description + string(specs[i].Parameters))
+	}
+	a.mu.Lock()
+	skills := a.skills
+	a.mu.Unlock()
+	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: cv.Aside})
+	if err != nil {
+		return ContextReport{}, err
+	}
+	r := ContextReport{Parts: sys.Parts, ToolTokens: toolTokens, Messages: len(cv.Messages), Window: a.Model().ContextWindow, Compacted: cv.Compaction != nil}
+	for _, m := range cv.Messages {
+		r.MessageTokens += m.EstimateTokens()
+	}
+	for _, p := range sys.Parts {
+		r.Total += p.Tokens
+	}
+	r.Total += r.ToolTokens + r.MessageTokens
+	return r, nil
 }

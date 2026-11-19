@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -88,29 +89,53 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 	if err != nil {
 		return provider.Response{}, err
 	}
+	var resp provider.Response
+	for attempt := 0; attempt < 2; attempt++ {
+		var gotData bool
+		resp, gotData, err = p.streamOnce(ctx, params, onEvent)
+		// A reused keep-alive connection that the server already closed
+		// fails before any data arrives; retry that once, silently.
+		if err == nil || gotData || ctx.Err() != nil || !isConnReset(err) {
+			break
+		}
+	}
+	return resp, err
+}
+
+func isConnReset(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection reset") || strings.Contains(s, "server closed idle connection") || strings.HasSuffix(s, ": EOF")
+}
+
+func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionNewParams, onEvent func(provider.StreamEvent)) (provider.Response, bool, error) {
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	defer stream.Close()
 
 	acc := newAccumulator(p.name)
+	gotData := false
 	for stream.Next() {
+		gotData = true
 		acc.add(stream.Current(), onEvent)
 	}
 	resp := acc.response()
-	resp.Message.Meta.Model = req.Model
+	resp.Message.Meta.Model = params.Model
 	if err := stream.Err(); err != nil {
 		if ctx.Err() != nil {
 			resp.StopReason = provider.StopCancelled
 			resp.Message.Meta.StopReason = provider.StopCancelled
-			return resp, ctx.Err()
+			return resp, gotData, ctx.Err()
 		}
-		return resp, classify(err)
+		return resp, gotData, classify(err)
 	}
 	if ctx.Err() != nil {
 		resp.StopReason = provider.StopCancelled
 		resp.Message.Meta.StopReason = provider.StopCancelled
-		return resp, ctx.Err()
+		return resp, gotData, ctx.Err()
 	}
-	return resp, nil
+	return resp, gotData, nil
 }
 
 func (p *Provider) buildParams(req provider.Request) (openai.ChatCompletionNewParams, error) {

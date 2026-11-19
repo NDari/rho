@@ -67,6 +67,10 @@ type Entry struct {
 
 	// aside_summary
 	Note string `json:"note,omitempty"`
+
+	// Display is presentation data for tool results (e.g. diffs), kept so
+	// frontends can redraw resumed sessions. Never sent to the model.
+	Display json.RawMessage `json:"display,omitempty"`
 }
 
 // inTree reports whether the entry is a node of the conversation tree.
