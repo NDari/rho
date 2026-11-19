@@ -30,16 +30,28 @@ func Instructions(p config.Paths) string {
 	return defaultInstructions
 }
 
+// usable is the number of tokens the conversation may use before
+// compaction: the window minus the reserve, but never less than half the
+// window (small local models often have small windows).
+func usable(window, reserve int) int {
+	return max(window-reserve, window/2)
+}
+
 // ShouldCompact reports whether tokens exceed the usable window.
 func ShouldCompact(tokens, window, reserve int) bool {
 	if window <= 0 {
 		return false
 	}
-	limit := window - reserve
-	if limit < window/2 {
-		limit = window / 2
+	return tokens > usable(window, reserve)
+}
+
+// KeepTokens is how many recent tokens to keep verbatim: the configured
+// amount, capped at half the usable window so compaction makes room.
+func KeepTokens(keepRecent, window, reserve int) int {
+	if window <= 0 {
+		return keepRecent
 	}
-	return tokens > limit
+	return min(keepRecent, usable(window, reserve)/2)
 }
 
 // FindCut chooses the index of the first message to keep verbatim, keeping

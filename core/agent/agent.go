@@ -55,6 +55,10 @@ type Options struct {
 // ErrBusy is returned when a command needs the agent to be idle.
 var ErrBusy = errors.New("the agent is busy")
 
+// ErrNothingToCompact is returned when the conversation is too short to
+// compact further.
+var ErrNothingToCompact = errors.New("nothing to compact yet")
+
 // Agent runs turns. Its methods are safe for concurrent use.
 type Agent struct {
 	mu        sync.Mutex
@@ -419,7 +423,7 @@ func (a *Agent) appendMessage(m provider.Message) error {
 func (a *Agent) loop(ctx context.Context) error {
 	overflowRetried := false
 	for {
-		if err := a.maybeCompact(ctx); err != nil {
+		if err := a.maybeCompact(ctx); err != nil && !errors.Is(err, ErrNothingToCompact) {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -727,22 +731,19 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 	sess := a.Session()
 	cv := sess.BuildContext()
 	before := a.EstimateContext(cv)
-	a.emit(events.CompactionStart{Reason: reason, Tokens: before})
-	keep := a.cfg.Compaction.KeepRecent
 	model := a.Model()
-	// Keep less when the window is small, so the result actually fits.
-	if limit := (model.ContextWindow - a.cfg.Compaction.Reserve) / 2; limit > 0 && keep > limit {
-		keep = limit
-	}
+	keep := compact.KeepTokens(a.cfg.Compaction.KeepRecent, model.ContextWindow, a.cfg.Compaction.Reserve)
 	if reason == "overflow" {
 		keep /= 2
 	}
 	cut, ok := compact.FindCut(cv.Messages, cv.EntryIDs, keep)
-	if !ok {
-		err := errors.New("nothing to compact yet")
-		a.emit(events.CompactionEnd{TokensBefore: before, TokensAfter: before, Error: err.Error()})
-		return err
+	if ok && cv.Compaction != nil && cut <= 1 {
+		ok = false // only the previous summary would be summarized again
 	}
+	if !ok {
+		return ErrNothingToCompact
+	}
+	a.emit(events.CompactionStart{Reason: reason, Tokens: before})
 	toSummarize := cv.Messages[:cut]
 	var summary string
 	if h := a.getHooks(); h != nil {
