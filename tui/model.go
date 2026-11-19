@@ -3,9 +3,11 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -972,6 +974,18 @@ func (m *Model) inputView() []string {
 	return append(append([]string{top}, mid...), bottom)
 }
 
+// statusItems renders status entries sorted by key, so they don't swap
+// places between redraws.
+func statusItems(statuses map[string]string) []string {
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(statuses)) {
+		if v := statuses[k]; v != "" {
+			out = append(out, k+": "+v)
+		}
+	}
+	return out
+}
+
 func (m *Model) statusLine() string {
 	w := max(10, m.width)
 	var left []string
@@ -998,10 +1012,8 @@ func (m *Model) statusLine() string {
 		left = append(left, m.st.status.Foreground(c(m.theme.Warning)).Render("aside"))
 	}
 	var right []string
-	for k, v := range m.statuses {
-		if v != "" {
-			right = append(right, m.st.status.Render(k+": "+v))
-		}
+	for _, item := range statusItems(m.statuses) {
+		right = append(right, m.st.status.Render(item))
 	}
 	if m.busy {
 		right = append(right, m.st.statusKey.Render(spinnerFrames[m.frame%len(spinnerFrames)]+" working"))

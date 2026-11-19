@@ -133,3 +133,13 @@ func TestPickerKeepsDetailForLongTitles(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusItemsAreStable(t *testing.T) {
+	statuses := map[string]string{"zeta": "z", "provider": "rate limit", "alpha": "a", "empty": ""}
+	want := "alpha: a,provider: rate limit,zeta: z"
+	for range 50 {
+		if got := strings.Join(statusItems(statuses), ","); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
