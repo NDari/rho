@@ -203,7 +203,16 @@ func (a *App) Fork(id string) (*session.Session, error) {
 		}
 		idMap[e.ID] = appended.ID
 	}
-	if src.Path() != "" {
+	labels := src.Labels()
+	for _, e := range path {
+		if l := labels[e.ID]; l != "" {
+			if _, err := dst.Append(session.Entry{Type: session.TypeLabel, Target: idMap[e.ID], Label: l}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// Mark where the fork came from, unless that entry already has a label.
+	if src.Path() != "" && labels[id] == "" {
 		label := fmt.Sprintf("forked from %s", filepath.Base(src.Path()))
 		if _, err := dst.Append(session.Entry{Type: session.TypeLabel, Target: idMap[id], Label: label}); err != nil {
 			return nil, err
