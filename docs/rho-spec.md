@@ -70,7 +70,7 @@ core/session/       JSONL tree store, context assembly, checkout
 core/compact/       compaction policy + summarizer
 core/context/       AGENTS.md, SYSTEM.md, skills, prompt templates
 core/provider/      neutral message types, registry
-core/provider/anthropic, openai, openaicompat, (google later)
+core/provider/openaicompat, openai, (anthropic, google later)
 core/ext/           extension manager, protocol, trust store
 core/ext/yaegihost/ Yaegi-based extension host + `rho` symbol package
 core/config/        config loading, merging, validation
@@ -135,17 +135,20 @@ Stored in sessions and used internally:
 ```
 Message  { role: user | assistant | tool_result, content: []Block, meta }
 Block    = Text{text}
-         | Thinking{text, provider, opaque}     // opaque = signatures etc.
+         | Thinking{text, provider, opaque}               // opaque = signatures etc.
          | Image{mime, data|path}
-         | ToolCall{id, name, args}
+         | ToolCall{id, name, args, provider, opaque}     // opaque = e.g. Gemini thought signature
          | ToolResult{call_id, content []Block, is_error}
 ```
 
+`opaque` holds provider-specific data that must be sent back verbatim to the provider that produced it. For example, Gemini 3 and 4 attach a thought signature to function calls, and requests fail if it is not returned within the current turn. It is stored in the session log but never interpreted by the core.
+
 ### v1 providers
-- **Anthropic** (Messages API).
-- **OpenAI** (one API chosen at implementation time; keep the adapter thin).
-- **OpenAI-compatible** with configurable `base_url`: covers llama.cpp `llama-server`, Ollama, LM Studio, vLLM, OpenRouter and similar.
-- Google Gemini: later.
+- **OpenAI-compatible** (Chat Completions) with configurable `base_url`: covers OpenAI itself, llama.cpp `llama-server`, Ollama, LM Studio, vLLM, OpenRouter, Google Gemini's OpenAI-compatible endpoint and similar.
+  - Gemini needs tool call thought signatures preserved (`ToolCall.opaque`) and thought summaries requested explicitly (`include_thoughts`).
+- **OpenAI Responses API:** later (M7), for OpenAI's own reasoning models.
+- **Anthropic** (Messages API): deferred until after the OpenAI-compatible path is solid.
+- Native Google Gemini API: later, only if the OpenAI-compatible endpoint proves lossy.
 
 Implementation preference: use the **official Go SDKs** (or a widely used, well-maintained client library) per provider. Hand-written HTTP + SSE clients only where no good library exists.
 
@@ -154,7 +157,7 @@ Per model: `id`, `provider`, `context_window`, `max_output`, `supports_images`, 
 
 ### Mid-session switching
 - `/model` switches the model for subsequent requests; recorded as a `model_change` entry.
-- When switching across providers, provider-specific `Thinking` blocks with opaque data are dropped from the outgoing request (kept in the log).
+- When switching across providers, opaque data from another provider (on `Thinking` and `ToolCall` blocks) is dropped from the outgoing request (kept in the log). If the target provider requires it (e.g., Gemini signatures on tool calls in the current turn), the adapter substitutes that provider's documented placeholder.
 
 ### Local models notes (document for users)
 - llama.cpp needs `--jinja` for tool calling.
@@ -320,18 +323,17 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 ## 16. Milestones
 
 1. **M0 - Skeleton:** repo, packages, config loading, event types, CI (macOS/Linux/Windows).
-2. **M1 - Core loop:** neutral messages, Anthropic + OpenAI-compatible providers, four tools, headless print/JSON mode.
+2. **M1 - Core loop:** neutral messages, OpenAI-compatible provider (Chat Completions), four tools, headless print/JSON mode.
 3. **M2 - Sessions:** JSONL tree store, context assembly, continue/resume.
 4. **M3 - TUI:** transcript, streaming markdown, tool cards, diffs, input editor, status bar, themes.
 5. **M4 - Context & compaction:** AGENTS.md, SYSTEM.md, skills, prompt templates, automatic compaction, `/context`.
 6. **M5 - Branching:** rewind, fork, tree view, side conversations.
 7. **M6 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
-8. **M7 - Polish & Windows beta:** OpenAI provider, model switching UX, cost tracking, docs, packaging/releases.
-9. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Gemini, extension SDK, in-memory extension transport, optional compaction settings.
+8. **M7 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
+9. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings.
 
 ## 17. Open questions
 
-- Which OpenAI API to target first.
 - Exact keybindings for steering vs follow-up.
 - Default theme palette.
 - Whether `/fork` should also allow forking into a different cwd.

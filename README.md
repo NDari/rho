@@ -9,7 +9,7 @@ Rho keeps the core small (an agent loop, four tools, a session tree, compaction 
 ## Highlights (planned)
 
 - **Interactive TUI** built with Bubble Tea, plus a headless mode for scripting.
-- **Multiple providers:** Anthropic, OpenAI, and any OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM, OpenRouter).
+- **Multiple providers:** OpenAI and any OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, Gemini), with Anthropic to follow.
 - **Session tree:** continue, resume, rewind, fork and side conversations, stored as append-only JSONL.
 - **Automatic compaction** when the context window fills up.
 - **Transparent context:** `AGENTS.md`, `SYSTEM.md`, skills and prompt templates, with `/context` to see exactly what the model receives.
