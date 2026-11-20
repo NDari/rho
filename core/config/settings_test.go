@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -118,9 +119,9 @@ func TestSaveSettingRoundTrip(t *testing.T) {
 	if cfg.Bash.Timeout != 300 {
 		t.Errorf("timeout = %d", cfg.Bash.Timeout)
 	}
-	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v", fi.Mode().Perm())
+	// Windows has no Unix permission bits to keep.
+	if fi, _ := os.Stat(path); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
 	}
 	data, _ := os.ReadFile(path)
 	if string(data) != "# keep me\n[bash]\ntimeout = 300\n" {
