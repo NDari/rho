@@ -330,3 +330,19 @@ func (a *App) CopyText(all bool) string {
 	}
 	return ""
 }
+
+// GitBranch reads the current branch name from .git/HEAD.
+func GitBranch(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, ".git", "HEAD"))
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(data))
+	if b, ok := strings.CutPrefix(s, "ref: refs/heads/"); ok {
+		return b
+	}
+	if len(s) >= 7 {
+		return s[:7]
+	}
+	return ""
+}

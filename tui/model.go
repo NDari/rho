@@ -159,7 +159,7 @@ func New(a *app.App) *Model {
 		m.addItem(&noticeItem{level: "warn", text: w})
 	}
 	m.showThinking = a.Config.TUI.ShowThinking
-	m.gitBranch = gitBranch(a.Paths.ProjectRoot)
+	m.gitBranch = app.GitBranch(a.Paths.ProjectRoot)
 	m.loadTranscript()
 	return m
 }
@@ -760,7 +760,7 @@ func (m *Model) handleEvent(e events.Event) {
 			m.input.SetValue(strings.Join(left, "\n\n"))
 			m.afterInputChange()
 		}
-		m.gitBranch = gitBranch(m.app.Paths.ProjectRoot)
+		m.gitBranch = app.GitBranch(m.app.Paths.ProjectRoot)
 	}
 }
 
@@ -774,22 +774,6 @@ func userText(text string, attached []string) string {
 		text += "\n(attached: " + strings.Join(attached, ", ") + ")"
 	}
 	return text
-}
-
-// gitBranch reads the current branch name from .git/HEAD.
-func gitBranch(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, ".git", "HEAD"))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(data))
-	if b, ok := strings.CutPrefix(s, "ref: refs/heads/"); ok {
-		return b
-	}
-	if len(s) >= 7 {
-		return s[:7]
-	}
-	return ""
 }
 
 // View implements tea.Model.
