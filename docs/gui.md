@@ -33,6 +33,20 @@ The `rho` command needs none of these; it stays a single static binary.
 
 The `rho-gui` archives also contain `rho`. Keep the two side by side: the GUI uses `rho` to run Go extensions, which starts them faster and with less memory than running them through `rho-gui`.
 
+## Installing
+
+- **macOS:** download `Rho_<version>_macos.zip` from the release, unzip it and move `Rho.app` to Applications. It runs on Intel and Apple silicon and contains both `rho-gui` and `rho`. Unless the release is signed and notarized, macOS blocks the first start; allow it under System Settings, Privacy & Security, or remove the quarantine flag with `xattr -dr com.apple.quarantine /Applications/Rho.app`.
+- **Linux:** put `rho-gui` and `rho` on your `PATH`. For an entry in the application menu with the Rho icon, install the files from the archive's `linux/` folder:
+
+  ```sh
+  mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps
+  cp linux/io.github.ndari.rho.desktop ~/.local/share/applications/
+  cp linux/io.github.ndari.rho.svg ~/.local/share/icons/hicolor/scalable/apps/
+  ```
+
+  Wayland desktops take the window icon from this entry, so without it the window shows a generic icon.
+- **Windows:** unzip the archive and keep `rho-gui.exe` and `rho.exe` together.
+
 ## Using it
 
 The window works like the TUI:
@@ -60,4 +74,20 @@ CGO_ENABLED=0 go build -tags purego,production -o rho-gui .
 
 The GUI is built with [Wails](https://wails.io) v3 and its pure-Go backend (the `purego` tag), so no C compiler is needed and you can cross-compile with `GOOS` and `GOARCH`. On Windows, add `-ldflags "-H windowsgui"` so no console window opens.
 
+The icons are generated from `gui/build/appicon.svg` with `sh gui/build/icons.sh`. Release builds also run `gui/build/windows/syso.sh`, which adds the icon, a high-DPI manifest and version information to the Windows program, and `gui/build/darwin/bundle.sh` (on macOS), which builds `Rho.app`.
+
 The GUI lives in its own Go module (`gui/`), so building or testing the rest of Rho never needs Wails or the webview libraries. See section 18 of the [design spec](rho-spec.md) for how it is put together.
+
+## Signing macOS releases
+
+Releases are signed and notarized when these repository secrets are set; otherwise the macOS binaries and `Rho.app` are unsigned (ad-hoc signed).
+
+| Secret | Holds |
+|---|---|
+| `MACOS_SIGN_P12` | a Developer ID Application certificate with its private key, exported as `.p12` and base64 encoded |
+| `MACOS_SIGN_PASSWORD` | the `.p12` password |
+| `MACOS_NOTARY_KEY` | an App Store Connect API key (`.p8`), base64 encoded |
+| `MACOS_NOTARY_KEY_ID` | that key's ID |
+| `MACOS_NOTARY_ISSUER_ID` | the issuer ID shown with the key |
+
+GoReleaser signs and notarizes the `rho` and `rho-gui` binaries in the archives, and the `macos-app` job of the release workflow signs, notarizes and staples `Rho.app`.

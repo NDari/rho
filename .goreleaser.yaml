@@ -7,6 +7,8 @@ before:
     # The GUI embeds its web assets, so build them first.
     - npm --prefix gui/frontend ci
     - npm --prefix gui/frontend run build
+    # Icon, manifest and version information for rho-gui on Windows.
+    - sh gui/build/windows/syso.sh {{ .Major }}.{{ .Minor }}.{{ .Patch }}
 
 builds:
   - id: rho
@@ -66,6 +68,26 @@ archives:
     files:
       - LICENSE
       - docs/gui.md
+      - src: gui/build/linux/io.github.ndari.rho.desktop
+        dst: linux/io.github.ndari.rho.desktop
+      - src: gui/build/appicon.svg
+        dst: linux/io.github.ndari.rho.svg
+
+# Signs and notarizes the macOS binaries when the Apple credentials are
+# set as secrets (see gui/build/darwin/bundle.sh for what they hold).
+notarize:
+  macos:
+    - enabled: '{{ ne (index .Env "MACOS_SIGN_P12") "" }}'
+      ids: [rho, rho-gui]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
 
 checksum:
   name_template: checksums.txt
