@@ -8,9 +8,9 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 
 ## Architecture rules
 
-- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, `gui/`) consume the event stream from `core/events` and call the command API.
-- Keep package seams clean (see the package layout in the spec, section 3). Do not import `tui/`, `headless/` or `gui/` from `core/`.
-- `gui/` is a separate Go module that builds the `rho-gui` binary (spec section 18). Never import Wails or `gui/` from the root module.
+- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, and the GUI in the separate [rho-gui](https://github.com/NDari/rho-gui) repository) consume the event stream from `core/events` and call the command API.
+- Keep package seams clean (see the package layout in the spec, section 3). Do not import `tui/` or `headless/` from `core/`.
+- `core/` is also used by rho-gui (spec section 18), so treat its exported API as public: changes that break it need a matching change there.
 - JSON-RPC is only for extensions (and a later external RPC mode), never between core and built-in frontends.
 - Session files are append-only JSONL. Never rewrite existing entries.
 
@@ -19,7 +19,7 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 - Standard Go style: `gofmt`, `go vet`, idiomatic error handling (wrap with `%w`, no panics in library code).
 - Prefer libraries over writing our own code. Widely used, actively maintained, modern libraries are preferred: code used by many has fewer bugs than code written fresh. Adding dependencies is fine when they give a better all-in-one experience or let us write less code.
 - Platform-specific code goes in `_unix.go` / `_windows.go` files, not runtime `GOOS` checks scattered through logic.
-- No `CGO`. The `rho` binary must stay static, so dependencies must be pure Go. `rho-gui` is also built with `CGO_ENABLED=0` (Wails' pure-Go backend) but loads the system webview at runtime.
+- No `CGO`. The `rho` binary must stay static, so dependencies must be pure Go.
 
 ## Testing
 

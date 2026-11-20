@@ -8,7 +8,7 @@ In the TUI, `/config` changes common settings without editing the file: Up/Down 
 
 ## Updates
 
-Rho asks GitHub for the latest release at most once a day, when the TUI or the GUI starts (never in print mode), and shows a banner (TUI) or an offer to update and restart (GUI) when there is a newer one. `rho update` installs it. Set `update_check = false`, or the `RHO_NO_UPDATE_CHECK` environment variable, to stop the check; `rho update` still works. Builds of a modified checkout have no version and never check.
+Rho asks GitHub for the latest release at most once a day, when the TUI starts (never in print mode), and shows a banner when there is a newer one. `rho update` installs it. Set `update_check = false`, or the `RHO_NO_UPDATE_CHECK` environment variable, to stop the check; `rho update` still works. [Rho GUI](https://github.com/NDari/rho-gui) follows the same settings for its own updates. Builds of a modified checkout have no version and never check.
 
 ## Example
 

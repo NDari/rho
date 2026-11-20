@@ -3,7 +3,9 @@
 package update
 
 import (
+	"fmt"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -11,8 +13,37 @@ import (
 	"github.com/NDari/rho/core/config"
 )
 
-// Repo is the GitHub repository releases come from.
-const Repo = "NDari/rho"
+// Product describes a program released on GitHub that a Checker
+// updates.
+type Product struct {
+	// Repo is the GitHub repository the releases come from.
+	Repo string
+	// Archive starts the release archive names, as in
+	// rho_0.4.0_linux_amd64.tar.gz.
+	Archive string
+	// Programs are the programs a release archive holds. Install replaces
+	// the running one and those of the others that are next to it.
+	Programs []string
+	// App starts the name of the zip file holding the macOS app, as in
+	// Rho_0.4.0_macos.zip, or is "" when there is no app.
+	App string
+	// State is the file in the Rho home directory that keeps the last
+	// check's result.
+	State string
+}
+
+// CLI is the rho program.
+var CLI = Product{Repo: "NDari/rho", Archive: "rho", Programs: []string{"rho"}, State: "update.json"}
+
+// ArchiveName is the product's release archive for this platform.
+func (p Product) ArchiveName(version string) string {
+	return fmt.Sprintf("%s_%s_%s_%s%s", p.Archive, version, runtime.GOOS, runtime.GOARCH, archiveExt)
+}
+
+// AppName is the release file holding the product's macOS app.
+func (p Product) AppName(version string) string {
+	return fmt.Sprintf("%s_%s_macos.zip", p.App, version)
+}
 
 // GoInstallCmd updates a copy installed with go install.
 const GoInstallCmd = "go install github.com/NDari/rho/cmd/rho@latest"
@@ -26,7 +57,7 @@ type Method int
 const (
 	// Dev is a build from source without a version: no update checks.
 	Dev Method = iota
-	// Archive is a release archive or Rho.app: "rho update" replaces it.
+	// Archive is a release archive or macOS app, which Install replaces.
 	Archive
 	// GoInstall is a copy built by go install, updated with go install.
 	GoInstall

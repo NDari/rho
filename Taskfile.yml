@@ -1,0 +1,34 @@
+# Development tasks for https://taskfile.dev. Run `task --list` to see them.
+# Builds go to bin/. Arguments after `--` are passed on, for example
+# `task tui -- -c`.
+version: "3"
+
+vars:
+  RHO: bin/rho{{exeExt}}
+
+env:
+  CGO_ENABLED: "0"
+
+tasks:
+  tui:
+    desc: Build rho and start the TUI in the folder you ran task from
+    deps: [build]
+    dir: "{{.USER_WORKING_DIR}}"
+    interactive: true
+    cmds:
+      - "{{.ROOT_DIR}}/{{.RHO}} {{.CLI_ARGS}}"
+
+  build:
+    desc: Build rho into bin/
+    cmds:
+      - go build -o {{.RHO}} ./cmd/rho
+
+  install:
+    desc: Install rho into Go's bin folder
+    cmds:
+      - go install ./cmd/rho
+
+  test:
+    desc: Run the tests
+    cmds:
+      - go test ./...

@@ -16,15 +16,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 
 	"github.com/creativeprojects/go-selfupdate/update"
 )
-
-// programs are the binaries a release archive holds.
-var programs = []string{"rho", "rho-gui"}
 
 // maxDownload caps the size of a downloaded file.
 const maxDownload = 512 << 20
@@ -35,7 +31,7 @@ type Result struct {
 	Version string
 	// Exe is the new copy of the program that called Install.
 	Exe string
-	// App is the new Rho.app, when the program runs from one (macOS).
+	// App is the new macOS app, when the program runs from one.
 	App string
 	// Notes tell the user about anything left to do, such as adding a
 	// folder to PATH.
@@ -43,8 +39,8 @@ type Result struct {
 }
 
 // Install downloads rel and replaces the installation exe belongs to:
-// Rho.app when exe runs from it, else exe and the other Rho programs next
-// to it. When that folder is not writable, the new version goes to a
+// the product's macOS app when exe runs from one, else exe and the
+// product's other programs next to it. When that folder is not writable, the new version goes to a
 // folder in the user's home instead and Result.Notes says so.
 func (c *Checker) Install(ctx context.Context, rel *Release, exe string) (Result, error) {
 	exe, err := filepath.Abs(exe)
@@ -55,24 +51,19 @@ func (c *Checker) Install(ctx context.Context, rel *Release, exe string) (Result
 		exe = p
 	}
 	if app := appBundle(exe); app != "" {
+		if c.product().App == "" {
+			return Result{}, fmt.Errorf("%s is part of %s, which updates itself; install the %s release to use it on its own", filepath.Base(exe), filepath.Base(app), c.product().Archive)
+		}
 		return c.installApp(ctx, rel, app, filepath.Base(exe))
 	}
 	return c.installPrograms(ctx, rel, exe)
 }
 
-// ArchiveName is the release archive for this platform.
-func ArchiveName(version string) string {
-	return fmt.Sprintf("rho_%s_%s_%s%s", version, runtime.GOOS, runtime.GOARCH, archiveExt)
-}
-
-// AppName is the release file holding Rho.app.
-func AppName(version string) string { return fmt.Sprintf("Rho_%s_macos.zip", version) }
-
 func (c *Checker) installPrograms(ctx context.Context, rel *Release, exe string) (Result, error) {
 	dir := filepath.Dir(exe)
 	self := filepath.Base(exe)
 	var want []string
-	for _, p := range programs {
+	for _, p := range c.product().Programs {
 		name := exeName(p)
 		if name == self || fileExists(filepath.Join(dir, name)) {
 			want = append(want, name)
@@ -82,7 +73,7 @@ func (c *Checker) installPrograms(ctx context.Context, rel *Release, exe string)
 		want = append(want, self)
 	}
 
-	asset := ArchiveName(rel.Version)
+	asset := c.product().ArchiveName(rel.Version)
 	data, err := c.download(ctx, rel, asset)
 	if err != nil {
 		return Result{}, err
@@ -121,7 +112,8 @@ func (c *Checker) installPrograms(ctx context.Context, rel *Release, exe string)
 }
 
 func (c *Checker) installApp(ctx context.Context, rel *Release, app, self string) (Result, error) {
-	asset := AppName(rel.Version)
+	asset := c.product().AppName(rel.Version)
+	bundle := c.product().App + ".app"
 	data, err := c.download(ctx, rel, asset)
 	if err != nil {
 		return Result{}, err
@@ -137,7 +129,7 @@ func (c *Checker) installApp(ctx context.Context, rel *Release, app, self string
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return Result{}, err
 		}
-		res.Notes = append(res.Notes, fmt.Sprintf("%s is not writable, so Rho %s was installed to %s instead. The old Rho.app in %s was left as it is.", parent, rel.Version, target, parent))
+		res.Notes = append(res.Notes, fmt.Sprintf("%s is not writable, so %s %s was installed to %s instead. The old %s in %s was left as it is.", parent, c.product().App, rel.Version, target, bundle, parent))
 		parent = target
 	}
 	tmp, err := os.MkdirTemp(parent, ".rho-update-")
@@ -148,9 +140,9 @@ func (c *Checker) installApp(ctx context.Context, rel *Release, app, self string
 	if err := unzipAll(data, tmp); err != nil {
 		return Result{}, fmt.Errorf("unpack %s: %w", asset, err)
 	}
-	fresh := filepath.Join(tmp, "Rho.app")
+	fresh := filepath.Join(tmp, bundle)
 	if !fileExists(filepath.Join(fresh, "Contents", "MacOS", self)) {
-		return Result{}, fmt.Errorf("%s has no Rho.app/Contents/MacOS/%s", asset, self)
+		return Result{}, fmt.Errorf("%s has no %s/Contents/MacOS/%s", asset, bundle, self)
 	}
 	dest := filepath.Join(parent, filepath.Base(app))
 	old := filepath.Join(tmp, "old.app")

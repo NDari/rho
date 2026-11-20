@@ -16,9 +16,6 @@ import (
 // CheckInterval is how often Check contacts GitHub.
 const CheckInterval = 24 * time.Hour
 
-// stateFile, in the Rho home directory, keeps the last check's result.
-const stateFile = "update.json"
-
 // Release is a published release.
 type Release struct {
 	// Version has no "v" prefix.
@@ -31,6 +28,8 @@ type Release struct {
 type Checker struct {
 	// Current is the running program.
 	Current Current
+	// Product is what to update; the zero value means CLI.
+	Product Product
 	// Home is the Rho home directory, where the last result is kept.
 	Home string
 	// API is the GitHub API root; empty means https://api.github.com.
@@ -81,7 +80,7 @@ func (c *Checker) Latest(ctx context.Context) (*Release, error) {
 	if api == "" {
 		api = "https://api.github.com"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api+"/repos/"+Repo+"/releases/latest", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api+"/repos/"+c.product().Repo+"/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +115,13 @@ func (c *Checker) Latest(ctx context.Context) (*Release, error) {
 	return rel, nil
 }
 
+func (c *Checker) product() Product {
+	if c.Product.Repo == "" {
+		return CLI
+	}
+	return c.Product
+}
+
 func (c *Checker) now() time.Time {
 	if c.Now != nil {
 		return c.Now()
@@ -132,7 +138,7 @@ func (c *Checker) client() *http.Client {
 
 func (c *Checker) load() (state, error) {
 	var s state
-	data, err := os.ReadFile(filepath.Join(c.Home, stateFile))
+	data, err := os.ReadFile(filepath.Join(c.Home, c.product().State))
 	if err != nil {
 		return s, err
 	}
@@ -155,7 +161,7 @@ func (c *Checker) save(s state) {
 	}
 	_, werr := tmp.Write(data)
 	cerr := tmp.Close()
-	if werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(c.Home, stateFile)) != nil {
+	if werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(c.Home, c.product().State)) != nil {
 		_ = os.Remove(tmp.Name())
 	}
 }

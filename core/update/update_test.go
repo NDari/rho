@@ -62,20 +62,29 @@ func TestDetectAndNotice(t *testing.T) {
 	}
 }
 
+// gui is a product with two programs and a macOS app, like rho-gui.
+var gui = Product{Repo: "NDari/rho-gui", Archive: "rho-gui", Programs: []string{"rho-gui", "rho"}, App: "Rho", State: "update-gui.json"}
+
 // server fakes the GitHub API and release downloads for a v0.3.0
 // release.
 type server struct {
 	*httptest.Server
+	repo   string
 	files  map[string][]byte
 	sums   map[string]string // overrides the checksums
 	checks atomic.Int32
 }
 
+// newServer serves a release of CLI.
 func newServer(t *testing.T, files map[string][]byte) *server {
-	s := &server{files: files, sums: map[string]string{}}
+	return newRepoServer(t, CLI.Repo, files)
+}
+
+func newRepoServer(t *testing.T, repo string, files map[string][]byte) *server {
+	s := &server{repo: repo, files: files, sums: map[string]string{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/repos/"+Repo+"/releases/latest":
+		case r.URL.Path == "/repos/"+s.repo+"/releases/latest":
 			s.checks.Add(1)
 			type asset struct {
 				Name string `json:"name"`
@@ -111,9 +120,16 @@ func newServer(t *testing.T, files map[string][]byte) *server {
 	return s
 }
 
-// checker checks for updates to version 0.2.0.
+// checker checks for updates to version 0.2.0 of CLI.
 func (s *server) checker(home string) *Checker {
 	return &Checker{Current: Current{Version: "0.2.0", Method: Archive}, Home: home, API: s.URL}
+}
+
+// guiChecker checks for updates to version 0.2.0 of gui.
+func (s *server) guiChecker(home string) *Checker {
+	c := s.checker(home)
+	c.Product = gui
+	return c
 }
 
 func TestCheckCachesForADay(t *testing.T) {
@@ -206,13 +222,43 @@ func installed(t *testing.T, dir string, names ...string) {
 
 func TestInstallReplacesProgramsNextToEachOther(t *testing.T) {
 	dir := t.TempDir()
-	installed(t, dir, "rho", "rho-gui")
-	name := ArchiveName("0.3.0")
-	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{
+	installed(t, dir, "rho-gui", "rho")
+	name := gui.ArchiveName("0.3.0")
+	s := newRepoServer(t, gui.Repo, map[string][]byte{name: archive(t, name, map[string]string{
 		exeName("rho"):     "new rho",
 		exeName("rho-gui"): "new rho-gui",
 		"LICENSE":          "license",
 	})})
+	c := s.guiChecker(t.TempDir())
+	rel, err := c.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Install(context.Background(), rel, filepath.Join(dir, exeName("rho-gui")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Notes) > 0 {
+		t.Errorf("unexpected notes: %v", res.Notes)
+	}
+	if got, err := filepath.EvalSymlinks(res.Exe); err != nil || got != mustEval(t, filepath.Join(dir, exeName("rho-gui"))) {
+		t.Errorf("Exe = %q", res.Exe)
+	}
+	for _, n := range []string{"rho", "rho-gui"} {
+		if got := readFile(t, filepath.Join(dir, exeName(n))); got != "new "+n {
+			t.Errorf("%s = %q", n, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "LICENSE")); err == nil {
+		t.Error("files other than the programs were unpacked")
+	}
+}
+
+func TestInstallCLILeavesOtherProgramsAlone(t *testing.T) {
+	dir := t.TempDir()
+	installed(t, dir, "rho", "rho-gui")
+	name := CLI.ArchiveName("0.3.0")
+	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{exeName("rho"): "new rho"})})
 	c := s.checker(t.TempDir())
 	rel, err := c.Latest(context.Background())
 	if err != nil {
@@ -225,16 +271,11 @@ func TestInstallReplacesProgramsNextToEachOther(t *testing.T) {
 	if len(res.Notes) > 0 {
 		t.Errorf("unexpected notes: %v", res.Notes)
 	}
-	if got, err := filepath.EvalSymlinks(res.Exe); err != nil || got != mustEval(t, filepath.Join(dir, exeName("rho"))) {
-		t.Errorf("Exe = %q", res.Exe)
+	if got := readFile(t, filepath.Join(dir, exeName("rho"))); got != "new rho" {
+		t.Errorf("rho = %q", got)
 	}
-	for _, n := range []string{"rho", "rho-gui"} {
-		if got := readFile(t, filepath.Join(dir, exeName(n))); got != "new "+n {
-			t.Errorf("%s = %q", n, got)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(dir, "LICENSE")); err == nil {
-		t.Error("files other than the programs were unpacked")
+	if got := readFile(t, filepath.Join(dir, exeName("rho-gui"))); got != "old rho-gui" {
+		t.Errorf("rho-gui = %q", got)
 	}
 }
 
@@ -249,29 +290,29 @@ func mustEval(t *testing.T, p string) string {
 
 func TestInstallOnlyTouchesProgramsThatAreThere(t *testing.T) {
 	dir := t.TempDir()
-	installed(t, dir, "rho")
-	name := ArchiveName("0.3.0")
-	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{
+	installed(t, dir, "rho-gui")
+	name := gui.ArchiveName("0.3.0")
+	s := newRepoServer(t, gui.Repo, map[string][]byte{name: archive(t, name, map[string]string{
 		exeName("rho"):     "new rho",
 		exeName("rho-gui"): "new rho-gui",
 	})})
-	c := s.checker(t.TempDir())
+	c := s.guiChecker(t.TempDir())
 	rel, err := c.Latest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Install(context.Background(), rel, filepath.Join(dir, exeName("rho"))); err != nil {
+	if _, err := c.Install(context.Background(), rel, filepath.Join(dir, exeName("rho-gui"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, exeName("rho-gui"))); err == nil {
-		t.Error("rho-gui was added")
+	if _, err := os.Stat(filepath.Join(dir, exeName("rho"))); err == nil {
+		t.Error("rho was added")
 	}
 }
 
 func TestInstallRejectsBadChecksum(t *testing.T) {
 	dir := t.TempDir()
 	installed(t, dir, "rho")
-	name := ArchiveName("0.3.0")
+	name := CLI.ArchiveName("0.3.0")
 	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{exeName("rho"): "evil"})})
 	s.sums[name] = strings.Repeat("0", 64)
 	c := s.checker(t.TempDir())
@@ -309,17 +350,15 @@ func TestInstallFallsBackWhenNotWritable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := t.TempDir()
-	installed(t, dir, "rho", "rho-gui")
+	installed(t, dir, "rho")
 	if err := os.Chmod(dir, 0o555); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 	t.Setenv("PATH", dir)
 
-	name := ArchiveName("0.3.0")
-	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{
-		"rho": "new rho", "rho-gui": "new rho-gui",
-	})})
+	name := CLI.ArchiveName("0.3.0")
+	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{"rho": "new rho"})})
 	c := s.checker(t.TempDir())
 	rel, err := c.Latest(context.Background())
 	if err != nil {
@@ -333,13 +372,11 @@ func TestInstallFallsBackWhenNotWritable(t *testing.T) {
 	if res.Exe != filepath.Join(bin, "rho") {
 		t.Errorf("Exe = %q", res.Exe)
 	}
-	for _, n := range []string{"rho", "rho-gui"} {
-		if got := readFile(t, filepath.Join(bin, n)); got != "new "+n {
-			t.Errorf("%s = %q", n, got)
-		}
-		if got := readFile(t, filepath.Join(dir, n)); got != "old "+n {
-			t.Errorf("old %s = %q", n, got)
-		}
+	if got := readFile(t, filepath.Join(bin, "rho")); got != "new rho" {
+		t.Errorf("rho = %q", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "rho")); got != "old rho" {
+		t.Errorf("old rho = %q", got)
 	}
 	notes := strings.Join(res.Notes, "\n")
 	if !strings.Contains(notes, "not writable") || !strings.Contains(notes, "Add "+bin+" to your PATH") {
@@ -369,8 +406,8 @@ func TestInstallApp(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(macos, "stale"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	name := AppName("0.3.0")
-	s := newServer(t, map[string][]byte{name: archive(t, name, map[string]string{
+	name := gui.AppName("0.3.0")
+	s := newRepoServer(t, gui.Repo, map[string][]byte{name: archive(t, name, map[string]string{
 		"Rho.app/":                       "",
 		"Rho.app/Contents/":              "",
 		"Rho.app/Contents/MacOS/":        "",
@@ -378,7 +415,7 @@ func TestInstallApp(t *testing.T) {
 		"Rho.app/Contents/MacOS/rho":     "new rho",
 		"Rho.app/Contents/Info.plist":    "plist",
 	})})
-	c := s.checker(t.TempDir())
+	c := s.guiChecker(t.TempDir())
 	rel, err := c.Latest(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -418,5 +455,21 @@ func TestAppBundle(t *testing.T) {
 	}
 	if got := appBundle(filepath.FromSlash("/usr/local/bin/rho")); got != "" {
 		t.Errorf("appBundle = %q", got)
+	}
+}
+
+func TestCLIInsideAppIsNotReplaced(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("app bundles exist only on macOS")
+	}
+	macos := filepath.Join(t.TempDir(), "Rho.app", "Contents", "MacOS")
+	if err := os.MkdirAll(macos, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installed(t, macos, "rho")
+	c := &Checker{Current: Current{Version: "0.2.0", Method: Archive}, Home: t.TempDir()}
+	_, err := c.Install(context.Background(), &Release{Version: "0.3.0"}, filepath.Join(macos, "rho"))
+	if err == nil || !strings.Contains(err.Error(), "part of Rho.app") {
+		t.Fatalf("err = %v", err)
 	}
 }

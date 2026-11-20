@@ -12,51 +12,50 @@ Rho keeps the core small (an agent loop, four tools, a session tree, compaction 
 
 Download the file for your platform from the [releases page](https://github.com/NDari/rho/releases/latest):
 
-| Platform | File | Contains |
-|---|---|---|
-| Linux (x86-64 or ARM64) | `rho_<version>_linux_<arch>.tar.gz` | `rho` and `rho-gui` |
-| Windows (x86-64) | `rho_<version>_windows_amd64.zip` | `rho.exe` and `rho-gui.exe` |
-| macOS (Apple silicon) | `Rho_<version>_macos.zip` | `Rho.app`, the GUI, with `rho` inside |
-| macOS (Apple silicon), terminal only | `rho_<version>_darwin_arm64.tar.gz` | `rho` |
+| Platform | File |
+|---|---|
+| Linux (x86-64 or ARM64) | `rho_<version>_linux_<arch>.tar.gz` |
+| macOS (Apple silicon) | `rho_<version>_darwin_arm64.tar.gz` |
+| Windows (x86-64) | `rho_<version>_windows_amd64.zip` |
 
-On Linux and Windows, unpack the archive and put the programs in a folder on your `PATH` (for example `~/.local/bin`), keeping `rho` and `rho-gui` together. On macOS, move `Rho.app` to Applications. [docs/gui.md](docs/gui.md#installing) covers the first start of the unsigned app, the application menu entry on Linux, and using the `rho` inside `Rho.app` from a terminal.
+Unpack it and put `rho` in a folder on your `PATH`, for example `~/.local/bin`.
+
+For a desktop app, see [Rho GUI](https://github.com/NDari/rho-gui), which is released on its own.
 
 macOS and Linux are supported; Windows is in beta and needs [Git for Windows](https://git-scm.com/download/win) (Git Bash).
 
 ### Updating
 
-Rho looks for a new release once a day. When there is one, the TUI shows a banner when it starts, and the GUI offers to update and restart. To update from a terminal, quit Rho and run:
+Rho looks for a new release once a day. When there is one, the TUI shows a banner when it starts. To update, quit Rho and run:
 
 ```sh
 rho update
 ```
 
-This replaces `rho` and `rho-gui` (or `Rho.app`) where they are. If that folder is not writable, the new version goes to `~/.local/bin` instead (`~/Applications` for `Rho.app`, `%LOCALAPPDATA%\Programs\Rho` on Windows), and Rho tells you if you need to add that folder to your `PATH`. To turn the daily check off, set `update_check = false` in `~/.rho/config.toml` or set the `RHO_NO_UPDATE_CHECK` environment variable.
+This replaces `rho` where it is. If that folder is not writable, the new version goes to `~/.local/bin` instead (`%LOCALAPPDATA%\Programs\Rho` on Windows), and Rho tells you if you need to add that folder to your `PATH`. To turn the daily check off, set `update_check = false` in `~/.rho/config.toml` or set the `RHO_NO_UPDATE_CHECK` environment variable.
 
 ### With Go
 
-The CLI (the `rho` command: the TUI and headless mode) installs with Go 1.27 or newer:
+With Go 1.27 or newer:
 
 ```sh
 go install github.com/NDari/rho/cmd/rho@latest
 ```
 
-Run the same command again to update; `rho update` reminds you of it.
+This puts `rho` in Go's `bin` folder (`go env GOPATH`, then `bin`), which needs to be on your `PATH`. Run the same command again to update; `rho update` reminds you of it.
 
-`go install` cannot build the GUI, because its web frontend has to be built with Node.js first. To install both from source, you need Go 1.27 or newer and Node.js 22.12 or newer:
+### Working on Rho
 
-```sh
-git clone https://github.com/NDari/rho.git
-cd rho
-go install ./cmd/rho
-cd gui/frontend
-npm ci
-npm run build
-cd ..
-CGO_ENABLED=0 go build -tags purego,production -o "$(go env GOPATH)/bin/rho-gui" .
-```
+The repository has a Taskfile for [Task](https://taskfile.dev):
 
-Both end up in Go's `bin` folder (`go env GOPATH`, then `bin`), which needs to be on your `PATH`. A GUI built this way does not look for updates; pull and build again to update it.
+| Task | What it does |
+|---|---|
+| `task tui` | builds `bin/rho` and starts the TUI in the folder you ran `task` from |
+| `task build` | builds `bin/rho` |
+| `task install` | installs `rho` into Go's `bin` folder |
+| `task test` | runs the tests |
+
+Arguments after `--` go to `rho`, for example `task tui -- -c`. To try your build on another project, run `task -d path/to/rho tui` from that project.
 
 ## Quick start
 
@@ -94,7 +93,7 @@ See [docs/configuration.md](docs/configuration.md) for all settings.
 
 - **Interactive TUI** built with Bubble Tea: streaming markdown, collapsible tool cards with live bash output, syntax-highlighted diffs (side by side on wide terminals), transcript search, themes.
 - **Headless mode** for scripting and tests.
-- **Desktop GUI** (`rho-gui`, early): the same sessions and commands in a native window. See [docs/gui.md](docs/gui.md).
+- **Desktop GUI** ([Rho GUI](https://github.com/NDari/rho-gui), early, released separately): the same sessions and commands in a desktop window.
 - **Providers:** any OpenAI-compatible Chat Completions endpoint (OpenAI, llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, Gemini), plus the OpenAI Responses API. Anthropic is planned.
 - **XML tool calling** for models and gateways without native tool calls, plus per-provider rate limits. See [docs/configuration.md](docs/configuration.md#models-without-native-tool-calling).
 - **Four tools:** `read`, `write`, `edit` (exact replacement, line endings preserved) and `bash` (process tree killed on cancel).

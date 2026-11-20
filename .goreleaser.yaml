@@ -2,83 +2,30 @@ version: 2
 
 project_name: rho
 
-before:
-  hooks:
-    # The GUI embeds its web assets, so build them first.
-    - npm --prefix gui/frontend ci
-    - npm --prefix gui/frontend run build
-    # Icon, manifest and version information for rho-gui on Windows.
-    - sh gui/build/windows/syso.sh {{ .Major }}.{{ .Minor }}.{{ .Patch }}
-
-# Release platforms: Linux (amd64, arm64), Windows (amd64) and macOS
-# (Apple silicon). The macOS builds have their own ids, so the macOS CLI
-# archive holds only rho and rho-gui goes into Rho.app.
+# Release platforms: Linux (amd64, arm64), macOS (Apple silicon) and
+# Windows (amd64). The GUI is released from github.com/NDari/rho-gui.
 builds:
   - id: rho
     main: ./cmd/rho
     binary: rho
     env:
       - CGO_ENABLED=0
-    goos: [linux, windows]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
-      - goos: windows
-        goarch: arm64
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: rho-darwin
-    main: ./cmd/rho
-    binary: rho
-    env:
-      - CGO_ENABLED=0
-    goos: [darwin]
-    goarch: [arm64]
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: rho-gui
-    dir: gui
-    main: .
-    binary: rho-gui
-    env:
-      - CGO_ENABLED=0
-    goos: [linux, windows]
-    goarch: [amd64, arm64]
-    ignore:
-      - goos: windows
-        goarch: arm64
-    tags: [purego, production]
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-    overrides:
-      - goos: windows
+      - goos: darwin
         goarch: amd64
-        ldflags:
-          - -s -w -H windowsgui -X main.version={{.Version}}
-  - id: rho-gui-darwin
-    dir: gui
-    main: .
-    binary: rho-gui
-    env:
-      - CGO_ENABLED=0
-    goos: [darwin]
-    goarch: [arm64]
-    tags: [purego, production]
+      - goos: windows
+        goarch: arm64
     flags:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
 
 archives:
-  # One archive per platform with rho and rho-gui (rho-gui uses rho to run
-  # Go extensions). "rho update" expects this name and layout.
+  # "rho update" expects this name and layout.
   - id: rho
-    ids: [rho, rho-gui]
+    ids: [rho]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -88,34 +35,13 @@ archives:
       - README.md
       - docs/configuration.md
       - docs/extensions.md
-      - docs/gui.md
-      - src: gui/build/linux/io.github.ndari.rho.desktop
-        dst: linux/io.github.ndari.rho.desktop
-      - src: gui/build/appicon.svg
-        dst: linux/io.github.ndari.rho.svg
-  # macOS: the CLI on its own. The GUI ships as Rho.app.
-  - id: rho-darwin
-    ids: [rho-darwin]
-    formats: [tar.gz]
-    files:
-      - LICENSE
-      - README.md
-      - docs/configuration.md
-      - docs/extensions.md
-  # Not published: the macos-app job builds Rho.app from it.
-  - id: rho-app
-    ids: [rho-gui-darwin, rho-darwin]
-    name_template: "rho-gui_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    formats: [tar.gz]
-    files:
-      - LICENSE
 
-# Signs and notarizes the macOS binaries when the Apple credentials are
-# set as secrets (see gui/build/darwin/bundle.sh for what they hold).
+# Signs and notarizes the macOS binary when the Apple credentials are set
+# as secrets (see docs/releasing.md).
 notarize:
   macos:
     - enabled: '{{ ne (index .Env "MACOS_SIGN_P12") "" }}'
-      ids: [rho-darwin, rho-gui-darwin]
+      ids: [rho]
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
@@ -128,13 +54,6 @@ notarize:
 
 checksum:
   name_template: checksums.txt
-  ids: [rho, rho-darwin]
-
-# The release stays a draft until the macos-app job has added Rho.app and
-# its checksum, so "rho update" never sees a release without them.
-release:
-  ids: [rho, rho-darwin]
-  draft: true
 
 changelog:
   use: git
