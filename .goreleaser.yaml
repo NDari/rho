@@ -56,7 +56,8 @@ archives:
       - docs/configuration.md
       - docs/extensions.md
   - id: rho-gui
-    ids: [rho-gui]
+    # rho comes along: rho-gui uses it to run Go extensions.
+    ids: [rho-gui, rho]
     name_template: "rho-gui_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:

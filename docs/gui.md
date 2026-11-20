@@ -15,7 +15,9 @@ rho-gui -session FILE   # open a specific session file
 rho-gui -no-extensions
 ```
 
-Configure models in `~/.rho/config.toml` first, as described in the [README](../README.md#quick-start) and [configuration.md](configuration.md).
+Configure models in `~/.rho/config.toml` first, as described in the [README](../README.md#quick-start) and [configuration.md](configuration.md). If Rho cannot start (for example because no model is configured yet), the window shows the error with an example configuration; fix the file and press **Try again**.
+
+To work in another project, use `/open` (or **Open another folder…** in an empty conversation) to pick a folder. `/open path/to/project` skips the dialog. Switching starts a new session in that folder.
 
 ## Requirements
 
@@ -29,14 +31,17 @@ The GUI draws its window with the system webview, which must be installed:
 
 The `rho` command needs none of these; it stays a single static binary.
 
+The `rho-gui` archives also contain `rho`. Keep the two side by side: the GUI uses `rho` to run Go extensions, which starts them faster and with less memory than running them through `rho-gui`.
+
 ## Using it
 
 The window works like the TUI:
 
 - **Enter** sends, **Shift+Enter** or **Alt+Enter** adds a line.
 - While the agent works, **Enter** steers it (interrupts after the current tool), **Alt+Enter** queues a follow-up and **Esc** (or the Stop button) cancels.
-- Type `/` for commands: `/model`, `/new`, `/resume`, `/rewind`, `/fork`, `/tree`, `/aside`, `/back`, `/compact`, `/context`, `/label`, `/copy`, `/theme`, `/config`, `/extensions`, `/reload`, `/help` and `/quit`, plus prompt templates and extension commands. **Tab** completes a command.
-- `@path` attaches a file, as in the TUI.
+- Type `/` for commands: `/model`, `/new`, `/open`, `/resume`, `/rewind`, `/fork`, `/tree`, `/aside`, `/back`, `/compact`, `/context`, `/label`, `/copy`, `/theme`, `/config`, `/extensions`, `/reload`, `/help` and `/quit`, plus prompt templates and extension commands. **Tab** completes a command.
+- `@path` attaches a file, as in the TUI; typing `@` completes file names. **Esc** hides a completion.
+- **Ctrl+F** finds text in the conversation (**Enter** and **Shift+Enter** move between matches). Collapsed tool output is not searched; **Ctrl+O** expands it.
 - Click a tool card's header to expand or collapse it. **Ctrl+O** expands all of them, **Ctrl+T** shows the model's thinking.
 - `/theme` picks light, dark or the system setting. The GUI keeps this choice itself; the `theme` setting in the config file is for the TUI.
 - Links in answers open in your browser.

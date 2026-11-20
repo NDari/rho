@@ -375,9 +375,13 @@ A desktop frontend built with [Wails](https://wails.io) v3. It is a frontend lik
 ### Structure
 - **Go bridge** (`gui/`): creates the App, forwards each event to the frontend as JSON (`events.Marshal`) over Wails events, exposes the command API (send, steer, follow-up, cancel, model, sessions, branching, compaction, settings, extensions) as bound service methods, and implements the extension UI (`Confirm`, `Select`, `Input`, `Notify`, `SetStatus`) as modal dialogs answered by the frontend.
 - **Frontend** (`gui/frontend/`): Svelte + TypeScript, built with Vite; the built assets are embedded in the binary.
-- **Shared view helpers** in `core/app` (transcript rebuilding, message lists for rewind and fork, the session tree, `@file` attachments) keep session logic out of both frontends, so the TUI and GUI only differ in presentation.
+- **Shared view helpers** in `core/app` (transcript rebuilding, message lists for rewind and fork, the session tree, `@file` attachments and completion) keep session logic out of both frontends, so the TUI and GUI only differ in presentation.
 
 ### Behavior
 - Same capabilities as the TUI (§10): streaming markdown and thinking, tool cards with live output, diffs from the structured display data, status bar (model, context, cost, position), steering and follow-ups, the slash commands, prompt templates and extension commands.
 - Keys follow the TUI where it makes sense: Enter sends, Shift+Enter adds a line, while working Enter steers and Alt+Enter queues a follow-up, Esc cancels.
 - Light and dark themes; the GUI follows the system setting unless the user picks one.
+- Ctrl+F searches the rendered transcript (what is on screen; collapsed tool output is not searched).
+- The window can switch to another project directory (`/open`, a native folder dialog) with a new session, without restarting.
+- When the project cannot be opened (no model configured, a broken config file), the window still opens and shows the error, an example configuration and a way to try again, since a GUI started from a desktop launcher has no terminal for the message.
+- Go extensions run as `<host> ext-host <file>`. `rho-gui` prefers a `rho` binary next to itself (or on `PATH` with the same version) as the host, because starting `rho-gui` again would load the GUI libraries in every extension process; it falls back to itself. The `rho-gui` archives include `rho` for this reason.
