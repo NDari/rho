@@ -102,6 +102,9 @@ export class Store {
             cancelled: !!it.cancelled,
             streaming: false,
             composing: "",
+            requested: 0,
+            thinkStart: 0,
+            thinkEnd: 0,
           });
           break;
         case "tool": {
@@ -164,20 +167,34 @@ export class Store {
             cancelled: false,
             streaming: true,
             composing: "",
+            requested: 0,
+            thinkStart: 0,
+            thinkEnd: 0,
           }) as Extract<Item, { kind: "assistant" }>;
         }
+        // A retry reuses the empty item and starts the wait again.
+        this.cur.requested = Date.now();
         break;
       case "text_delta":
         if (this.cur) {
           this.cur.text += e.text;
           this.cur.composing = "";
+          if (e.text.trim()) endThinking(this.cur);
         }
         break;
       case "thinking_delta":
-        if (this.cur) this.cur.thinking += e.text;
+        if (this.cur) {
+          this.cur.thinking += e.text;
+          // Thinking that resumes after text continues the same span.
+          if (!this.cur.thinkStart) this.cur.thinkStart = Date.now();
+          this.cur.thinkEnd = 0;
+        }
         break;
       case "tool_call_delta":
-        if (this.cur && e.name) this.cur.composing = e.name;
+        if (this.cur && e.name) {
+          this.cur.composing = e.name;
+          endThinking(this.cur);
+        }
         break;
       case "message_end":
         if (e.message.role === "user") {
@@ -185,6 +202,7 @@ export class Store {
           this.add({ kind: "user", text, attached });
         } else if (e.message.role === "assistant" && this.cur) {
           this.cur.text = resultText(e.message.content);
+          endThinking(this.cur);
           this.cur.streaming = false;
           this.cur.composing = "";
           this.cur.cancelled = e.message.meta?.stop_reason === "cancelled";
@@ -285,6 +303,7 @@ export class Store {
       case "turn_end":
         this.busy = false;
         if (this.cur) {
+          endThinking(this.cur);
           this.cur.streaming = false;
           this.dropIfEmpty(this.cur);
           this.cur = null;
@@ -313,3 +332,9 @@ export class Store {
 }
 
 export const store = new Store();
+
+// endThinking records that an assistant message's thinking ended now, if
+// it was going.
+function endThinking(it: Extract<Item, { kind: "assistant" }>) {
+  if (it.thinkStart && !it.thinkEnd) it.thinkEnd = Date.now();
+}

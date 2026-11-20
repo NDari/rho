@@ -37,6 +37,18 @@ export function duration(ms: number): string {
   return Math.floor(ms / 60_000) + "m" + Math.round((ms % 60_000) / 1000) + "s";
 }
 
+/** A time to the nearest second: "14s", "2m5s". */
+export function elapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m" + (s % 60) + "s";
+}
+
+/** The time of day on a 24-hour clock: "14:10:22". */
+export function clock(ms: number): string {
+  const d = new Date(ms);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
 export function oneLine(s: string): string {
   return s.split(/\s+/).filter(Boolean).join(" ");
 }

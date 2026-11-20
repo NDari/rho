@@ -650,20 +650,27 @@ func (m *Model) handleEvent(e events.Event) {
 			m.cur = &assistantItem{streaming: true}
 			m.addItem(m.cur)
 		}
+		// A retry reuses the empty item and starts the wait again.
+		m.cur.requested = time.Now()
 	case events.TextDelta:
 		if m.cur != nil {
 			m.cur.text += ev.Text
 			m.cur.composing = ""
+			if strings.TrimSpace(ev.Text) != "" {
+				m.cur.endThinking(time.Now())
+			}
 			m.cur.touch()
 		}
 	case events.ThinkingDelta:
 		if m.cur != nil {
 			m.cur.thinking += ev.Text
+			m.cur.startThinking(time.Now())
 			m.cur.touch()
 		}
 	case events.ToolCallDelta:
 		if m.cur != nil && ev.Name != "" {
 			m.cur.composing = ev.Name
+			m.cur.endThinking(time.Now())
 			m.cur.touch()
 		}
 	case events.MessageEnd:
@@ -673,6 +680,7 @@ func (m *Model) handleEvent(e events.Event) {
 		case provider.RoleAssistant:
 			if m.cur != nil {
 				m.cur.text = ev.Message.TextContent()
+				m.cur.endThinking(time.Now())
 				m.cur.streaming = false
 				m.cur.composing = ""
 				m.cur.cancelled = ev.Message.Meta.StopReason == provider.StopCancelled
@@ -742,6 +750,7 @@ func (m *Model) handleEvent(e events.Event) {
 	case events.TurnEnd:
 		m.busy = false
 		if m.cur != nil {
+			m.cur.endThinking(time.Now())
 			m.cur.streaming = false
 			m.cur.touch()
 			m.cur = nil

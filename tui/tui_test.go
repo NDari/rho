@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -150,5 +151,41 @@ func TestKeyBindingsText(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+}
+
+func TestThinkingTimes(t *testing.T) {
+	rc := &renderCtx{width: 80, theme: DarkTheme, st: newStyles(DarkTheme), spinner: "*"}
+	text := func(a *assistantItem) string {
+		a.touch()
+		return stripANSI(strings.Join(a.render(rc), "\n"))
+	}
+	a := &assistantItem{streaming: true, requested: time.Now().Add(-3 * time.Second)}
+	if got := text(a); !strings.Contains(got, "* waiting for the model · 3s") {
+		t.Errorf("waiting: %q", got)
+	}
+
+	a.thinking = "hmm"
+	a.startThinking(time.Now().Add(-14 * time.Second))
+	if got := text(a); !strings.Contains(got, "∴ Thinking 14s * · 1 line") {
+		t.Errorf("thinking: %q", got)
+	}
+
+	end := time.Date(2026, 11, 20, 14, 10, 22, 0, time.Local)
+	a.thinkStart = end.Add(-15 * time.Second)
+	a.endThinking(end)
+	a.streaming = false
+	if got := text(a); !strings.Contains(got, "∴ Thought for 15s · 14:10:22 · 1 line") {
+		t.Errorf("thought: %q", got)
+	}
+	rc.showThinking = true
+	if got := text(a); !strings.Contains(got, "∴ Thought for 15s · 14:10:22\n┊ hmm") {
+		t.Errorf("thought, shown: %q", got)
+	}
+
+	// A transcript loaded from the session has no times.
+	rc.showThinking = false
+	if got := text(&assistantItem{thinking: "hmm"}); !strings.Contains(got, "∴ Thought · 1 line") {
+		t.Errorf("loaded: %q", got)
 	}
 }

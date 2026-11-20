@@ -100,24 +100,69 @@ type assistantItem struct {
 	composing string
 	cancelled bool
 	sm        streamingMarkdown
+	// requested is when the request was sent; thinkStart and thinkEnd
+	// bracket the thinking. They are zero in a transcript loaded from the
+	// session, which does not keep them.
+	requested  time.Time
+	thinkStart time.Time
+	thinkEnd   time.Time
 }
 
 func (a *assistantItem) empty() bool {
 	return a.text == "" && a.thinking == "" && a.composing == ""
 }
 
+// startThinking records thinking output at now. Thinking that resumes
+// after text continues the same span.
+func (a *assistantItem) startThinking(now time.Time) {
+	if a.thinkStart.IsZero() {
+		a.thinkStart = now
+	}
+	a.thinkEnd = time.Time{}
+}
+
+// endThinking records that the thinking ended at now, if it was going.
+func (a *assistantItem) endThinking(now time.Time) {
+	if !a.thinkStart.IsZero() && a.thinkEnd.IsZero() {
+		a.thinkEnd = now
+	}
+}
+
+// thinkingLabel is "∴ Thinking 14s ⠋" while the model thinks and
+// "∴ Thought for 15s · 14:10:22" (when it finished) afterwards, or "" when
+// the times are not known.
+func (a *assistantItem) thinkingLabel(rc *renderCtx) string {
+	switch {
+	case a.thinkStart.IsZero():
+		return ""
+	case a.thinkEnd.IsZero() && a.streaming:
+		return fmt.Sprintf("∴ Thinking %s %s", elapsed(time.Since(a.thinkStart)), rc.spinner)
+	case a.thinkEnd.IsZero():
+		return "∴ Thought"
+	default:
+		return fmt.Sprintf("∴ Thought for %s · %s", elapsed(a.thinkEnd.Sub(a.thinkStart)), a.thinkEnd.Format("15:04:05"))
+	}
+}
+
 func (a *assistantItem) render(rc *renderCtx) []string {
 	return a.get(rc, a.streaming, func() []string {
 		var out []string
+		if a.streaming && a.empty() && !a.requested.IsZero() {
+			// Nothing has arrived yet: the model is reading the prompt.
+			return []string{rc.st.muted.Render(fmt.Sprintf("%s waiting for the model · %s", rc.spinner, elapsed(time.Since(a.requested))))}
+		}
 		if a.thinking != "" {
+			label := a.thinkingLabel(rc)
 			if rc.showThinking {
+				if label != "" {
+					out = append(out, rc.st.thinking.Render(label))
+				}
 				for _, l := range wrap(strings.TrimSpace(a.thinking), rc.width-4) {
 					out = append(out, rc.st.thinking.Render("┊ "+l))
 				}
 			} else {
-				label := "∴ Thought"
-				if a.streaming && a.text == "" {
-					label = "∴ Thinking " + rc.spinner
+				if label == "" {
+					label = "∴ Thought"
 				}
 				n := len(strings.Split(strings.TrimSpace(a.thinking), "\n"))
 				out = append(out, rc.st.thinking.Render(fmt.Sprintf("%s · %s · ctrl+t to show", label, plural(n, "line"))))
@@ -257,6 +302,15 @@ func (t *toolItem) stat() string {
 		return d.Summary
 	}
 	return ""
+}
+
+// elapsed formats a time to the nearest second: "14s", "2m5s".
+func elapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return d.String()
 }
 
 func formatDuration(d time.Duration) string {

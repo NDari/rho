@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Item } from "../lib/types";
-  import { humanTokens } from "../lib/format";
+  import { clock, elapsed, humanTokens } from "../lib/format";
   import Markdown from "./Markdown.svelte";
   import ToolCard from "./ToolCard.svelte";
 
@@ -12,6 +12,23 @@
   }: { item: Item; cwd: string; showThinking: boolean; expandAll: boolean } = $props();
 
   let thinkingOpen: boolean | null = $state(null);
+
+  // thinkingLabel is "Thinking 14s" while the model thinks and "Thought
+  // for 15s · 14:10:22" (when it finished) afterwards.
+  function thinkingLabel(it: Extract<Item, { kind: "assistant" }>, now: number): string {
+    if (it.thinkEnd) return `Thought for ${elapsed(it.thinkEnd - it.thinkStart)} · ${clock(it.thinkEnd)}`;
+    if (it.thinkStart && it.streaming) return `Thinking ${elapsed(now - it.thinkStart)}`;
+    return "Thinking";
+  }
+
+  // now ticks while a message streams, for the running times.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (item.kind !== "assistant" || !item.streaming) return;
+    now = Date.now();
+    const t = setInterval(() => (now = Date.now()), 500);
+    return () => clearInterval(t);
+  });
 </script>
 
 {#if item.kind === "user"}
@@ -29,7 +46,9 @@
           onclick={(e) => {
             e.preventDefault();
             thinkingOpen = !(thinkingOpen ?? (showThinking || (item.streaming && !item.text)));
-          }}>Thinking</summary
+          }}
+          >{thinkingLabel(item, now)}{#if item.streaming && item.thinkStart && !item.thinkEnd}<span class="spinner"
+            ></span>{/if}</summary
         >
         <div class="thinking-text">{item.thinking}</div>
       </details>
@@ -40,7 +59,11 @@
     {#if item.composing}
       <div class="muted">Preparing {item.composing}…</div>
     {:else if item.streaming && !item.text && !item.thinking}
-      <div class="muted pulse">Working…</div>
+      {#if item.requested}
+        <div class="muted"><span class="spinner"></span> Waiting for the model · {elapsed(now - item.requested)}</div>
+      {:else}
+        <div class="muted pulse">Working…</div>
+      {/if}
     {/if}
     {#if item.cancelled}
       <div class="muted">(cancelled)</div>
@@ -147,6 +170,22 @@
     font-weight: 600;
     margin-bottom: 6px;
     color: var(--accent);
+  }
+  .spinner {
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-left: 0.2em;
+    vertical-align: -0.1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .pulse {
     animation: pulse 1.2s ease-in-out infinite;

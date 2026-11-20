@@ -79,6 +79,12 @@ export type Item =
       cancelled: boolean;
       streaming: boolean;
       composing: string;
+      // Times in milliseconds since the epoch, 0 when not known (a
+      // transcript loaded from the session does not keep them): when the
+      // request was sent, and when the thinking started and ended.
+      requested: number;
+      thinkStart: number;
+      thinkEnd: number;
     }
   | { key: number; kind: "tool"; tool: ToolState }
   | {
