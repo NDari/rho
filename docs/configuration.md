@@ -2,9 +2,13 @@
 
 Rho reads `~/.rho/config.toml` (global) and `.rho/config.toml` in the project (the nearest directory with `.git`, or the working directory). Project settings override global ones, except for keys that could redirect your API keys or run code: **`providers` and `bash.shell` are only honored in the global config**.
 
-Set `RHO_HOME` to use a directory other than `~/.rho`.
+Set `RHO_HOME` to use a directory other than `~/.rho`. `rho init` creates `~/.rho/config.toml` with a starting configuration for a local server (it never replaces an existing file).
 
 In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.toml`, keeping the rest of the file and its comments. `reasoning_effort` applies to the current model and is saved in its `[[models]]` entry (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
+
+## Updates
+
+Rho asks GitHub for the latest release at most once a day, when the TUI or the GUI starts (never in print mode), and shows a banner (TUI) or an offer to update and restart (GUI) when there is a newer one. `rho update` installs it. Set `update_check = false`, or the `RHO_NO_UPDATE_CHECK` environment variable, to stop the check; `rho update` still works. Builds of a modified checkout have no version and never check.
 
 ## Example
 
@@ -12,10 +16,12 @@ In the TUI, `/config` changes common settings without editing the file: Up/Down 
 default_model = "local"
 theme = "dark"          # "dark" (Gruvbox), "light", or a theme in ~/.rho/themes/
 max_retries = 3         # retries for 429/5xx/network errors
+update_check = true     # look for a new Rho release once a day
 
-# A local OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM...)
+# A local OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM...).
+# llama.cpp's llama-server listens on port 9931 by default (older versions: 8080).
 [providers.local]
-base_url = "http://localhost:8080/v1"
+base_url = "http://localhost:9931/v1"
 
 [[models]]
 id = "local"             # the name you use in Rho (--model, /model)
@@ -61,7 +67,7 @@ disabled = []        # extension names not to start
 | Field | Meaning |
 |---|---|
 | `type` | `openai-compat` (Chat Completions, default) or `openai-responses` (Responses API) |
-| `base_url` | API root, e.g. `http://localhost:8080/v1` |
+| `base_url` | API root, e.g. `http://localhost:9931/v1` |
 | `api_key_env` | environment variable holding the API key |
 | `api_key` | a raw key (works, but Rho warns; prefer `api_key_env`) |
 | `flavor` | endpoint-specific handling; `gemini` is detected automatically |
@@ -107,7 +113,7 @@ The tool descriptions are part of every request. They sit at the start of the pr
 
 ## Local models
 
-- llama.cpp's `llama-server` needs `--jinja` for tool calling.
+- llama.cpp's `llama-server` needs `--jinja` for tool calling. It listens on port 9931 by default; versions before the switch use 8080 (or set `--port`).
 - Tool-calling quality varies a lot between models; small models often struggle with the `edit` tool's exact matching.
 - Smaller context windows mean more frequent compaction. Set `context_window` to the server's actual context size (for llama.cpp, the `-c` value).
 
@@ -133,3 +139,4 @@ Use `/context` to see exactly what is sent to the model and what each part costs
 | `~/.rho/sessions/<directory>/*.jsonl` | sessions (append-only) |
 | `~/.rho/history.jsonl` | prompt history |
 | `~/.rho/trust.json` | approved project extensions |
+| `~/.rho/update.json` | when Rho last looked for a new release, and the latest version it found |

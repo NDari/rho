@@ -35,14 +35,19 @@ type Config struct {
 	Extensions   Extensions          `toml:"extensions"`
 	// MaxRetries is the number of retries for transient provider errors.
 	MaxRetries int `toml:"max_retries"`
+	// UpdateCheck lets Rho look for new releases once a day (default true).
+	UpdateCheck *bool `toml:"update_check"`
 }
+
+// UpdateCheckEnabled reports whether update checks are on.
+func (c Config) UpdateCheckEnabled() bool { return c.UpdateCheck == nil || *c.UpdateCheck }
 
 // Provider describes an API endpoint.
 type Provider struct {
 	// Type selects the adapter: "openai-compat" (Chat Completions, the
 	// default) or "openai-responses" (Responses API).
 	Type string `toml:"type"`
-	// BaseURL is the API root, e.g. "http://localhost:8080/v1".
+	// BaseURL is the API root, e.g. "http://localhost:9931/v1".
 	BaseURL string `toml:"base_url"`
 	// APIKeyEnv names the environment variable that holds the API key.
 	APIKeyEnv string `toml:"api_key_env"`
@@ -325,6 +330,9 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 	if defined("max_retries") {
 		cfg.MaxRetries = file.MaxRetries
 	}
+	if defined("update_check") {
+		cfg.UpdateCheck = file.UpdateCheck
+	}
 	if defined("providers") {
 		names := make([]string, 0, len(file.Providers))
 		for n := range file.Providers {
@@ -524,6 +532,9 @@ func (m Model) withDefaults() Model {
 	return m
 }
 
+// ErrNoModel is returned when no model is configured or given.
+var ErrNoModel = errors.New("no model configured: set default_model or [[models]] in config.toml, or pass --model provider/name")
+
 // ResolveModel finds a model by id. A spec of the form "provider/name" that
 // doesn't match a configured id creates an ad-hoc model with defaults.
 func (c Config) ResolveModel(spec string) (Model, error) {
@@ -534,7 +545,7 @@ func (c Config) ResolveModel(spec string) (Model, error) {
 		if len(c.Models) > 0 {
 			return c.Models[0].withDefaults().inherit(c.Providers[c.Models[0].Provider]), nil
 		}
-		return Model{}, errors.New("no model configured: set default_model or [[models]] in config.toml, or pass --model provider/name")
+		return Model{}, ErrNoModel
 	}
 	for _, m := range c.Models {
 		if m.ID == spec {

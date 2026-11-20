@@ -76,6 +76,8 @@ var Settings = []Setting{
 		func(c *Config) *int { return &c.Bash.Timeout }),
 	intSetting("bash.max_timeout", "longest bash timeout the model may ask for, in seconds", []string{"300", "600", "1200", "1800", "3600"},
 		func(c *Config) *int { return &c.Bash.MaxTimeout }),
+	boolSetting("update_check", "look for new Rho releases once a day",
+		func(c *Config) bool { return c.UpdateCheckEnabled() }, func(c *Config, b bool) { c.UpdateCheck = &b }),
 }
 
 func intSetting(key, desc string, choices []string, field func(*Config) *int) Setting {

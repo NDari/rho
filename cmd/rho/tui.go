@@ -7,6 +7,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/update"
 	"github.com/NDari/rho/tui"
 )
 
@@ -24,5 +25,9 @@ func runTUI(f rootFlags, text string) error {
 	if err != nil {
 		return err
 	}
-	return tui.Run(a, tui.Options{Prompt: text, Resume: f.resume})
+	o := tui.Options{Prompt: text, Resume: f.resume}
+	if update.Enabled(current, a.Config) {
+		o.Updates = &update.Checker{Current: current, Home: a.Paths.Home}
+	}
+	return tui.Run(a, o)
 }

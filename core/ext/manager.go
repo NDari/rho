@@ -905,6 +905,7 @@ func defaultLauncher(c Candidate, cwd, extHost string) (io.ReadCloser, io.WriteC
 	}
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), "RHO_EXTENSION=1", "RHO_EXTENSION_DIR="+c.Dir)
+	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, nil, nil, nil, err

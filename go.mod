@@ -11,6 +11,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-udiff v0.4.2
 	github.com/charmbracelet/x/ansi v0.11.10
+	github.com/creativeprojects/go-selfupdate v1.7.1
 	github.com/openai/openai-go/v3 v3.103.0
 	github.com/sergi/go-diff v1.4.5
 	github.com/spf13/cobra v1.10.2
@@ -48,6 +49,7 @@ require (
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
+	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect

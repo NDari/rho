@@ -31,5 +31,5 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 ## Writing style
 
 - Plain hyphens only; no em-dashes or en-dashes in code, comments or docs.
-- Examples in docs must use generic values (e.g. `http://localhost:8080/v1`), never real hosts, usernames or personal paths.
+- Examples in docs must use generic values (e.g. `http://localhost:9931/v1`), never real hosts, usernames or personal paths.
 - Commit messages: short imperative subject line, optional body explaining why.

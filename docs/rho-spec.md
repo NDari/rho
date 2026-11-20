@@ -63,7 +63,7 @@ Status: draft v0.1 · License: MIT
 ### Package layout (proposal)
 
 ```
-cmd/rho/            main, flag parsing, subcommands (incl. `rho ext-host`)
+cmd/rho/            main, flag parsing, subcommands (`rho update`, `rho init`, `rho ext-host`)
 core/app/           wires config, sessions, providers, tools, extensions and the agent
 core/agent/         agent loop, turn state, steering/follow-up queue, branching
 core/tools/         read, write, edit, bash (+ platform files)
@@ -78,6 +78,7 @@ core/ext/           extension manager, protocol, trust store; rpc/ (JSON-RPC)
 core/ext/yaegihost/ Yaegi-based extension host + `rho` symbol package
 core/config/        config loading, merging, validation
 core/events/        event types shared by frontends
+core/update/        release checks and self-update (§19)
 tui/                Bubble Tea app, components, themes, diff renderer
 headless/           print and JSON modes
 gui/                separate Go module: Wails GUI (`rho-gui`), see §18
@@ -329,18 +330,21 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 ## 14. Configuration
 
 - Global: `~/.rho/config.toml`; project: `.rho/config.toml` (restricted keys, see §13). Project overrides global.
-- Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, compaction reserve (internal for now), side-by-side diff width.
+- Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, compaction reserve (internal for now), side-by-side diff width, `update_check` (§19).
+- `rho init` writes a starting `~/.rho/config.toml` for a local llama.cpp server (`http://localhost:9931/v1`, llama-server's default port; older versions use 8080) and never replaces an existing file. When no model is configured, `rho` prints the same example and points at `rho init`; the GUI's start-up screen offers to create the file.
 - Data directories via Go's standard per-OS config/cache locations where appropriate; `~/.rho/` as the user-facing home.
 
 ## 15. Platforms
 
 - **macOS, Linux:** fully supported.
 - **GUI (`rho-gui`):** loads the system webview at runtime: WebView2 on Windows, WKWebView on macOS, GTK 4.8+ and WebKitGTK 6.0 (2.40+) on Linux. `rho` itself needs none of these.
+- **Release builds:** Linux amd64 and arm64, Windows amd64, macOS arm64 (§19).
 - **Windows (beta):** requires Git Bash.
   - Locate Git Bash from standard install locations, then PATH; config override. Never use `C:\Windows\System32\bash.exe` (that's WSL).
   - Process trees killed with Job Objects (`golang.org/x/sys/windows`).
   - Path normalization (§5), CRLF handling (§5 edit).
   - Clear errors for locked files.
+  - Child processes (bash commands, extensions) start with `CREATE_NO_WINDOW`, so `rho-gui`, which has no console, does not open a console window for each.
   - Windows CI runner from day one.
 
 ## 16. Milestones
@@ -356,9 +360,9 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 9. **M8 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
 10. **M9 - GUI:** separate `rho-gui` binary with Wails (§18): transcript, tool cards and diffs, sessions and branching, settings, extensions, release builds.
 11. **M10 - Release cleanup (next):**
-    - Limit what a release publishes. Today it has 13 files: `rho` and `rho-gui` archives for six platforms each (the `rho-gui` ones repeat `rho`), plus `Rho.app` for macOS, which makes the macOS `rho-gui` tarballs redundant for most users. Decide the set, drop the rest, and make sure everything published is in `checksums.txt` (`Rho_<version>_macos.zip` is not yet).
+    - Done: the release set (§19), with every published file in `checksums.txt`; update checks, `rho update` and the GUI's update-and-restart; `rho init` and the GUI's create-config button; no console windows from `rho-gui` on Windows.
     - Speed up the `gui` CI job (about 7 minutes): cache the `wails3` tool build used for bindings, and check what else the job rebuilds each run.
-    - Test `rho-gui` on Windows (only cross-compiled so far).
+    - Test `rho-gui` on Windows (only cross-compiled so far), including the update and the absence of console windows.
     - Releases stay unsigned for now. macOS signing and notarization start working once the secrets in `docs/gui.md` are added; Windows signing is not set up.
 12. **Later:** external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
 
@@ -388,6 +392,24 @@ A desktop frontend built with [Wails](https://wails.io) v3. It is a frontend lik
 - Light and dark themes; the GUI follows the system setting unless the user picks one.
 - Ctrl+F searches the rendered transcript (what is on screen; collapsed tool output is not searched).
 - The window can switch to another project directory (`/open`, a native folder dialog) with a new session, without restarting.
-- When the project cannot be opened (no model configured, a broken config file), the window still opens and shows the error, an example configuration and a way to try again, since a GUI started from a desktop launcher has no terminal for the message.
-- Go extensions run as `<host> ext-host <file>`. `rho-gui` prefers a `rho` binary next to itself (or on `PATH` with the same version) as the host, because starting `rho-gui` again would load the GUI libraries in every extension process; it falls back to itself. The `rho-gui` archives include `rho` for this reason.
-- Packaging: the icon comes from `gui/build/appicon.svg`. The application ID `io.github.ndari.rho` names the Linux `.desktop` file (GTK 4 has no per-window icons, so Wayland desktops take the icon from it) and the macOS bundle. Releases add Windows resources (icon, high-DPI manifest, version information) and a universal `Rho.app` for macOS, signed and notarized when Apple credentials are configured.
+- When the project cannot be opened (no model configured, a broken config file), the window still opens and shows the error, an example configuration and a way to try again, since a GUI started from a desktop launcher has no terminal for the message. Without a config file it offers to create one from the example.
+- Release builds offer a newer version in a notice (§19): **Update and restart** installs it and starts the new `rho-gui` with the same folder and session (`-session`, once the session has a file); it is disabled while the agent works. **Later** hides it until the next start.
+- Go extensions run as `<host> ext-host <file>`. `rho-gui` prefers a `rho` binary next to itself (or on `PATH` with the same version) as the host, because starting `rho-gui` again would load the GUI libraries in every extension process; it falls back to itself. The release archives and `Rho.app` include `rho` for this reason.
+- Packaging: the icon comes from `gui/build/appicon.svg`. The application ID `io.github.ndari.rho` names the Linux `.desktop` file (GTK 4 has no per-window icons, so Wayland desktops take the icon from it) and the macOS bundle. Releases add Windows resources (icon, high-DPI manifest, version information) and an Apple silicon `Rho.app` for macOS, signed and notarized when Apple credentials are configured.
+
+## 19. Releases and updates
+
+### Release set
+- One archive per platform with `rho` and `rho-gui`: `rho_<version>_linux_amd64.tar.gz`, `rho_<version>_linux_arm64.tar.gz` and `rho_<version>_windows_amd64.zip` (the Linux ones with the desktop entry and icon).
+- macOS (Apple silicon only): `Rho_<version>_macos.zip` holds `Rho.app` with both programs, and `rho_<version>_darwin_arm64.tar.gz` holds `rho` alone for terminal-only use. The macOS `rho-gui` archive goes only to the job that builds `Rho.app` and is not published.
+- `checksums.txt` covers every published file. goreleaser creates the release as a draft; the `macos-app` job adds `Rho.app` and its checksum, then publishes it, so a published release is always complete.
+
+### Update checks
+- `core/update` asks the GitHub API for the latest release (drafts and pre-releases excluded) at most once a day and keeps the answer in `~/.rho/update.json`. Frontends show a newer version from that file at once and check again in the background.
+- The TUI shows a banner at start-up: "Rho update to version X is available! Quit and run 'rho update' to update to the latest version." The GUI shows the notice in §18. Headless mode never checks.
+- Checks are off with `update_check = false` (also in `/config`) or `RHO_NO_UPDATE_CHECK`. Builds without a version (`dev`, or a modified checkout) never check. A `go install` copy, recognized by the module version in its build information, is told to run `go install github.com/NDari/rho/cmd/rho@latest` instead; the GUI only updates release builds.
+
+### Installing an update
+- `rho update` (and the GUI) downloads this platform's archive, or `Rho_<version>_macos.zip` when the program runs from an app bundle, and checks it against `checksums.txt` before changing anything.
+- It replaces the running program and the other Rho programs that are next to it (it does not add missing ones), using `go-selfupdate`'s `update` package to swap files, which also works for a running `.exe` on Windows. `Rho.app` is replaced as a whole.
+- When the folder is not writable, the update goes to `~/.local/bin` (`~/Applications` for `Rho.app`, `%LOCALAPPDATA%\Programs\Rho` on Windows) without `sudo`, and the result says to add that folder to `PATH`, or that the old copy comes first on `PATH`. The old copy is left alone.

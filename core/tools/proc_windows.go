@@ -14,8 +14,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// setupProcess starts the command in its own process group, without a
+// console window (otherwise one pops up when rho-gui, which has no
+// console, runs a command).
 func setupProcess(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
 }
 
 // processTree tracks a process and its descendants with a Job Object.

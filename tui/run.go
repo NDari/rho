@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/prompt"
+	"github.com/NDari/rho/core/update"
 )
 
 // Options configure the TUI.
@@ -16,6 +18,8 @@ type Options struct {
 	Prompt string
 	// Resume opens the session picker at startup.
 	Resume bool
+	// Updates, when set, looks for a newer Rho and shows a banner.
+	Updates *update.Checker
 }
 
 // extAdapter exposes the app's extension manager to the TUI.
@@ -70,6 +74,13 @@ func Run(a *app.App, o Options) error {
 		_ = m.submit(false)
 	}
 	p := tea.NewProgram(m)
+	if o.Updates != nil {
+		shown := o.Updates.Cached()
+		if shown != "" {
+			m.notice("banner", o.Updates.Current.Notice(shown))
+		}
+		defer checkForUpdate(o.Updates, shown, p.Send)()
+	}
 	if a.Ext != nil {
 		// Extensions start once the UI runs, so approval prompts can show.
 		go a.StartExtensions(context.Background(), m.NewUI())
@@ -80,6 +91,24 @@ func Run(a *app.App, o Options) error {
 	a.StopExtensions()
 	_ = a.Agent.Session().Close()
 	return err
+}
+
+// checkForUpdate asks GitHub (at most once a day) for a newer release
+// than the one shown and shows a banner when there is one. It returns a
+// function that stops the check.
+func checkForUpdate(c *update.Checker, shown string, send func(tea.Msg)) func() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	go func() {
+		latest, err := c.Check(ctx)
+		if err != nil || latest == "" || latest == shown {
+			return
+		}
+		send(asyncResultMsg{done: func(m *Model) tea.Cmd {
+			m.notice("banner", c.Current.Notice(latest))
+			return nil
+		}})
+	}()
+	return cancel
 }
 
 // NewUI returns the extension UI bridge for a model.

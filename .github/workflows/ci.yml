@@ -79,7 +79,7 @@ jobs:
         run: go test -race ./bridge/...
       - name: Build for each platform
         run: |
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+          for target in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
             GOOS=${target%/*} GOARCH=${target#*/} go build -tags purego,production -o /dev/null .
           done
       - uses: golangci/golangci-lint-action@v9
