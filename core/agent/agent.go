@@ -167,7 +167,19 @@ func (a *Agent) Model() config.Model {
 }
 
 // Config returns the configuration.
-func (a *Agent) Config() config.Config { return a.cfg }
+func (a *Agent) Config() config.Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg
+}
+
+// SetConfig replaces the configuration used for later requests, tool
+// calls and compaction. The current model is kept.
+func (a *Agent) SetConfig(c config.Config) {
+	a.mu.Lock()
+	a.cfg = c
+	a.mu.Unlock()
+}
 
 // Paths returns the resolved paths.
 func (a *Agent) Paths() config.Paths { return a.paths }
@@ -221,7 +233,7 @@ func (a *Agent) adoptSessionModel() {
 	if cv.Model == "" {
 		return
 	}
-	if m, err := a.cfg.ResolveModel(cv.Model); err == nil {
+	if m, err := a.Config().ResolveModel(cv.Model); err == nil {
 		a.mu.Lock()
 		a.model = m
 		a.mu.Unlock()
@@ -233,7 +245,7 @@ func (a *Agent) SetModel(id string) error {
 	if a.Busy() {
 		return ErrBusy
 	}
-	m, err := a.cfg.ResolveModel(id)
+	m, err := a.Config().ResolveModel(id)
 	if err != nil {
 		return err
 	}
@@ -635,7 +647,7 @@ func RepairToolPairs(msgs []provider.Message) []provider.Message {
 }
 
 func (a *Agent) streamWithRetry(ctx context.Context, prov provider.Provider, req provider.Request) (provider.Response, error) {
-	maxRetries := a.cfg.MaxRetries
+	maxRetries := a.Config().MaxRetries
 	for attempt := 0; ; attempt++ {
 		a.emit(events.MessageStart{Model: a.Model().ID})
 		resp, err := prov.Stream(ctx, req, func(e provider.StreamEvent) {
@@ -677,12 +689,13 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 		byName[t.Spec().Name] = t
 	}
 	model := a.Model()
+	bash := a.Config().Bash
 	env := &tools.Env{
 		Cwd:            a.paths.Cwd,
 		SupportsImages: model.SupportsImages,
-		BashTimeout:    a.cfg.Bash.Timeout,
-		BashMaxTimeout: a.cfg.Bash.MaxTimeout,
-		Shell:          a.cfg.Bash.Shell,
+		BashTimeout:    bash.Timeout,
+		BashMaxTimeout: bash.MaxTimeout,
+		Shell:          bash.Shell,
 	}
 	for _, call := range calls {
 		var res tools.Result
@@ -768,7 +781,7 @@ func (a *Agent) maybeCompact(ctx context.Context) error {
 	cv := a.Session().BuildContext()
 	tokens := a.EstimateContext(cv)
 	model := a.Model()
-	if !compact.ShouldCompact(tokens, model.ContextWindow, a.cfg.Compaction.Reserve) {
+	if !compact.ShouldCompact(tokens, model.ContextWindow, a.Config().Compaction.Reserve) {
 		return nil
 	}
 	return a.compact(ctx, "auto")
@@ -779,7 +792,8 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 	cv := sess.BuildContext()
 	before := a.EstimateContext(cv)
 	model := a.Model()
-	keep := compact.KeepTokens(a.cfg.Compaction.KeepRecent, model.ContextWindow, a.cfg.Compaction.Reserve)
+	cc := a.Config().Compaction
+	keep := compact.KeepTokens(cc.KeepRecent, model.ContextWindow, cc.Reserve)
 	if reason == "overflow" {
 		keep /= 2
 	}
@@ -918,11 +932,12 @@ func cost(m config.Model, u provider.Usage) float64 {
 // sessionCost sums the cost of all assistant messages in the session.
 func (a *Agent) sessionCost() float64 {
 	total := 0.0
+	cfg := a.Config()
 	for _, e := range a.Session().Entries() {
 		if e.Type != session.TypeMessage || e.Message == nil || e.Message.Meta.Usage == nil {
 			continue
 		}
-		m, err := a.cfg.ResolveModel(e.Message.Meta.Model)
+		m, err := cfg.ResolveModel(e.Message.Meta.Model)
 		if err != nil {
 			continue
 		}

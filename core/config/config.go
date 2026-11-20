@@ -252,8 +252,7 @@ func Load(p Paths) (Config, []string, error) {
 	cfg := Defaults()
 	var warnings []string
 
-	global := filepath.Join(p.Home, "config.toml")
-	if err := mergeFile(&cfg, global, false, &warnings); err != nil {
+	if err := mergeFile(&cfg, p.GlobalFile(), false, &warnings); err != nil {
 		return cfg, warnings, err
 	}
 	if p.ProjectDir != "" && p.ProjectDir != p.Home {

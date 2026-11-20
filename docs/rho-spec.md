@@ -269,7 +269,9 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · while busy: Enter steers, Alt+Enter queues a follow-up.
 
 ### Commands
-`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/help` · `/quit`, plus prompt templates and extension commands.
+`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/help` · `/quit`, plus prompt templates and extension commands.
+
+`/config` lists the settings that can change while Rho runs (`default_model`, `theme`, `max_retries`, `bash.timeout`, `bash.max_timeout`, `compaction.reserve`, `compaction.keep_recent`, `tui.side_by_side_width`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line, so comments and layout are kept.
 
 ## 11. Headless mode
 

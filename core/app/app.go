@@ -156,6 +156,31 @@ func (a *App) refreshTools() {
 	a.Agent.SetHooks(a.Ext)
 }
 
+// SetSetting changes a setting for this run and saves it to the global
+// config. The note is set when the project config overrides the value.
+func (a *App) SetSetting(key, value string) (note string, err error) {
+	s, ok := config.LookupSetting(key)
+	if !ok {
+		return "", fmt.Errorf("unknown setting %q", key)
+	}
+	if a.Agent.Busy() {
+		return "", agent.ErrBusy
+	}
+	cfg, err := s.Apply(a.Agent.Config(), value)
+	if err != nil {
+		return "", err
+	}
+	if err := config.SaveSetting(a.Paths.GlobalFile(), s, s.Value(cfg)); err != nil {
+		return "", err
+	}
+	a.Config = cfg
+	a.Agent.SetConfig(cfg)
+	if a.Paths.ProjectSets(key) {
+		note = "the project's .rho/config.toml also sets " + key + " and wins on the next start"
+	}
+	return note, nil
+}
+
 // SessionDir is the directory holding sessions for the working directory.
 func (a *App) SessionDir() string { return session.Dir(a.Paths.Home, a.Paths.Cwd) }
 

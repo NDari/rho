@@ -27,6 +27,7 @@ var builtinCommands = []commandInfo{
 	{"label", "label the current position"},
 	{"copy", "copy the last answer to the clipboard [all]"},
 	{"theme", "change the color theme"},
+	{"config", "change and save settings [key value]"},
 	{"extensions", "list extensions"},
 	{"reload", "restart extensions and reload context files"},
 	{"help", "show keys and commands"},
@@ -201,6 +202,11 @@ func (m *Model) runCommand(line string) tea.Cmd {
 			items = append(items, pickerItem{title: n, detail: detail, value: n})
 		}
 		m.picker = newPicker("Theme", items, func(it pickerItem) tea.Cmd { return m.applyThemeName(it.value.(string)) })
+	case "config":
+		if !idle() {
+			return nil
+		}
+		return m.configCommand(args)
 	case "extensions":
 		if m.ext == nil {
 			m.notice("info", "no extensions loaded")
@@ -238,7 +244,7 @@ func (m *Model) applyThemeName(name string) tea.Cmd {
 	}
 	m.setTheme(t)
 	m.applyInputStyles()
-	m.notice("info", fmt.Sprintf("theme: %s (set theme = %q in config.toml to keep it)", name, name))
+	m.notice("info", fmt.Sprintf("theme: %s (/config theme %s keeps it)", name, name))
 	return nil
 }
 
