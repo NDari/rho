@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/session"
 )
@@ -274,24 +275,7 @@ func (m *Model) applyThemeName(name string) tea.Cmd {
 }
 
 func (m *Model) copyCmd(all bool) tea.Cmd {
-	cv := m.agent.Session().BuildContext()
-	var text string
-	if all {
-		var b strings.Builder
-		for _, msg := range cv.Messages {
-			if t := msg.TextContent(); t != "" && msg.Role != provider.RoleToolResult {
-				fmt.Fprintf(&b, "## %s\n\n%s\n\n", msg.Role, t)
-			}
-		}
-		text = b.String()
-	} else {
-		for i := len(cv.Messages) - 1; i >= 0; i-- {
-			if cv.Messages[i].Role == provider.RoleAssistant && cv.Messages[i].TextContent() != "" {
-				text = cv.Messages[i].TextContent()
-				break
-			}
-		}
-	}
+	text := m.app.CopyText(all)
 	if text == "" {
 		m.notice("warn", "nothing to copy")
 		return nil
@@ -372,37 +356,21 @@ func humanBytes(n int64) string {
 
 // pathMessages lists message entries on the current path, newest first.
 func (m *Model) pathMessages(roles ...provider.Role) []pickerItem {
-	sess := m.agent.Session()
-	path := sess.PathTo(sess.Leaf())
-	labels := sess.Labels()
 	var items []pickerItem
-	for i := len(path) - 1; i >= 0; i-- {
-		e := path[i]
-		if e.Type != session.TypeMessage || e.Message == nil || e.Message.Meta.Synthetic != "" {
-			continue
-		}
-		ok := false
-		for _, r := range roles {
-			if e.Message.Role == r {
-				ok = true
-			}
-		}
-		if !ok {
-			continue
-		}
-		title := oneLine(e.Message.TextContent())
+	for _, r := range m.app.PathMessages(roles...) {
+		title := oneLine(r.Text)
 		if title == "" {
-			if calls := e.Message.ToolCalls(); len(calls) > 0 {
-				title = "[tool calls: " + calls[0].Name + "…]"
+			if r.ToolName != "" {
+				title = "[tool calls: " + r.ToolName + "…]"
 			} else {
 				title = "(empty)"
 			}
 		}
-		detail := string(e.Message.Role) + " · " + e.TS.Local().Format("15:04")
-		if l := labels[e.ID]; l != "" {
-			detail = "🏷 " + l + " · " + detail
+		detail := string(r.Role) + " · " + r.TS.Local().Format("15:04")
+		if r.Label != "" {
+			detail = "🏷 " + r.Label + " · " + detail
 		}
-		items = append(items, pickerItem{title: title, detail: detail, value: e.ID})
+		items = append(items, pickerItem{title: title, detail: detail, value: r.ID})
 	}
 	return items
 }
@@ -454,39 +422,23 @@ func (m *Model) forkPicker() {
 }
 
 func (m *Model) treePicker() {
-	sess := m.agent.Session()
-	leaf := sess.Leaf()
-	onPath := map[string]bool{}
-	for _, e := range sess.PathTo(leaf) {
-		onPath[e.ID] = true
-	}
-	labels := sess.Labels()
+	labels := map[string]string{}
 	var items []pickerItem
-	var walk func(parent string, depth int)
-	walk = func(parent string, depth int) {
-		kids := sess.Children(parent)
-		for _, e := range kids {
-			title, show := treeTitle(e)
-			d := depth
-			if len(kids) > 1 {
-				d = depth + 1
-			}
-			if show {
-				detail := e.TS.Local().Format("Jan 2 15:04")
-				if e.ID == leaf {
-					detail = "● current · " + detail
-				} else if onPath[e.ID] {
-					detail = "│ " + detail
-				}
-				if l := labels[e.ID]; l != "" {
-					detail = "🏷 " + l + " · " + detail
-				}
-				items = append(items, pickerItem{title: title, detail: detail, value: e.ID, depth: min(d, 12)})
-			}
-			walk(e.ID, d)
+	cursor := 0
+	for _, n := range m.app.Tree() {
+		detail := n.TS.Local().Format("Jan 2 15:04")
+		if n.Current {
+			detail = "● current · " + detail
+			cursor = len(items)
+		} else if n.OnPath {
+			detail = "│ " + detail
 		}
+		if n.Label != "" {
+			labels[n.ID] = n.Label
+			detail = "🏷 " + n.Label + " · " + detail
+		}
+		items = append(items, pickerItem{title: treeTitle(n), detail: detail, value: n.ID, depth: min(n.Depth, 12)})
 	}
-	walk("", 0)
 	if len(items) == 0 {
 		m.notice("info", "the session is empty")
 		return
@@ -513,41 +465,26 @@ func (m *Model) treePicker() {
 			return nil
 		},
 	}
-	for i, it := range items {
-		if it.value == leaf {
-			p.cursor = i
-		}
-	}
+	p.cursor = cursor
 	m.picker = p
 }
 
-func treeTitle(e session.Entry) (string, bool) {
-	switch e.Type {
-	case session.TypeMessage:
-		if e.Message == nil {
-			return "", false
-		}
-		switch e.Message.Role {
-		case provider.RoleUser:
-			return "› " + oneLine(e.Message.TextContent()), true
-		case provider.RoleAssistant:
-			t := oneLine(e.Message.TextContent())
-			if t == "" {
-				return "", false
-			}
-			return "  " + t, true
-		}
-		return "", false
-	case session.TypeCompaction:
-		return "⇣ compaction", true
-	case session.TypeAsideStart:
-		return "↪ side conversation", true
-	case session.TypeAsideSummary:
-		return "↩ note: " + oneLine(e.Note), true
-	case session.TypeModelChange:
-		return "⚙ model: " + e.Model, true
+func treeTitle(n app.TreeNode) string {
+	switch n.Kind {
+	case string(provider.RoleUser):
+		return "› " + oneLine(n.Text)
+	case string(provider.RoleAssistant):
+		return "  " + oneLine(n.Text)
+	case app.NodeCompaction:
+		return "⇣ compaction"
+	case app.NodeAsideStart:
+		return "↪ side conversation"
+	case app.NodeAsideNote:
+		return "↩ note: " + oneLine(n.Text)
+	case app.NodeModelChange:
+		return "⚙ model: " + n.Text
 	}
-	return "", false
+	return n.Text
 }
 
 func (m *Model) contextReport() {

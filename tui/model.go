@@ -6,7 +6,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -536,35 +535,6 @@ func (m *Model) acceptCompletion() {
 	}
 }
 
-var fileRefRE = regexp.MustCompile(`(?:^|\s)@([^\s]+)`)
-
-// buildUserMessage attaches the contents of @file references.
-func (m *Model) buildUserMessage(text string) provider.Message {
-	msg := provider.UserText(text)
-	seen := map[string]bool{}
-	for _, match := range fileRefRE.FindAllStringSubmatch(text, -1) {
-		ref := strings.TrimRight(match[1], ".,;:!?)")
-		if seen[ref] {
-			continue
-		}
-		seen[ref] = true
-		path := ref
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(m.app.Paths.Cwd, ref)
-		}
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Size() > 256*1024 {
-			continue
-		}
-		data, err := os.ReadFile(path)
-		if err != nil || strings.ContainsRune(string(data), 0) {
-			continue
-		}
-		msg.Content = append(msg.Content, provider.Text(fmt.Sprintf("<file path=%q>\n%s\n</file>", ref, string(data))))
-	}
-	return msg
-}
-
 func (m *Model) submit(followUp bool) tea.Cmd {
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
@@ -598,7 +568,7 @@ func (m *Model) sendText(text string, followUp bool) tea.Cmd {
 		}
 		return nil
 	}
-	if err := m.agent.Prompt(m.buildUserMessage(text)); err != nil {
+	if err := m.agent.Prompt(m.app.BuildUserMessage(text)); err != nil {
 		m.addItem(&noticeItem{level: "error", text: err.Error()})
 	} else {
 		m.busy = true
@@ -728,7 +698,7 @@ func (m *Model) handleEvent(e events.Event) {
 		if t := m.tools[ev.ID]; t != nil {
 			t.running = false
 			t.isError = ev.Result.IsError
-			t.result = blockText(ev.Result)
+			t.result = app.ResultText(ev.Result)
 			t.display = ev.Display
 			t.duration = ev.Duration
 			t.touch()
@@ -795,40 +765,15 @@ func (m *Model) handleEvent(e events.Event) {
 }
 
 func (m *Model) addUserMessage(msg provider.Message) {
-	text := ""
-	var attached []string
-	for i, b := range msg.Content {
-		if b.Type != provider.BlockText {
-			continue
-		}
-		if i == 0 {
-			text = b.Text
-			continue
-		}
-		if strings.HasPrefix(b.Text, "<file path=") {
-			if j := strings.Index(b.Text, "\""); j >= 0 {
-				if k := strings.Index(b.Text[j+1:], "\""); k >= 0 {
-					attached = append(attached, b.Text[j+1:j+1+k])
-				}
-			}
-			continue
-		}
-		text += "\n" + b.Text
-	}
+	m.addItem(&userItem{text: userText(app.UserMessageText(msg))})
+}
+
+// userText shows a user message with its attached files.
+func userText(text string, attached []string) string {
 	if len(attached) > 0 {
 		text += "\n(attached: " + strings.Join(attached, ", ") + ")"
 	}
-	m.addItem(&userItem{text: text})
-}
-
-func blockText(b provider.Block) string {
-	var sb strings.Builder
-	for _, c := range b.Content {
-		if c.Type == provider.BlockText {
-			sb.WriteString(c.Text)
-		}
-	}
-	return sb.String()
+	return text
 }
 
 // gitBranch reads the current branch name from .git/HEAD.

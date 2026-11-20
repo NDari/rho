@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/NDari/rho/core/events"
-	"github.com/NDari/rho/core/provider"
 )
 
 // renderCtx carries what items need to render themselves.
@@ -462,15 +461,6 @@ func (t *textItem) render(rc *renderCtx) []string {
 		}
 		return out
 	})
-}
-
-// toolCallsFromMessage creates tool items for a stored assistant message.
-func toolCallsFromMessage(m provider.Message) []*toolItem {
-	var out []*toolItem
-	for _, b := range m.ToolCalls() {
-		out = append(out, &toolItem{id: b.ID, name: b.Name, args: b.Args})
-	}
-	return out
 }
 
 func plural(n int, word string) string {
