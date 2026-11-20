@@ -20,13 +20,21 @@ Download the file for your platform from the [releases page](https://github.com/
 
 Unpack it and put `rho` in a folder on your `PATH`, for example `~/.local/bin`.
 
-For a desktop app, see [Rho GUI](https://github.com/NDari/rho-gui), which is released on its own.
+The same release has the desktop app, which some people may want as well:
+
+| Platform | File | Contains |
+|---|---|---|
+| macOS (Apple silicon) | `Rho_<version>_macos.zip` | `Rho.app` |
+| Linux (x86-64 or ARM64) | `rho-gui_<version>_linux_<arch>.tar.gz` | `rho-gui` and `rho` |
+| Windows (x86-64) | `rho-gui_<version>_windows_amd64.zip` | `rho-gui.exe` and `rho.exe` |
+
+The GUI needs the system webview and uses the `rho` next to it to run extensions; [docs/gui.md](docs/gui.md) covers installing it.
 
 macOS and Linux are supported; Windows is in beta and needs [Git for Windows](https://git-scm.com/download/win) (Git Bash).
 
 ### Updating
 
-Rho looks for a new release once a day. When there is one, the TUI shows a banner when it starts. To update, quit Rho and run:
+Rho looks for a new release once a day. When there is one, the TUI shows a banner when it starts, and the GUI offers to update and restart. To update from a terminal, quit Rho and run:
 
 ```sh
 rho update
@@ -51,11 +59,12 @@ The repository has a Taskfile for [Task](https://taskfile.dev):
 | Task | What it does |
 |---|---|
 | `task tui` | builds `bin/rho` and starts the TUI in the folder you ran `task` from |
-| `task build` | builds `bin/rho` |
-| `task install` | installs `rho` into Go's `bin` folder |
-| `task test` | runs the tests |
+| `task gui` | builds `bin/rho` and `bin/rho-gui` and opens that folder in the GUI |
+| `task build` | builds both into `bin/` |
+| `task install` | installs both into Go's `bin` folder |
+| `task test` | runs the tests of both Go modules |
 
-Arguments after `--` go to `rho`, for example `task tui -- -c`. To try your build on another project, run `task -d path/to/rho tui` from that project.
+The GUI also needs Node.js 22.12 or newer, since its web frontend is built with npm. Arguments after `--` go to the program, for example `task tui -- -c` or `task gui -- path/to/project`. To try your build on another project, run `task -d path/to/rho tui` from that project. The frontend is built again only when its files change.
 
 ## Quick start
 
@@ -93,7 +102,7 @@ See [docs/configuration.md](docs/configuration.md) for all settings.
 
 - **Interactive TUI** built with Bubble Tea: streaming markdown, collapsible tool cards with live bash output, syntax-highlighted diffs (side by side on wide terminals), transcript search, themes.
 - **Headless mode** for scripting and tests.
-- **Desktop GUI** ([Rho GUI](https://github.com/NDari/rho-gui), early, released separately): the same sessions and commands in a desktop window.
+- **Desktop GUI** (`rho-gui`, early, a separate download): the same sessions and commands in a desktop window. See [docs/gui.md](docs/gui.md).
 - **Providers:** any OpenAI-compatible Chat Completions endpoint (OpenAI, llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, Gemini), plus the OpenAI Responses API. Anthropic is planned.
 - **XML tool calling** for models and gateways without native tool calls, plus per-provider rate limits. See [docs/configuration.md](docs/configuration.md#models-without-native-tool-calling).
 - **Four tools:** `read`, `write`, `edit` (exact replacement, line endings preserved) and `bash` (process tree killed on cancel).

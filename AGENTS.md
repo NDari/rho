@@ -8,9 +8,9 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 
 ## Architecture rules
 
-- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, and the GUI in the separate [rho-gui](https://github.com/NDari/rho-gui) repository) consume the event stream from `core/events` and call the command API.
-- Keep package seams clean (see the package layout in the spec, section 3). Do not import `tui/` or `headless/` from `core/`.
-- `core/` is also used by rho-gui (spec section 18), so treat its exported API as public: changes that break it need a matching change there.
+- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, `gui/`) consume the event stream from `core/events` and call the command API.
+- Keep package seams clean (see the package layout in the spec, section 3). Do not import `tui/`, `headless/` or `gui/` from `core/`.
+- `gui/` is a separate Go module that builds the `rho-gui` binary (spec section 18). Never import Wails or `gui/` from the root module.
 - JSON-RPC is only for extensions (and a later external RPC mode), never between core and built-in frontends.
 - Session files are append-only JSONL. Never rewrite existing entries.
 
@@ -19,11 +19,11 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 - Standard Go style: `gofmt`, `go vet`, idiomatic error handling (wrap with `%w`, no panics in library code).
 - Prefer libraries over writing our own code. Widely used, actively maintained, modern libraries are preferred: code used by many has fewer bugs than code written fresh. Adding dependencies is fine when they give a better all-in-one experience or let us write less code.
 - Platform-specific code goes in `_unix.go` / `_windows.go` files, not runtime `GOOS` checks scattered through logic.
-- No `CGO`. The `rho` binary must stay static, so dependencies must be pure Go.
+- No `CGO`. The `rho` binary must stay static, so dependencies must be pure Go. `rho-gui` is also built with `CGO_ENABLED=0` (Wails' pure-Go backend) but loads the system webview at runtime.
 
 ## Testing
 
-- `go build ./...`, `go vet ./...` and `go test ./...` must pass before a change is considered done.
+- `go build ./...`, `go vet ./...` and `go test ./...` must pass before a change is considered done. `task test` runs the tests of both modules (`gui/` needs `-tags purego`).
 - Prefer table-driven tests. Tests must not require network access or API keys; use recorded fixtures or the fake provider (`core/provider/fake`).
 - Optional integration tests run against a real server when `RHO_TEST_BASE_URL` (Chat Completions) or `RHO_TEST_RESPONSES_URL` (Responses API) is set, with `RHO_TEST_MODEL` and `RHO_TEST_API_KEY` as needed.
 - End-to-end checks run through headless mode (`rho -p --json`).

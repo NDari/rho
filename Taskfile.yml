@@ -1,10 +1,13 @@
 # Development tasks for https://taskfile.dev. Run `task --list` to see them.
 # Builds go to bin/. Arguments after `--` are passed on, for example
-# `task tui -- -c`.
+# `task tui -- -c` or `task gui -- path/to/project`.
 version: "3"
 
 vars:
   RHO: bin/rho{{exeExt}}
+  RHO_GUI: bin/rho-gui{{exeExt}}
+  # The GUI must not open a console window on Windows.
+  GUI_LDFLAGS: '{{if eq OS "windows"}}-H windowsgui{{end}}'
 
 env:
   CGO_ENABLED: "0"
@@ -12,23 +15,83 @@ env:
 tasks:
   tui:
     desc: Build rho and start the TUI in the folder you ran task from
-    deps: [build]
+    deps: [build:rho]
     dir: "{{.USER_WORKING_DIR}}"
     interactive: true
     cmds:
       - "{{.ROOT_DIR}}/{{.RHO}} {{.CLI_ARGS}}"
 
+  gui:
+    desc: Build rho-gui and open the folder you ran task from
+    deps: [build]
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - "{{.ROOT_DIR}}/{{.RHO_GUI}} {{.CLI_ARGS}}"
+
   build:
-    desc: Build rho into bin/
+    desc: Build rho and rho-gui into bin/
+    deps: [build:rho, build:gui]
+
+  build:rho:
+    internal: true
     cmds:
       - go build -o {{.RHO}} ./cmd/rho
 
+  build:gui:
+    internal: true
+    deps: [frontend]
+    dir: gui
+    cmds:
+      - go build -tags purego,production -ldflags "{{.GUI_LDFLAGS}}" -o ../{{.RHO_GUI}} .
+
   install:
-    desc: Install rho into Go's bin folder
+    desc: Install rho and rho-gui into Go's bin folder
+    deps: [frontend]
+    vars:
+      GOBIN:
+        sh: go env GOBIN
+      GOPATH:
+        sh: go env GOPATH
+      BIN: '{{if .GOBIN}}{{.GOBIN}}{{else}}{{.GOPATH}}/bin{{end}}'
     cmds:
       - go install ./cmd/rho
+      - cd gui && go build -tags purego,production -ldflags "{{.GUI_LDFLAGS}}" -o "{{.BIN}}/rho-gui{{exeExt}}" .
+      - echo "Installed rho and rho-gui in {{.BIN}}"
 
   test:
-    desc: Run the tests
+    desc: Run the tests of both Go modules
+    # The GUI embeds the built frontend, so it must exist first.
+    deps: [frontend]
     cmds:
       - go test ./...
+      - cd gui && go test -tags purego ./...
+
+  frontend:
+    internal: true
+    deps: [npm]
+    dir: gui/frontend
+    sources:
+      - index.html
+      - package.json
+      - "*.config.js"
+      - "*.config.ts"
+      - tsconfig.json
+      - scripts/**
+      - src/**
+      # The TypeScript bindings are generated from the Go bridge.
+      - ../bridge/**/*.go
+      - ../main.go
+    generates:
+      - dist/index.html
+    cmds:
+      - npm run build
+
+  npm:
+    internal: true
+    dir: gui/frontend
+    sources:
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm ci

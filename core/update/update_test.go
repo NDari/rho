@@ -63,7 +63,7 @@ func TestDetectAndNotice(t *testing.T) {
 }
 
 // gui is a product with two programs and a macOS app, like rho-gui.
-var gui = Product{Repo: "NDari/rho-gui", Archive: "rho-gui", Programs: []string{"rho-gui", "rho"}, App: "Rho", State: "update-gui.json"}
+var gui = Product{Repo: "NDari/rho", Archive: "rho-gui", Programs: []string{"rho-gui", "rho"}, App: "Rho", State: "update-gui.json"}
 
 // server fakes the GitHub API and release downloads for a v0.3.0
 // release.
