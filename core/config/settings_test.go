@@ -238,3 +238,38 @@ func TestApplyPerModelAndBool(t *testing.T) {
 		t.Error("expected an error for a non-bool")
 	}
 }
+
+func TestSetExtensionDisabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		ext      string
+		disabled bool
+		want     string
+	}{
+		{"new file", "", "a", true, "[extensions]\ndisabled = [\"a\"]\n"},
+		{"add to list", "[extensions]\ntimeout = 30\ndisabled = [\"a\"] # off\n", "b", true,
+			"[extensions]\ntimeout = 30\ndisabled = [\"a\", \"b\"] # off\n"},
+		{"already there", "[extensions]\ndisabled = [\"a\"]\n", "a", true, "[extensions]\ndisabled = [\"a\"]\n"},
+		{"remove last", "[extensions]\ndisabled = [\"a\"]\n", "a", false, "[extensions]\ndisabled = []\n"},
+		{"multi-line list", "[extensions]\ndisabled = [\n  \"a\", # first\n  \"b]\",\n]\ntimeout = 30\n", "a", false,
+			"[extensions]\ndisabled = [\"b]\"]\ntimeout = 30\n"},
+		{"remove missing", "theme = \"dark\"\n", "a", false, "theme = \"dark\"\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if tt.in != "" {
+				if err := os.WriteFile(path, []byte(tt.in), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := SetExtensionDisabled(path, tt.ext, tt.disabled); err != nil {
+				t.Fatal(err)
+			}
+			if got, _ := os.ReadFile(path); string(got) != tt.want {
+				t.Errorf("got\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}

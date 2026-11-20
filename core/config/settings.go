@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -374,11 +375,17 @@ func editSection(lines []string, sec section, name string, value any) ([]string,
 		if !ok || k != name {
 			continue
 		}
+		// The value may continue on later lines (a multi-line array).
+		last, col := valueEnd(out, i, len(out[i])-len(rest))
 		if value == nil {
-			return slices.Delete(out, i, i+1), nil
+			return slices.Delete(out, i, last+1), nil
 		}
-		out[i] = out[i][:len(out[i])-len(rest)] + val + trailingComment(rest)
-		return out, nil
+		comment := ""
+		if c := strings.Index(out[last][col:], "#"); c != -1 {
+			comment = " " + out[last][col+c:]
+		}
+		out[i] = out[i][:len(out[i])-len(rest)] + val + comment
+		return slices.Delete(out, i+1, last+1), nil
 	}
 	if value == nil {
 		return out, nil
@@ -439,27 +446,48 @@ func keyLine(l string) (key, rest string, ok bool) {
 	return k, strings.TrimLeft(rest, " \t"), true
 }
 
-// trailingComment returns the " # ..." after a simple value, if any.
-func trailingComment(rest string) string {
-	i := 0
-	if strings.HasPrefix(rest, `"`) || strings.HasPrefix(rest, "'") {
-		q := rest[0]
-		j := 1
-		for j < len(rest) && rest[j] != q {
-			if q == '"' && rest[j] == '\\' {
-				j++
+// valueEnd finds where the value starting at lines[i][col] ends: the line
+// and the column just after it. Strings, arrays and inline tables are
+// followed across lines; anything else ends at a comment or the line end.
+func valueEnd(lines []string, i, col int) (int, int) {
+	depth := 0
+	var quote byte
+	for ; i < len(lines); i, col = i+1, 0 {
+		l := lines[i]
+		for ; col < len(l); col++ {
+			ch := l[col]
+			switch {
+			case quote != 0:
+				if ch == '\\' && quote == '"' {
+					col++
+				} else if ch == quote {
+					quote = 0
+					if depth == 0 {
+						return i, col + 1
+					}
+				}
+			case ch == '"' || ch == '\'':
+				quote = ch
+			case ch == '#':
+				if depth == 0 {
+					return i, col
+				}
+				col = len(l)
+			case ch == '[' || ch == '{':
+				depth++
+			case ch == ']' || ch == '}':
+				depth--
+				if depth == 0 {
+					return i, col + 1
+				}
 			}
-			j++
 		}
-		i = j + 1
+		if depth == 0 && quote == 0 {
+			return i, len(l)
+		}
+		quote = 0 // strings don't span lines here
 	}
-	if i > len(rest) {
-		return ""
-	}
-	if c := strings.Index(rest[i:], "#"); c != -1 {
-		return " " + rest[i+c:]
-	}
-	return ""
+	return len(lines) - 1, len(lines[len(lines)-1])
 }
 
 func tomlValue(v any) (string, error) {
@@ -488,13 +516,53 @@ func checked(text, key string, want any, table func(map[string]any) any) (string
 		}
 		got = mm[part]
 	}
-	if n, ok := want.(int); ok {
-		want = int64(n)
-	}
-	if got != want {
+	if !reflect.DeepEqual(got, normalize(want)) {
 		return "", fmt.Errorf("could not set %s automatically; edit the file by hand", key)
 	}
 	return text, nil
+}
+
+// normalize converts want to the types the TOML decoder produces.
+func normalize(v any) any {
+	switch v := v.(type) {
+	case int:
+		return int64(v)
+	case []string:
+		out := make([]any, len(v))
+		for i, s := range v {
+			out[i] = s
+		}
+		return out
+	}
+	return v
+}
+
+// SetExtensionDisabled adds name to (or removes it from)
+// extensions.disabled in the TOML file at path.
+func SetExtensionDisabled(path, name string, disabled bool) error {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	var file Config
+	if _, err := toml.Decode(string(data), &file); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if slices.Contains(file.Extensions.Disabled, name) == disabled {
+		return nil // already so
+	}
+	list := slices.DeleteFunc(file.Extensions.Disabled, func(n string) bool { return n == name })
+	if disabled {
+		list = append(list, name)
+	}
+	if list == nil {
+		list = []string{}
+	}
+	out, err := setKey(string(data), "extensions.disabled", list)
+	if err != nil {
+		return fmt.Errorf("update %s: %w", path, err)
+	}
+	return writeFile(path, out)
 }
 
 // GlobalFile is the global config file.
@@ -516,4 +584,17 @@ func (p Paths) ProjectSets(s Setting, model string) bool {
 		return slices.ContainsFunc(c.Models, func(m Model) bool { return m.ID == model })
 	}
 	return md.IsDefined(strings.Split(s.Key, ".")...)
+}
+
+// ProjectDisables reports whether the project config lists extension name
+// in extensions.disabled.
+func (p Paths) ProjectDisables(name string) bool {
+	if p.ProjectDir == "" || p.ProjectDir == p.Home {
+		return false
+	}
+	var c Config
+	if _, err := toml.DecodeFile(filepath.Join(p.ProjectDir, "config.toml"), &c); err != nil {
+		return false
+	}
+	return slices.Contains(c.Extensions.Disabled, name)
 }

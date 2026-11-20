@@ -193,3 +193,61 @@ func TestDiscoverManifest(t *testing.T) {
 		t.Errorf("candidate = %+v", c)
 	}
 }
+
+func TestSetEnabled(t *testing.T) {
+	home := t.TempDir()
+	extDir := filepath.Join(home, "extensions", "hello")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join("testdata", "hello", "hello.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "hello.go"), src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Extensions.Disabled = []string{"hello"}
+	m := ext.NewManager(ext.Options{
+		Paths:   config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config:  cfg,
+		UI:      &fakeUI{},
+		Builtin: []string{"read", "write", "edit", "bash"},
+		Launch:  inProcess,
+	})
+	ctx := context.Background()
+	m.Start(ctx)
+	defer m.Stop()
+	status := func() string {
+		x := m.Extensions()[0]
+		x.Lock()
+		defer x.Unlock()
+		return x.Status
+	}
+	if status() != ext.StatusDisabled || len(m.Tools()) != 0 {
+		t.Fatalf("not disabled at start: %s", m.Describe())
+	}
+	if err := m.SetEnabled(ctx, "hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if status() != ext.StatusRunning || len(m.Tools()) != 1 || len(m.Commands()) != 1 {
+		t.Fatalf("not running after enable: %s", m.Describe())
+	}
+	if err := m.SetEnabled(ctx, "hello", false); err != nil {
+		t.Fatal(err)
+	}
+	if status() != ext.StatusDisabled || len(m.Tools()) != 0 || len(m.Commands()) != 0 {
+		t.Fatalf("still registered after disable: %s", m.Describe())
+	}
+	// The choice holds across a restart.
+	if err := m.Reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status() != ext.StatusDisabled {
+		t.Errorf("enabled again after reload: %s", m.Describe())
+	}
+	if err := m.SetEnabled(ctx, "nope", true); err == nil {
+		t.Error("expected an error for an unknown extension")
+	}
+}

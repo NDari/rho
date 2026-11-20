@@ -22,9 +22,9 @@ Each entry in an extensions directory is one extension:
 - `name/` containing `*.go` files: a multi-file Go extension (`package main`).
 - `name/` containing `rho-extension.toml`: an executable extension.
 
-Names starting with `.` or `_` are ignored. To disable an extension without deleting it, add its name to `extensions.disabled` in `config.toml`.
+Names starting with `.` or `_` are ignored. To disable an extension without deleting it, turn it off in `/extensions` or add its name to `extensions.disabled` in `config.toml`.
 
-Use `/extensions` to see status, registrations, errors and recent log lines, and `/reload` to restart all extensions.
+Use `/extensions` to list extensions: Enter turns the selected one on or off (it starts or stops right away, the others keep running, and the choice is saved to `extensions.disabled` in `~/.rho/config.toml`), and Tab shows status, registrations, errors and recent log lines. `/reload` restarts all extensions.
 
 ## Go extensions
 

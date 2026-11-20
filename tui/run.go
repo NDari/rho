@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/prompt"
 )
 
@@ -35,6 +36,25 @@ func (e extAdapter) Run(ctx context.Context, name, args string) error {
 func (e extAdapter) Describe() string { return e.a.Ext.Describe() }
 
 func (e extAdapter) Reload(ctx context.Context) error { return e.a.ReloadExtensions(ctx) }
+
+func (e extAdapter) List() []ExtensionInfo {
+	var out []ExtensionInfo
+	for _, x := range e.a.Ext.Extensions() {
+		x.Lock()
+		out = append(out, ExtensionInfo{
+			ID: x.ID, Name: x.Name, Kind: x.Kind, Project: x.Project,
+			Status: x.Status, Err: x.Err,
+			Tools: len(x.Info.Tools), Commands: len(x.Info.Commands), Hooks: len(x.Info.Hooks),
+			Disabled: x.Status == ext.StatusDisabled,
+		})
+		x.Unlock()
+	}
+	return out
+}
+
+func (e extAdapter) SetEnabled(ctx context.Context, id string, on bool) (string, error) {
+	return e.a.SetExtensionEnabled(ctx, id, on)
+}
 
 // Run starts the TUI and blocks until it exits.
 func Run(a *app.App, o Options) error {

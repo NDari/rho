@@ -66,6 +66,10 @@ type manifest struct {
 // Extension is a running (or failed) extension process.
 type Extension struct {
 	Candidate
+	// ID is the name the extension was found under, which
+	// extensions.disabled refers to. Name may be replaced by the name the
+	// extension reports.
+	ID     string
 	mu     sync.Mutex
 	Status string
 	Err    string
@@ -74,6 +78,13 @@ type Extension struct {
 	kill   func()
 	logs   []string
 }
+
+// Lock and Unlock guard Status, Err and Info, which change as the
+// extension starts and stops.
+func (e *Extension) Lock() { e.mu.Lock() }
+
+// Unlock releases Lock.
+func (e *Extension) Unlock() { e.mu.Unlock() }
 
 func (e *Extension) log(line string) {
 	e.mu.Lock()
@@ -254,12 +265,15 @@ func (m *Manager) Start(ctx context.Context) {
 	for _, w := range warnings {
 		m.o.Sink(events.Notice{Level: "warn", Text: "extension: " + w})
 	}
+	m.mu.Lock()
+	disabled := m.o.Config.Extensions.Disabled
+	m.mu.Unlock()
 	var wg sync.WaitGroup
 	var started []*Extension
 	for _, c := range cands {
-		e := &Extension{Candidate: c}
+		e := &Extension{Candidate: c, ID: c.Name}
 		started = append(started, e)
-		if slices.Contains(m.o.Config.Extensions.Disabled, c.Name) {
+		if slices.Contains(disabled, c.Name) {
 			e.Status = StatusDisabled
 			continue
 		}
@@ -445,20 +459,89 @@ func (m *Manager) Stop() {
 	m.exts = nil
 	m.mu.Unlock()
 	for _, e := range exts {
-		e.mu.Lock()
-		running := e.Status == StatusRunning
-		if running {
-			e.Status = StatusStopped
-		}
-		e.mu.Unlock()
-		if running && e.conn != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			_ = e.conn.Call(ctx, "shutdown", struct{}{}, nil)
+		stopOne(e, StatusStopped)
+	}
+}
+
+// stopOne shuts e down and sets its status.
+func stopOne(e *Extension, status string) {
+	e.mu.Lock()
+	running := e.Status == StatusRunning
+	e.Status = status
+	e.mu.Unlock()
+	if running && e.conn != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = e.conn.Call(ctx, "shutdown", struct{}{}, nil)
+		cancel()
+	}
+	if e.kill != nil {
+		e.kill()
+	}
+}
+
+// SetEnabled starts or stops one extension (by ID), leaving the others
+// running, and records the choice in the manager's config (not on disk).
+// Enabling a project extension asks for approval if needed.
+func (m *Manager) SetEnabled(ctx context.Context, name string, on bool) error {
+	m.mu.Lock()
+	idx := slices.IndexFunc(m.exts, func(e *Extension) bool { return e.ID == name })
+	if idx == -1 {
+		m.mu.Unlock()
+		return fmt.Errorf("no extension named %q", name)
+	}
+	e := m.exts[idx]
+	disabled := slices.DeleteFunc(slices.Clone(m.o.Config.Extensions.Disabled), func(n string) bool { return n == name })
+	if !on {
+		disabled = append(disabled, name)
+	}
+	m.o.Config.Extensions.Disabled = disabled
+	m.mu.Unlock()
+
+	e.mu.Lock()
+	status := e.Status
+	e.mu.Unlock()
+	if !on {
+		if status == StatusRunning && e.hasHook(HookSessionEnd) {
+			hctx, cancel := context.WithTimeout(ctx, m.timeout())
+			_ = e.conn.Call(hctx, "hook/"+HookSessionEnd, HookParams{}, nil)
 			cancel()
 		}
-		if e.kill != nil {
-			e.kill()
+		stopOne(e, StatusDisabled)
+		return nil
+	}
+	if status == StatusRunning {
+		return nil
+	}
+	// Start a fresh copy, so nothing from an earlier run lingers.
+	c := e.Candidate
+	c.Name = e.ID
+	fresh := &Extension{Candidate: c, ID: e.ID}
+	if fresh.Project && !m.approve(ctx, fresh.Candidate) {
+		fresh.Status = StatusNotApproved
+	} else {
+		m.startOne(ctx, fresh)
+	}
+	m.mu.Lock()
+	if i := slices.Index(m.exts, e); i != -1 {
+		m.exts[i] = fresh
+	}
+	m.mu.Unlock()
+	m.resolveConflicts()
+	fresh.mu.Lock()
+	status, errText := fresh.Status, fresh.Err
+	fresh.mu.Unlock()
+	switch status {
+	case StatusRunning:
+		if fresh.hasHook(HookSessionStart) {
+			hctx, cancel := context.WithTimeout(ctx, m.timeout())
+			_ = fresh.conn.Call(hctx, "hook/"+HookSessionStart, HookParams{}, nil)
+			cancel()
 		}
+		return nil
+	case StatusNotApproved:
+		return fmt.Errorf("extension %s was not approved", name)
+	default:
+		return fmt.Errorf("extension %s failed: %s", name, errText)
 	}
 }
 

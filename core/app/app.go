@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/config"
@@ -194,6 +195,37 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	a.Config = cfg
 	a.Agent.SetConfig(cfg)
 	return saved, note, nil
+}
+
+// SetExtensionEnabled starts or stops one extension and saves the choice
+// in extensions.disabled in the global config. The note is set when the
+// project config keeps the extension off on the next start.
+func (a *App) SetExtensionEnabled(ctx context.Context, id string, on bool) (note string, err error) {
+	if a.Ext == nil {
+		return "", errors.New("extensions are turned off for this run")
+	}
+	if a.Agent.Busy() {
+		return "", agent.ErrBusy
+	}
+	if !slices.ContainsFunc(a.Ext.Extensions(), func(e *ext.Extension) bool { return e.ID == id }) {
+		return "", fmt.Errorf("no extension named %q", id)
+	}
+	if err := config.SetExtensionDisabled(a.Paths.GlobalFile(), id, !on); err != nil {
+		return "", err
+	}
+	cfg := a.Agent.Config()
+	cfg.Extensions.Disabled = slices.DeleteFunc(slices.Clone(cfg.Extensions.Disabled), func(n string) bool { return n == id })
+	if !on {
+		cfg.Extensions.Disabled = append(cfg.Extensions.Disabled, id)
+	}
+	a.Config = cfg
+	a.Agent.SetConfig(cfg)
+	if on && a.Paths.ProjectDisables(id) {
+		note = "the project's .rho/config.toml also disables " + id + ", so it stays off on the next start"
+	}
+	err = a.Ext.SetEnabled(ctx, id, on)
+	a.refreshTools()
+	return note, err
 }
 
 // SessionDir is the directory holding sessions for the working directory.

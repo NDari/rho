@@ -28,7 +28,7 @@ var builtinCommands = []commandInfo{
 	{"copy", "copy the last answer to the clipboard [all]"},
 	{"theme", "change the color theme"},
 	{"config", "change and save settings [key value]"},
-	{"extensions", "list extensions"},
+	{"extensions", "list extensions and turn them on or off"},
 	{"reload", "restart extensions and reload context files"},
 	{"help", "show keys and commands"},
 	{"quit", "exit Rho"},
@@ -40,6 +40,25 @@ type ExtensionCommands interface {
 	Run(ctx context.Context, name, args string) error
 	Describe() string
 	Reload(ctx context.Context) error
+	List() []ExtensionInfo
+	// SetEnabled starts or stops one extension and saves the choice. The
+	// note, if any, warns that the choice won't hold on the next start.
+	SetEnabled(ctx context.Context, id string, on bool) (note string, err error)
+}
+
+// ExtensionInfo describes a discovered extension.
+type ExtensionInfo struct {
+	// ID is the name the extension was found under.
+	ID       string
+	Name     string
+	Kind     string
+	Project  bool
+	Status   string
+	Err      string
+	Tools    int
+	Commands int
+	Hooks    int
+	Disabled bool
 }
 
 // ExtensionCommand is a slash command provided by an extension.
@@ -209,10 +228,13 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		return m.configCommand(args)
 	case "extensions":
 		if m.ext == nil {
-			m.notice("info", "no extensions loaded")
+			m.notice("info", "extensions are turned off for this run")
 			return nil
 		}
-		m.addItem(&textItem{title: "Extensions", body: m.ext.Describe()})
+		if !idle() {
+			return nil
+		}
+		m.extensionsPicker()
 	case "reload":
 		if !idle() {
 			return nil

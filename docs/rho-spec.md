@@ -311,7 +311,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Started at session start; one process per extension, running in the session working directory (`RHO_EXTENSION_DIR` points to the extension's own directory; manifests may use `${dir}`).
 - Per-call timeouts (configurable).
 - Crash → extension marked failed, user notified, Rho continues. `/reload` restarts all extensions (this is "hot reload").
-- `/extensions` lists status, registrations and errors.
+- `/extensions` lists extensions; Enter turns one on or off without restarting the others and saves the choice in `extensions.disabled` in the global config. Tab shows status, registrations and errors.
 
 ### 12.6 Yaegi host API
 A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterCommand`, `On(event, fn)`, `UI.Confirm/Select/Input/Notify/Status`, `Log`. Interpreted code also gets the Go standard library. No broader SDK for now.
