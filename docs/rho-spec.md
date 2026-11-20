@@ -33,14 +33,14 @@ Status: draft v0.1 · License: MIT
 - Sandboxing. Security parity with pi: Rho runs with the user's permissions (see §13).
 - Filesystem rewind. Rewind only ever affects the conversation.
 - In-process extensions. Deep customization = editing your copy of Rho.
-- GUI (planned later with Wails, see §16).
+- A GUI inside the `rho` binary. The GUI is a separate `rho-gui` binary (see §18).
 
 ## 3. Architecture
 
 ```
             ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
- frontends  │  TUI (Bubble │   │  Headless    │   │  GUI (Wails, │
-            │  Tea)        │   │  (print/json)│   │  later)      │
+ frontends  │  TUI (Bubble │   │  Headless    │   │  GUI (Wails) │
+            │  Tea)        │   │  (print/json)│   │              │
             └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
                    │      Go event interface (in-process) │
             ┌──────┴──────────────────┴──────────────────┴───────┐
@@ -56,7 +56,7 @@ Status: draft v0.1 · License: MIT
 ```
 
 - The **core is a Go library** with no UI code. Frontends consume a typed **event stream** and call a small **command API** (send message, steer, follow-up, cancel, switch model, checkout entry, etc.).
-- The TUI and future GUI both use this Go interface directly (Wails is Go, so no RPC needed).
+- The TUI and the GUI both use this Go interface directly (Wails is Go, so no RPC needed).
 - **JSON-RPC is used only** for extensions and, later, an optional external RPC mode.
 - Transport inside the extension manager is an interface, so an in-memory transport could be added later without protocol changes.
 
@@ -80,6 +80,8 @@ core/config/        config loading, merging, validation
 core/events/        event types shared by frontends
 tui/                Bubble Tea app, components, themes, diff renderer
 headless/           print and JSON modes
+gui/                separate Go module: Wails GUI (`rho-gui`), see §18
+gui/frontend/       Svelte + TypeScript web frontend
 ```
 
 Clean package seams keep personal patches small and easy to rebase.
@@ -333,6 +335,7 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 ## 15. Platforms
 
 - **macOS, Linux:** fully supported.
+- **GUI (`rho-gui`):** loads the system webview at runtime: WebView2 on Windows, WKWebView on macOS, GTK 4.8+ and WebKitGTK 6.0 (2.40+) on Linux. `rho` itself needs none of these.
 - **Windows (beta):** requires Git Bash.
   - Locate Git Bash from standard install locations, then PATH; config override. Never use `C:\Windows\System32\bash.exe` (that's WSL).
   - Process trees killed with Job Objects (`golang.org/x/sys/windows`).
@@ -351,10 +354,30 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 7. **M6 - Branching:** rewind, fork, tree view, side conversations.
 8. **M7 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
 9. **M8 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
-10. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
+10. **M9 - GUI:** separate `rho-gui` binary with Wails (§18): transcript, tool cards and diffs, sessions and branching, settings, extensions, release builds.
+11. **Later:** external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
 
 ## 17. Decisions on former open questions
 
 - Default theme palette: Gruvbox for dark; the light theme keeps `catppuccin-latte` highlighting.
 - `/fork` stays in the current working directory.
 - Side-conversation summaries stay opt-in (`/back --summarize`).
+
+## 18. GUI
+
+A desktop frontend built with [Wails](https://wails.io) v3. It is a frontend like `tui/`: it drives `core/app` and the agent directly and renders the `core/events` stream. No JSON-RPC is involved.
+
+### Binary and module
+- The GUI is a **separate binary, `rho-gui`**, in its own Go module under `gui/` (with a `replace` pointing at the root module). The root module, `go build ./...` and the `rho` binary never depend on Wails or GTK.
+- Keeping it out of `rho` matters: linking Wails loads GTK and WebKitGTK when the program starts, even if no window is opened, and needs those libraries on the machine. `rho` must stay a static binary that runs on servers without a desktop.
+- `rho-gui` is built with Wails' experimental pure-Go backend (`CGO_ENABLED=0`, `-tags purego,production`), so every platform builds and cross-compiles without a C toolchain. It is not fully static: it loads the system webview at runtime (§15). If the pure-Go backend misbehaves, dropping the tag selects Wails' cgo backend with the same code.
+
+### Structure
+- **Go bridge** (`gui/`): creates the App, forwards each event to the frontend as JSON (`events.Marshal`) over Wails events, exposes the command API (send, steer, follow-up, cancel, model, sessions, branching, compaction, settings, extensions) as bound service methods, and implements the extension UI (`Confirm`, `Select`, `Input`, `Notify`, `SetStatus`) as modal dialogs answered by the frontend.
+- **Frontend** (`gui/frontend/`): Svelte + TypeScript, built with Vite; the built assets are embedded in the binary.
+- **Shared view helpers** in `core/app` (transcript rebuilding, message lists for rewind and fork, the session tree, `@file` attachments) keep session logic out of both frontends, so the TUI and GUI only differ in presentation.
+
+### Behavior
+- Same capabilities as the TUI (§10): streaming markdown and thinking, tool cards with live output, diffs from the structured display data, status bar (model, context, cost, position), steering and follow-ups, the slash commands, prompt templates and extension commands.
+- Keys follow the TUI where it makes sense: Enter sends, Shift+Enter adds a line, while working Enter steers and Alt+Enter queues a follow-up, Esc cancels.
+- Light and dark themes; the GUI follows the system setting unless the user picks one.
