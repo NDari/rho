@@ -1,6 +1,8 @@
 # Releasing
 
-Pushing a tag `vX.Y.Z` runs the release workflow (spec section 19). GoReleaser builds the `rho` and `rho-gui` archives into a draft release; the `macos-app` job then builds `Rho.app` on a macOS runner, adds it and its checksum, and publishes the release.
+CI (`ci.yml`) runs on pushes and pull requests that change more than Markdown files and `docs/`. The slower GUI checks (`gui.yml`) run only when `gui/`, `core/`, `go.mod` or `go.sum` change.
+
+Pushing a tag `vX.Y.Z` runs the release workflow (spec section 19). It first runs the CI and GUI checks (`ci.yml` and `gui.yml`); when any of them fails, nothing is built or released. Then GoReleaser builds the `rho` and `rho-gui` archives into a draft release; the `macos-app` job then builds `Rho.app` on a macOS runner, adds it and its checksum, and publishes the release.
 
 If GitHub has no free macOS runner, the `macos-app` job fails without running and the release stays a draft. Rerun only that job (`gh run rerun <run id> --failed`); it uses the macOS archive the first job saved.
 

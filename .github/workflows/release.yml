@@ -8,7 +8,14 @@ permissions:
   contents: write
 
 jobs:
+  # A release goes out only when the tests pass.
+  ci:
+    uses: ./.github/workflows/ci.yml
+  gui:
+    uses: ./.github/workflows/gui.yml
+
   release:
+    needs: [ci, gui]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
