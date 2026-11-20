@@ -2,8 +2,15 @@ version: 2
 
 project_name: rho
 
+before:
+  hooks:
+    # The GUI embeds its web assets, so build them first.
+    - npm --prefix gui/frontend ci
+    - npm --prefix gui/frontend run build
+
 builds:
-  - main: ./cmd/rho
+  - id: rho
+    main: ./cmd/rho
     binary: rho
     env:
       - CGO_ENABLED=0
@@ -13,9 +20,33 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
+  - id: rho-gui
+    dir: gui
+    main: .
+    binary: rho-gui
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    tags: [purego, production]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    overrides:
+      - goos: windows
+        goarch: amd64
+        ldflags:
+          - -s -w -H windowsgui -X main.version={{.Version}}
+      - goos: windows
+        goarch: arm64
+        ldflags:
+          - -s -w -H windowsgui -X main.version={{.Version}}
 
 archives:
-  - formats: [tar.gz]
+  - id: rho
+    ids: [rho]
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -24,6 +55,16 @@ archives:
       - README.md
       - docs/configuration.md
       - docs/extensions.md
+  - id: rho-gui
+    ids: [rho-gui]
+    name_template: "rho-gui_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - docs/gui.md
 
 checksum:
   name_template: checksums.txt
