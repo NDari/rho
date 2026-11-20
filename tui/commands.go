@@ -599,7 +599,7 @@ func (m *Model) helpText() string {
 - ctrl+f: search the transcript · pgup/pgdown, shift+↑/↓, mouse wheel: scroll · ctrl+end: follow
 - ↑/↓ on the first/last line: prompt history · tab: accept completion
 - @path attaches a file · start a message with // to send a literal slash
-- To select text with the mouse, hold shift while dragging (or use /copy)
+- Drag with the mouse to select text and copy it; shift+drag uses the terminal's own selection (or use /copy)
 
 **Commands**
 

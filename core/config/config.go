@@ -146,7 +146,14 @@ type TUI struct {
 	Keybindings map[string]string `toml:"keybindings"`
 	// ShowThinking starts with thinking expanded (ctrl+t toggles it).
 	ShowThinking bool `toml:"show_thinking"`
+	// MouseSelect lets a mouse drag select transcript text and copies it
+	// on release (default true). When false, use the terminal's own
+	// selection (usually shift+drag).
+	MouseSelect *bool `toml:"mouse_select"`
 }
+
+// MouseSelectEnabled reports whether mouse selection is on.
+func (t TUI) MouseSelectEnabled() bool { return t.MouseSelect == nil || *t.MouseSelect }
 
 // Compaction configures automatic compaction.
 type Compaction struct {
@@ -359,6 +366,9 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 		for k, v := range file.TUI.Keybindings {
 			cfg.TUI.Keybindings[k] = v
 		}
+	}
+	if defined("tui", "mouse_select") {
+		cfg.TUI.MouseSelect = file.TUI.MouseSelect
 	}
 	if defined("tui", "show_thinking") {
 		cfg.TUI.ShowThinking = file.TUI.ShowThinking

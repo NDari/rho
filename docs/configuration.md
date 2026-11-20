@@ -44,6 +44,7 @@ max_timeout = 600   # the most the model may request
 [tui]
 side_by_side_width = 160   # show diffs side by side at this terminal width or more
 show_thinking = false      # start with thinking expanded (ctrl+t toggles)
+mouse_select = true        # drag to select transcript text and copy it; false: the terminal's own selection
 
 [compaction]
 auto = true          # false: compact only on /compact or when the server says the context is full

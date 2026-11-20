@@ -31,7 +31,8 @@ var keyBindings = []keyGroup{
 		{"pgup / pgdown", "scroll a page"},
 		{"shift+↑ / shift+↓, mouse wheel", "scroll"},
 		{"ctrl+home / ctrl+end", "jump to the top / follow new output"},
-		{"shift+drag", "select text with the mouse"},
+		{"drag", "select text and copy it (tui.mouse_select)"},
+		{"shift+drag", "the terminal's own selection"},
 	}},
 	{"Completion menu", [][2]string{
 		{"↑ / ↓, ctrl+p / ctrl+n", "move"},

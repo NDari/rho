@@ -266,12 +266,13 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 ### Input
 - Multi-line editor, history, paste handling.
 - Completion for `/commands` and `@file` paths (inserts file reference/contents).
+- Mouse: the wheel scrolls; dragging selects transcript text and copies it on release (OSC 52, to both the clipboard and the primary selection). On by default; `tui.mouse_select = false` leaves selection to the terminal. Shift+drag always uses the terminal's selection.
 - Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · while busy: Enter steers, Alt+Enter queues a follow-up.
 
 ### Commands
 `/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.
 
-`/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
+`/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.mouse_select`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
 
 ## 11. Headless mode
 

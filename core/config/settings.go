@@ -60,6 +60,8 @@ var Settings = []Setting{
 		set: func(c *Config, _, v string) { c.Theme = v }},
 	boolSetting("tui.show_thinking", "show thinking expanded (ctrl+t toggles)",
 		func(c *Config) bool { return c.TUI.ShowThinking }, func(c *Config, b bool) { c.TUI.ShowThinking = b }),
+	boolSetting("tui.mouse_select", "drag to select text and copy it (off: the terminal's own selection)",
+		func(c *Config) bool { return c.TUI.MouseSelectEnabled() }, func(c *Config, b bool) { c.TUI.MouseSelect = &b }),
 	intSetting("tui.side_by_side_width", "terminal width for side-by-side diffs (0: never)", []string{"0", "120", "140", "160", "200"},
 		func(c *Config) *int { return &c.TUI.SideBySideWidth }),
 	boolSetting("compaction.auto", "compact automatically near the context limit",

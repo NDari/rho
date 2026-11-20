@@ -97,6 +97,7 @@ type Model struct {
 	quitArmed  time.Time
 	flash      string
 	flashUntil time.Time
+	sel        *selection
 
 	busy          bool
 	frame         int
@@ -283,6 +284,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleUIRequest(msg)
 		return m, m.waitUIRequest()
 
+	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		return m, m.handleMouse(msg.(tea.MouseMsg))
+
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelUp:
@@ -334,6 +338,7 @@ func (m *Model) scroll(d int) {
 
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	key := msg.String()
+	m.sel = nil
 
 	if m.dlg != nil {
 		return m.handleDialogKey(msg)
@@ -867,6 +872,7 @@ func (m *Model) View() tea.View {
 		m.offset = min(m.offset, maxOff)
 		end := min(len(m.lines), m.offset+th)
 		body = append(body, m.lines[m.offset:end]...)
+		body = m.highlightSelection(body, m.offset)
 		if m.search != nil && m.search.query != "" {
 			body = m.highlightSearch(body, m.offset)
 		}
