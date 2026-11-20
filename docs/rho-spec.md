@@ -355,7 +355,12 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 8. **M7 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
 9. **M8 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
 10. **M9 - GUI:** separate `rho-gui` binary with Wails (§18): transcript, tool cards and diffs, sessions and branching, settings, extensions, release builds.
-11. **Later:** external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
+11. **M10 - Release cleanup (next):**
+    - Limit what a release publishes. Today it has 13 files: `rho` and `rho-gui` archives for six platforms each (the `rho-gui` ones repeat `rho`), plus `Rho.app` for macOS, which makes the macOS `rho-gui` tarballs redundant for most users. Decide the set, drop the rest, and make sure everything published is in `checksums.txt` (`Rho_<version>_macos.zip` is not yet).
+    - Speed up the `gui` CI job (about 7 minutes): cache the `wails3` tool build used for bindings, and check what else the job rebuilds each run.
+    - Test `rho-gui` on Windows (only cross-compiled so far).
+    - Releases stay unsigned for now. macOS signing and notarization start working once the secrets in `docs/gui.md` are added; Windows signing is not set up.
+12. **Later:** external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
 
 ## 17. Decisions on former open questions
 
