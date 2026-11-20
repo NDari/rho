@@ -1,12 +1,11 @@
 package tui
 
 import (
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/NDari/rho/core/app"
 )
 
 // completion is the popup shown while typing /commands or @files.
@@ -53,39 +52,13 @@ func computeCompletion(before string, isFirstLine bool, cmds []commandInfo, cwd 
 }
 
 func fileCandidates(cwd, partial string) []pickerItem {
-	dirPart, prefix := "", partial
-	if i := strings.LastIndex(partial, "/"); i >= 0 {
-		dirPart, prefix = partial[:i+1], partial[i+1:]
-	}
-	dir := dirPart
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(cwd, dirPart)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var dirs, files []pickerItem
-	lp := strings.ToLower(prefix)
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
-			continue
+	var out []pickerItem
+	for _, p := range app.FileCompletions(cwd, partial) {
+		v := "@" + p
+		if !strings.HasSuffix(p, "/") {
+			v += " "
 		}
-		if !strings.HasPrefix(strings.ToLower(name), lp) {
-			continue
-		}
-		if e.IsDir() {
-			dirs = append(dirs, pickerItem{title: dirPart + name + "/", value: "@" + dirPart + name + "/"})
-		} else {
-			files = append(files, pickerItem{title: dirPart + name, value: "@" + dirPart + name + " "})
-		}
-	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs[i].title < dirs[j].title })
-	sort.Slice(files, func(i, j int) bool { return files[i].title < files[j].title })
-	out := append(dirs, files...)
-	if len(out) > 50 {
-		out = out[:50]
+		out = append(out, pickerItem{title: p, value: v})
 	}
 	return out
 }

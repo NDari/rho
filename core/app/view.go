@@ -193,6 +193,50 @@ func (a *App) BuildUserMessage(text string) provider.Message {
 	return msg
 }
 
+// FileCompletions lists the entries of the directory named in partial
+// whose names start with its last element, for @file completion. Relative
+// paths are taken from cwd. Directories come first and end in "/"; hidden
+// entries are left out unless the name being typed starts with ".". At
+// most 50 paths are returned, each starting with the directory part of
+// partial.
+func FileCompletions(cwd, partial string) []string {
+	dirPart, prefix := "", partial
+	if i := strings.LastIndex(partial, "/"); i >= 0 {
+		dirPart, prefix = partial[:i+1], partial[i+1:]
+	}
+	dir := dirPart
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(cwd, dirPart)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var dirs, files []string
+	lp := strings.ToLower(prefix)
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(name), lp) {
+			continue
+		}
+		if e.IsDir() {
+			dirs = append(dirs, dirPart+name+"/")
+		} else {
+			files = append(files, dirPart+name)
+		}
+	}
+	slices.Sort(dirs)
+	slices.Sort(files)
+	out := append(dirs, files...)
+	if len(out) > 50 {
+		out = out[:50]
+	}
+	return out
+}
+
 // MessageRef describes a message entry for pickers such as rewind and fork.
 type MessageRef struct {
 	ID   string        `json:"id"`

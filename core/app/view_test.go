@@ -156,3 +156,35 @@ func TestBuildUserMessage(t *testing.T) {
 		t.Errorf("UserMessageText = %q, %v", text, attached)
 	}
 }
+
+func TestFileCompletions(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"src", "scripts", ".git"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"README.md", "go.mod", ".env", "src/main.go", "src/Makefile"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		partial string
+		want    []string
+	}{
+		{"", []string{"scripts/", "src/", "README.md", "go.mod"}},
+		{"s", []string{"scripts/", "src/"}},
+		{"r", []string{"README.md"}},
+		{".", []string{".git/", ".env"}},
+		{"src/", []string{"src/Makefile", "src/main.go"}},
+		{"src/ma", []string{"src/Makefile", "src/main.go"}},
+		{"missing/", nil},
+		{filepath.Join(dir, "src") + "/main", []string{filepath.Join(dir, "src") + "/main.go"}},
+	}
+	for _, tt := range tests {
+		if got := FileCompletions(dir, tt.partial); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("FileCompletions(%q) = %q, want %q", tt.partial, got, tt.want)
+		}
+	}
+}
