@@ -4,7 +4,7 @@ Rho reads `~/.rho/config.toml` (global) and `.rho/config.toml` in the project (t
 
 Set `RHO_HOME` to use a directory other than `~/.rho`.
 
-In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.toml`, keeping the rest of the file and its comments. A value set in the project config still wins the next time Rho starts.
+In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.toml`, keeping the rest of the file and its comments. `reasoning_effort` applies to the current model and is saved in its `[[models]]` entry (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
 
 ## Example
 
@@ -43,8 +43,10 @@ max_timeout = 600   # the most the model may request
 
 [tui]
 side_by_side_width = 160   # show diffs side by side at this terminal width or more
+show_thinking = false      # start with thinking expanded (ctrl+t toggles)
 
 [compaction]
+auto = true          # false: compact only on /compact or when the server says the context is full
 reserve = 16000      # compact when the context comes within this many tokens of the window
 keep_recent = 20000  # roughly how many recent tokens to keep verbatim
 

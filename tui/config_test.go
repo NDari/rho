@@ -59,3 +59,48 @@ func TestConfigPickerCyclesAndSaves(t *testing.T) {
 		t.Error("an unknown theme was applied")
 	}
 }
+
+func TestConfigPerModelAndThinking(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("RHO_HOME", home)
+	cfgPath := filepath.Join(home, "config.toml")
+	file := "default_model = \"m\"\n\n[providers.p]\nbase_url = \"http://localhost:8080/v1\"\n\n[[models]]\nid = \"m\"\nprovider = \"p\"\n"
+	if err := os.WriteFile(cfgPath, []byte(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := app.New(app.Options{Cwd: t.TempDir(), NoExtensions: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Agent.Session().Close() })
+	m := New(a)
+
+	m.runCommand("/config")
+	m.picker.filter = "reasoning"
+	m.picker.refilter()
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := a.Agent.Model().ReasoningEffort; got != "low" {
+		t.Fatalf("effort = %q, want low", got)
+	}
+	data, _ := os.ReadFile(cfgPath)
+	if want := file + "reasoning_effort = \"low\"\n"; string(data) != want {
+		t.Errorf("config file = %q", data)
+	}
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	m.runCommand("/config reasoning_effort default")
+	if got := a.Agent.Model().ReasoningEffort; got != "" {
+		t.Errorf("effort = %q after default", got)
+	}
+	if data, _ := os.ReadFile(cfgPath); string(data) != file {
+		t.Errorf("default did not remove the key: %q", data)
+	}
+
+	if m.showThinking {
+		t.Fatal("thinking shown before the setting")
+	}
+	m.runCommand("/config tui.show_thinking on")
+	if !m.showThinking {
+		t.Error("show_thinking did not apply")
+	}
+}

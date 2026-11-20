@@ -425,3 +425,29 @@ func TestEmptyReplyWarns(t *testing.T) {
 		t.Error("no warning for an empty reply")
 	}
 }
+
+func TestAutoCompactionOff(t *testing.T) {
+	fp := fake.New("fake", fake.Step{Text: "a"}, fake.Step{Text: "b"}, fake.Step{Text: "c"})
+	a, _, _ := newTestAgent(t, fp)
+	cfg := a.Config()
+	off := false
+	cfg.Compaction.Auto = &off
+	cfg.Models[0].ContextWindow = 1000 // always over the limit
+	a.SetConfig(cfg)
+	if a.Model().ContextWindow != 1000 {
+		t.Fatal("SetConfig did not refresh the current model")
+	}
+	ctx := context.Background()
+	for _, p := range []string{"one", "two", "three"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cv := a.Session().BuildContext()
+	if cv.Compaction != nil {
+		t.Error("compacted with compaction.auto = false")
+	}
+	if got := cv.Messages[len(cv.Messages)-1].TextContent(); got != "c" {
+		t.Errorf("last answer = %q", got)
+	}
+}

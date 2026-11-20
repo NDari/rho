@@ -157,28 +157,43 @@ func (a *App) refreshTools() {
 }
 
 // SetSetting changes a setting for this run and saves it to the global
-// config. The note is set when the project config overrides the value.
-func (a *App) SetSetting(key, value string) (note string, err error) {
+// config. Per-model settings apply to the current model. saved is false
+// when the value could only be changed for this session; the note says
+// why, or that the project config overrides the saved value.
+func (a *App) SetSetting(key, value string) (saved bool, note string, err error) {
 	s, ok := config.LookupSetting(key)
 	if !ok {
-		return "", fmt.Errorf("unknown setting %q", key)
+		return false, "", fmt.Errorf("unknown setting %q", key)
 	}
 	if a.Agent.Busy() {
-		return "", agent.ErrBusy
+		return false, "", agent.ErrBusy
 	}
-	cfg, err := s.Apply(a.Agent.Config(), value)
+	model := a.Agent.Model().ID
+	cfg, err := s.Apply(a.Agent.Config(), model, value)
 	if err != nil {
-		return "", err
+		return false, "", err
 	}
-	if err := config.SaveSetting(a.Paths.GlobalFile(), s, s.Value(cfg)); err != nil {
-		return "", err
+	path := a.Paths.GlobalFile()
+	err = config.SaveSetting(path, s, model, s.Value(cfg, model))
+	switch {
+	case errors.Is(err, config.ErrModelNotInFile):
+		note = "changed for this session only: model " + model + " has no [[models]] entry in " + path
+	case err != nil:
+		return false, "", err
+	default:
+		saved = true
+	}
+	switch {
+	case saved && a.Paths.ProjectSets(s, model):
+		if s.PerModel {
+			note = "the project's .rho/config.toml defines model " + model + ", so its settings win on the next start"
+		} else {
+			note = "the project's .rho/config.toml also sets " + key + " and wins on the next start"
+		}
 	}
 	a.Config = cfg
 	a.Agent.SetConfig(cfg)
-	if a.Paths.ProjectSets(key) {
-		note = "the project's .rho/config.toml also sets " + key + " and wins on the next start"
-	}
-	return note, nil
+	return saved, note, nil
 }
 
 // SessionDir is the directory holding sessions for the working directory.

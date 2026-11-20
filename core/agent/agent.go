@@ -174,11 +174,15 @@ func (a *Agent) Config() config.Config {
 }
 
 // SetConfig replaces the configuration used for later requests, tool
-// calls and compaction. The current model is kept.
+// calls and compaction. The current model stays selected, with its
+// settings from c.
 func (a *Agent) SetConfig(c config.Config) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.cfg = c
-	a.mu.Unlock()
+	if m, err := c.ResolveModel(a.model.ID); err == nil {
+		a.model = m
+	}
 }
 
 // Paths returns the resolved paths.
@@ -781,7 +785,8 @@ func (a *Agent) maybeCompact(ctx context.Context) error {
 	cv := a.Session().BuildContext()
 	tokens := a.EstimateContext(cv)
 	model := a.Model()
-	if !compact.ShouldCompact(tokens, model.ContextWindow, a.Config().Compaction.Reserve) {
+	cc := a.Config().Compaction
+	if !cc.AutoEnabled() || !compact.ShouldCompact(tokens, model.ContextWindow, cc.Reserve) {
 		return nil
 	}
 	return a.compact(ctx, "auto")

@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -109,7 +111,7 @@ func TestSaveSettingRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := LookupSetting("bash.timeout")
-	if err := SaveSetting(path, s, "300"); err != nil {
+	if err := SaveSetting(path, s, "", "300"); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := Load(Paths{Home: dir})
@@ -133,18 +135,106 @@ func TestApplySetting(t *testing.T) {
 	c := Defaults()
 	c.Models = []Model{{ID: "m", Provider: "openai"}}
 	s, _ := LookupSetting("max_retries")
-	if _, err := s.Apply(c, "-1"); err == nil {
+	if _, err := s.Apply(c, "", "-1"); err == nil {
 		t.Error("negative: expected an error")
 	}
-	got, err := s.Apply(c, " 7 ")
+	got, err := s.Apply(c, "", " 7 ")
 	if err != nil || got.MaxRetries != 7 || c.MaxRetries == 7 {
 		t.Errorf("apply: %v, %d", err, got.MaxRetries)
 	}
 	d, _ := LookupSetting("default_model")
-	if _, err := d.Apply(c, "nope"); err == nil {
+	if _, err := d.Apply(c, "", "nope"); err == nil {
 		t.Error("unknown model: expected an error")
 	}
-	if got, err := d.Apply(c, "m"); err != nil || got.DefaultModel != "m" {
+	if got, err := d.Apply(c, "", "m"); err != nil || got.DefaultModel != "m" {
 		t.Errorf("default_model: %v", err)
+	}
+}
+
+func TestSetKeyBoolAndRemove(t *testing.T) {
+	got, err := setKey("[compaction]\nreserve = 1\n", "compaction.auto", false)
+	if err != nil || got != "[compaction]\nreserve = 1\nauto = false\n" {
+		t.Errorf("add bool: %q, %v", got, err)
+	}
+	got, err = setKey("a = 1\ntheme = \"x\"\nb = 2\n", "theme", nil)
+	if err != nil || got != "a = 1\nb = 2\n" {
+		t.Errorf("remove: %q, %v", got, err)
+	}
+	if got, err := setKey("a = 1\n", "theme", nil); err != nil || got != "a = 1\n" {
+		t.Errorf("remove missing: %q, %v", got, err)
+	}
+}
+
+func TestSetModelKey(t *testing.T) {
+	in := `default_model = "b"
+
+[[models]]
+id = "a"
+provider = "p"
+
+# the second one
+[[models]]
+id = "b"   # mine
+provider = "p"
+reasoning_effort = "low"
+
+[bash]
+timeout = 5
+`
+	got, err := setModelKey(in, "b", "reasoning_effort", "high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(in, `reasoning_effort = "low"`, `reasoning_effort = "high"`, 1); got != want {
+		t.Errorf("replace:\n%s", got)
+	}
+	got, err = setModelKey(in, "a", "reasoning_effort", "medium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(in, "provider = \"p\"\n\n#", "provider = \"p\"\nreasoning_effort = \"medium\"\n\n#", 1); got != want {
+		t.Errorf("add:\n%s", got)
+	}
+	got, err = setModelKey(in, "b", "reasoning_effort", nil)
+	if err != nil || strings.Contains(got, "reasoning_effort") {
+		t.Errorf("remove: %v\n%s", err, got)
+	}
+	if _, err := setModelKey(in, "c", "reasoning_effort", "high"); !errors.Is(err, ErrModelNotInFile) {
+		t.Errorf("missing model: %v", err)
+	}
+}
+
+func TestApplyPerModelAndBool(t *testing.T) {
+	c := Defaults()
+	c.Models = []Model{{ID: "m", Provider: "openai"}}
+	r, _ := LookupSetting("reasoning_effort")
+	got, err := r.Apply(c, "m", "high")
+	if err != nil || got.Models[0].ReasoningEffort != "high" || c.Models[0].ReasoningEffort != "" {
+		t.Fatalf("apply: %v %+v", err, got.Models)
+	}
+	if v := r.Value(got, "m"); v != "high" {
+		t.Errorf("value = %q", v)
+	}
+	if got, _ := r.Apply(got, "m", "default"); got.Models[0].ReasoningEffort != "" {
+		t.Error("default did not clear")
+	}
+	adhoc, err := r.Apply(c, "openai/x", "low")
+	if err != nil || r.Value(adhoc, "openai/x") != "low" {
+		t.Errorf("ad-hoc model: %v", err)
+	}
+	if m, _ := adhoc.ResolveModel("openai/x"); m.APIName() != "x" {
+		t.Errorf("ad-hoc api name = %q", m.APIName())
+	}
+
+	a, _ := LookupSetting("compaction.auto")
+	if a.Value(c, "") != "true" {
+		t.Error("auto should default to true")
+	}
+	off, err := a.Apply(c, "", "off")
+	if err != nil || off.Compaction.AutoEnabled() {
+		t.Errorf("off: %v", err)
+	}
+	if _, err := a.Apply(c, "", "maybe"); err == nil {
+		t.Error("expected an error for a non-bool")
 	}
 }

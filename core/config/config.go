@@ -144,6 +144,8 @@ type TUI struct {
 	SideBySideWidth int `toml:"side_by_side_width"`
 	// Keybindings maps action names to key strings.
 	Keybindings map[string]string `toml:"keybindings"`
+	// ShowThinking starts with thinking expanded (ctrl+t toggles it).
+	ShowThinking bool `toml:"show_thinking"`
 }
 
 // Compaction configures automatic compaction.
@@ -152,7 +154,14 @@ type Compaction struct {
 	Reserve int `toml:"reserve"`
 	// KeepRecent is roughly how many recent tokens are kept verbatim.
 	KeepRecent int `toml:"keep_recent"`
+	// Auto compacts before a turn that nears the context limit (default
+	// true). When false, compaction runs only on /compact, or when the
+	// server rejects a request as too long.
+	Auto *bool `toml:"auto"`
 }
+
+// AutoEnabled reports whether automatic compaction is on.
+func (c Compaction) AutoEnabled() bool { return c.Auto == nil || *c.Auto }
 
 // Extensions configures the extension manager.
 type Extensions struct {
@@ -350,6 +359,12 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 		for k, v := range file.TUI.Keybindings {
 			cfg.TUI.Keybindings[k] = v
 		}
+	}
+	if defined("tui", "show_thinking") {
+		cfg.TUI.ShowThinking = file.TUI.ShowThinking
+	}
+	if defined("compaction", "auto") {
+		cfg.Compaction.Auto = file.Compaction.Auto
 	}
 	if defined("compaction", "reserve") {
 		cfg.Compaction.Reserve = file.Compaction.Reserve

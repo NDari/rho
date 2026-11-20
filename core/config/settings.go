@@ -6,10 +6,21 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+)
+
+// Kind is the type of a setting's value.
+type Kind int
+
+// Setting kinds.
+const (
+	KindString Kind = iota
+	KindInt
+	KindBool
 )
 
 // Setting is a config key that can be changed while Rho runs (the TUI's
@@ -17,11 +28,16 @@ import (
 type Setting struct {
 	Key         string
 	Description string
-	// Int is true for integer settings; others are strings.
-	Int     bool
-	Choices []string
-	get     func(Config) string
-	set     func(*Config, string)
+	Kind        Kind
+	// PerModel settings belong to the current model and are saved in its
+	// [[models]] entry.
+	PerModel bool
+	// Optional settings accept "" (shown as "default"), which removes the
+	// key so the built-in behavior applies.
+	Optional bool
+	Choices  []string
+	get      func(c Config, model string) string
+	set      func(c *Config, model, v string)
 }
 
 // Settings lists the changeable settings. default_model and theme take
@@ -29,29 +45,65 @@ type Setting struct {
 // here.
 var Settings = []Setting{
 	{Key: "default_model", Description: "model for new sessions",
-		get: func(c Config) string { return c.DefaultModel }, set: func(c *Config, v string) { c.DefaultModel = v }},
+		get: func(c Config, _ string) string { return c.DefaultModel },
+		set: func(c *Config, _, v string) { c.DefaultModel = v }},
+	{Key: "reasoning_effort", Description: "how hard the model thinks", PerModel: true, Optional: true,
+		Choices: []string{"", "low", "medium", "high"},
+		get: func(c Config, model string) string {
+			m, _ := c.ResolveModel(model)
+			return m.ReasoningEffort
+		},
+		set: func(c *Config, model, v string) { c.modelEntry(model).ReasoningEffort = v }},
 	{Key: "theme", Description: "color theme",
-		get: func(c Config) string { return c.Theme }, set: func(c *Config, v string) { c.Theme = v }},
+		get: func(c Config, _ string) string { return c.Theme },
+		set: func(c *Config, _, v string) { c.Theme = v }},
+	boolSetting("tui.show_thinking", "show thinking expanded (ctrl+t toggles)",
+		func(c *Config) bool { return c.TUI.ShowThinking }, func(c *Config, b bool) { c.TUI.ShowThinking = b }),
+	intSetting("tui.side_by_side_width", "terminal width for side-by-side diffs (0: never)", []string{"0", "120", "140", "160", "200"},
+		func(c *Config) *int { return &c.TUI.SideBySideWidth }),
+	boolSetting("compaction.auto", "compact automatically near the context limit",
+		func(c *Config) bool { return c.Compaction.AutoEnabled() }, func(c *Config, b bool) { c.Compaction.Auto = &b }),
+	intSetting("compaction.reserve", "tokens kept free below the context window", []string{"8000", "16000", "32000", "64000"},
+		func(c *Config) *int { return &c.Compaction.Reserve }),
+	intSetting("compaction.keep_recent", "recent tokens kept verbatim when compacting", []string{"10000", "20000", "40000", "80000"},
+		func(c *Config) *int { return &c.Compaction.KeepRecent }),
 	intSetting("max_retries", "retries for transient provider errors", []string{"0", "1", "2", "3", "5", "10"},
 		func(c *Config) *int { return &c.MaxRetries }),
 	intSetting("bash.timeout", "default bash timeout in seconds", []string{"30", "60", "120", "300", "600"},
 		func(c *Config) *int { return &c.Bash.Timeout }),
 	intSetting("bash.max_timeout", "longest bash timeout the model may ask for, in seconds", []string{"300", "600", "1200", "1800", "3600"},
 		func(c *Config) *int { return &c.Bash.MaxTimeout }),
-	intSetting("compaction.reserve", "tokens kept free below the context window", []string{"8000", "16000", "32000", "64000"},
-		func(c *Config) *int { return &c.Compaction.Reserve }),
-	intSetting("compaction.keep_recent", "recent tokens kept verbatim when compacting", []string{"10000", "20000", "40000", "80000"},
-		func(c *Config) *int { return &c.Compaction.KeepRecent }),
-	intSetting("tui.side_by_side_width", "terminal width for side-by-side diffs (0: never)", []string{"0", "120", "140", "160", "200"},
-		func(c *Config) *int { return &c.TUI.SideBySideWidth }),
 }
 
 func intSetting(key, desc string, choices []string, field func(*Config) *int) Setting {
 	return Setting{
-		Key: key, Description: desc, Int: true, Choices: choices,
-		get: func(c Config) string { return strconv.Itoa(*field(&c)) },
-		set: func(c *Config, v string) { n, _ := strconv.Atoi(v); *field(c) = n },
+		Key: key, Description: desc, Kind: KindInt, Choices: choices,
+		get: func(c Config, _ string) string { return strconv.Itoa(*field(&c)) },
+		set: func(c *Config, _, v string) { n, _ := strconv.Atoi(v); *field(c) = n },
 	}
+}
+
+func boolSetting(key, desc string, get func(*Config) bool, set func(*Config, bool)) Setting {
+	return Setting{
+		Key: key, Description: desc, Kind: KindBool, Choices: []string{"true", "false"},
+		get: func(c Config, _ string) string { return strconv.FormatBool(get(&c)) },
+		set: func(c *Config, _, v string) { set(c, v == "true") },
+	}
+}
+
+// modelEntry returns the [[models]] entry for id, adding one for an ad-hoc
+// "provider/name" model. c.Models is copied first, since Config values
+// share it.
+func (c *Config) modelEntry(id string) *Model {
+	c.Models = slices.Clone(c.Models)
+	for i := range c.Models {
+		if c.Models[i].ID == id {
+			return &c.Models[i]
+		}
+	}
+	m, _ := c.ResolveModel(id)
+	c.Models = append(c.Models, m)
+	return &c.Models[len(c.Models)-1]
 }
 
 // LookupSetting finds a changeable setting by key.
@@ -64,27 +116,50 @@ func LookupSetting(key string) (Setting, bool) {
 	return Setting{}, false
 }
 
-// Value returns the setting's current value in c.
-func (s Setting) Value(c Config) string { return s.get(c) }
+// Value returns the setting's current value in c. model is the current
+// model's id, used by per-model settings.
+func (s Setting) Value(c Config, model string) string { return s.get(c, model) }
 
 // Apply returns c with the setting changed to value, after checking it.
-func (s Setting) Apply(c Config, value string) (Config, error) {
+// For an optional setting, "" or "default" restores the default.
+func (s Setting) Apply(c Config, model, value string) (Config, error) {
 	value = strings.TrimSpace(value)
-	if s.Int {
+	if s.Optional && (value == "" || value == "default") {
+		s.set(&c, model, "")
+		return c, nil
+	}
+	switch s.Kind {
+	case KindInt:
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
 			return c, fmt.Errorf("%s must be a whole number of 0 or more", s.Key)
 		}
 		value = strconv.Itoa(n)
-	} else if value == "" {
-		return c, fmt.Errorf("%s must not be empty", s.Key)
+	case KindBool:
+		switch strings.ToLower(value) {
+		case "true", "on", "yes":
+			value = "true"
+		case "false", "off", "no":
+			value = "false"
+		default:
+			return c, fmt.Errorf("%s must be true or false", s.Key)
+		}
+	default:
+		if value == "" {
+			return c, fmt.Errorf("%s must not be empty", s.Key)
+		}
 	}
 	if s.Key == "default_model" {
 		if _, err := c.ResolveModel(value); err != nil {
 			return c, err
 		}
 	}
-	s.set(&c, value)
+	if s.PerModel {
+		if _, err := c.ResolveModel(model); err != nil {
+			return c, err
+		}
+	}
+	s.set(&c, model, value)
 	return c, nil
 }
 
@@ -110,25 +185,49 @@ func Next(choices []string, current string, isInt bool) string {
 	return choices[0]
 }
 
-// SaveSetting writes key = value into the TOML file at path, creating it
-// if needed. The rest of the file, comments included, is kept as is.
-func SaveSetting(path string, s Setting, value string) error {
+// ErrModelNotInFile is returned when a per-model setting can't be saved
+// because the file has no [[models]] entry for the model.
+var ErrModelNotInFile = errors.New("the model has no [[models]] entry in the file")
+
+// SaveSetting writes the setting's value into the TOML file at path,
+// creating the file if needed. A per-model setting goes into the [[models]]
+// entry with id model. An empty optional value removes the key. The rest of
+// the file, comments included, is kept as is.
+func SaveSetting(path string, s Setting, model, value string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	var v any = value
-	if s.Int {
+	switch {
+	case s.Optional && value == "":
+		v = nil
+	case s.Kind == KindInt:
 		n, err := strconv.Atoi(value)
 		if err != nil {
 			return fmt.Errorf("%s: %w", s.Key, err)
 		}
 		v = n
+	case s.Kind == KindBool:
+		v = value == "true"
 	}
-	out, err := setKey(string(data), s.Key, v)
+	var out string
+	if s.PerModel {
+		out, err = setModelKey(string(data), model, s.Key, v)
+	} else {
+		out, err = setKey(string(data), s.Key, v)
+	}
+	if errors.Is(err, ErrModelNotInFile) {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("update %s: %w", path, err)
 	}
+	return writeFile(path, out)
+}
+
+// writeFile replaces path atomically, keeping its permissions.
+func writeFile(path, text string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -141,7 +240,7 @@ func SaveSetting(path string, s Setting, value string) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(out); err != nil {
+	if _, err := tmp.WriteString(text); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -154,97 +253,180 @@ func SaveSetting(path string, s Setting, value string) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// setKey sets a key ("name" or "table.name") in TOML text. It edits the
-// existing line when there is one, or adds the key, and checks that the
-// result parses with the new value.
+// section is a part of a TOML file: the root (before any header), a
+// [table] or one [[array]] entry. Body lines are [body, end).
+type section struct {
+	name      string
+	array     bool
+	body, end int
+}
+
+func sections(lines []string) []section {
+	secs := []section{{body: 0, end: len(lines)}}
+	for i, l := range lines {
+		name, array, ok := header(l)
+		if !ok {
+			continue
+		}
+		secs[len(secs)-1].end = i
+		secs = append(secs, section{name: name, array: array, body: i + 1, end: len(lines)})
+	}
+	return secs
+}
+
+func splitLines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+}
+
+func joinLines(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// setKey sets a key ("name" or "table.name") in TOML text, or removes it
+// when value is nil. It edits the existing line when there is one, or adds
+// the key, and checks that the result parses with the new value.
 func setKey(text, key string, value any) (string, error) {
 	table, name, dotted := strings.Cut(key, ".")
 	if !dotted {
 		table, name = "", key
 	}
+	lines := splitLines(text)
+	for _, sec := range sections(lines) {
+		if sec.name == table && !sec.array {
+			out, err := editSection(lines, sec, name, value)
+			if err != nil {
+				return "", err
+			}
+			return checked(joinLines(out), key, value, func(m map[string]any) any { return m })
+		}
+	}
+	if value == nil {
+		return text, nil
+	}
 	val, err := tomlValue(value)
 	if err != nil {
 		return "", err
 	}
-	lines := strings.Split(text, "\n")
-	if text == "" {
-		lines = nil
+	// No such table yet: add it at the end.
+	out := strings.TrimRight(text, "\n")
+	if out != "" {
+		out += "\n\n"
 	}
-	cur := "" // the table the line is in
-	start, end := -1, -1
-	if table == "" {
-		start = 0
-	}
-	firstHeader := -1
-	for i, l := range lines {
-		if h, ok := header(l); ok {
-			if firstHeader == -1 {
-				firstHeader = i
-			}
-			if cur == table && start != -1 && end == -1 {
-				end = i
-			}
-			cur = h
-			if h == table && start == -1 {
-				start = i + 1
-			}
+	return checked(out+"["+table+"]\n"+name+" = "+val+"\n", key, value, func(m map[string]any) any { return m })
+}
+
+// setModelKey sets (or with a nil value removes) key in the [[models]]
+// entry whose id is model.
+func setModelKey(text, model, key string, value any) (string, error) {
+	lines := splitLines(text)
+	for _, sec := range sections(lines) {
+		if !sec.array || sec.name != "models" || sectionID(lines, sec) != model {
 			continue
 		}
-		if cur == table && start != -1 && end == -1 {
-			if k, rest, ok := keyLine(l); ok && k == name {
-				lines[i] = l[:len(l)-len(rest)] + val + trailingComment(rest)
-				return checked(strings.Join(lines, "\n"), key, value)
+		out, err := editSection(lines, sec, key, value)
+		if err != nil {
+			return "", err
+		}
+		return checked(joinLines(out), key, value, func(m map[string]any) any {
+			list, _ := m["models"].([]map[string]any)
+			for _, e := range list {
+				if e["id"] == model {
+					return e
+				}
+			}
+			return nil
+		})
+	}
+	return "", ErrModelNotInFile
+}
+
+// sectionID returns the string value of the section's id key.
+func sectionID(lines []string, sec section) string {
+	for _, l := range lines[sec.body:sec.end] {
+		if k, _, ok := keyLine(l); ok && k == "id" {
+			var v struct{ ID string }
+			if _, err := toml.Decode("id = "+strings.TrimSpace(strings.SplitN(l, "=", 2)[1]), &v); err == nil {
+				return v.ID
 			}
 		}
 	}
-	if start != -1 && end == -1 {
-		end = len(lines)
+	return ""
+}
+
+// editSection replaces, adds or (for a nil value) removes name in sec.
+func editSection(lines []string, sec section, name string, value any) ([]string, error) {
+	val := ""
+	if value != nil {
+		var err error
+		if val, err = tomlValue(value); err != nil {
+			return nil, err
+		}
+	}
+	out := slices.Clone(lines)
+	for i := sec.body; i < sec.end; i++ {
+		k, rest, ok := keyLine(out[i])
+		if !ok || k != name {
+			continue
+		}
+		if value == nil {
+			return slices.Delete(out, i, i+1), nil
+		}
+		out[i] = out[i][:len(out[i])-len(rest)] + val + trailingComment(rest)
+		return out, nil
+	}
+	if value == nil {
+		return out, nil
 	}
 	line := name + " = " + val
-	switch {
-	case start == -1:
-		// No such table yet: add it at the end.
-		out := strings.TrimRight(text, "\n")
-		if out != "" {
-			out += "\n\n"
-		}
-		return checked(out+"["+table+"]\n"+line+"\n", key, value)
-	case table == "" && firstHeader != -1:
-		end = firstHeader
-	}
 	// Insert after the last non-blank line of the section.
-	at := end
-	for at > start && strings.TrimSpace(lines[at-1]) == "" {
+	blank := func(i int) bool { return strings.TrimSpace(out[i]) == "" }
+	at := sec.end
+	for at > sec.body && blank(at-1) {
 		at--
 	}
-	if table == "" && at == 0 && firstHeader != -1 {
-		// Keep a blank line between the new key and the first table.
-		lines = append([]string{line, ""}, lines...)
-	} else {
-		lines = append(lines[:at], append([]string{line}, lines[at:]...)...)
+	// A comment block set off by a blank line describes what follows the
+	// section (the next header), so insert above it.
+	j := at
+	for j > sec.body && strings.HasPrefix(strings.TrimSpace(out[j-1]), "#") {
+		j--
 	}
-	out := strings.Join(lines, "\n")
-	if !strings.HasSuffix(out, "\n") {
-		out += "\n"
+	if j < at && j > sec.body && blank(j-1) {
+		at = j
+		for at > sec.body && blank(at-1) {
+			at--
+		}
 	}
-	return checked(out, key, value)
+	ins := []string{line}
+	if sec.name == "" && at == 0 && at < len(out) {
+		// A first line right before a header: keep them apart.
+		ins = append(ins, "")
+	}
+	return slices.Insert(out, at, ins...), nil
 }
 
 // header reports the table name of a "[name]" or "[[name]]" line.
-func header(l string) (string, bool) {
+func header(l string) (name string, array, ok bool) {
 	t := strings.TrimSpace(l)
 	if !strings.HasPrefix(t, "[") {
-		return "", false
+		return "", false, false
 	}
 	if i := strings.Index(t, "#"); i != -1 {
 		t = strings.TrimSpace(t[:i])
 	}
+	array = strings.HasPrefix(t, "[[")
 	t = strings.TrimSuffix(strings.TrimPrefix(t, "["), "]")
 	t = strings.TrimSuffix(strings.TrimPrefix(t, "["), "]")
-	return strings.TrimSpace(t), true
+	return strings.TrimSpace(t), array, true
 }
 
-// keyLine splits "  key = value # note" into the key and the text after "=".
+// keyLine splits "  key = value # note" into the key and the value text
+// (from the first non-blank character after "=").
 func keyLine(l string) (key, rest string, ok bool) {
 	k, rest, ok := strings.Cut(l, "=")
 	if !ok {
@@ -254,9 +436,7 @@ func keyLine(l string) (key, rest string, ok bool) {
 	if k == "" || strings.HasPrefix(k, "#") {
 		return "", "", false
 	}
-	// Keep the space after "=".
-	trimmed := strings.TrimLeft(rest, " \t")
-	return k, trimmed, true
+	return k, strings.TrimLeft(rest, " \t"), true
 }
 
 // trailingComment returns the " # ..." after a simple value, if any.
@@ -291,15 +471,15 @@ func tomlValue(v any) (string, error) {
 	return val, nil
 }
 
-// checked parses text and confirms key now holds value, so an unusual
-// layout (an inline table, a dotted key) is refused instead of written
-// wrongly.
-func checked(text, key string, want any) (string, error) {
+// checked parses text and confirms key now holds want (or is gone, for a
+// nil want) in the table that table picks, so an unusual layout (an inline
+// table, a dotted key) is refused instead of written wrongly.
+func checked(text, key string, want any, table func(map[string]any) any) (string, error) {
 	var m map[string]any
 	if _, err := toml.Decode(text, &m); err != nil {
 		return "", fmt.Errorf("could not set %s: %w", key, err)
 	}
-	var got any = m
+	got := table(m)
 	for _, part := range strings.Split(key, ".") {
 		mm, ok := got.(map[string]any)
 		if !ok {
@@ -320,13 +500,20 @@ func checked(text, key string, want any) (string, error) {
 // GlobalFile is the global config file.
 func (p Paths) GlobalFile() string { return filepath.Join(p.Home, "config.toml") }
 
-// ProjectSets reports whether the project config sets key, which then
-// overrides the global value.
-func (p Paths) ProjectSets(key string) bool {
+// ProjectSets reports whether the project config sets key (for a
+// per-model setting, defines the model at all), which then overrides the
+// global value.
+func (p Paths) ProjectSets(s Setting, model string) bool {
 	if p.ProjectDir == "" || p.ProjectDir == p.Home {
 		return false
 	}
-	var m map[string]any
-	md, err := toml.DecodeFile(filepath.Join(p.ProjectDir, "config.toml"), &m)
-	return err == nil && md.IsDefined(strings.Split(key, ".")...)
+	var c Config
+	md, err := toml.DecodeFile(filepath.Join(p.ProjectDir, "config.toml"), &c)
+	if err != nil {
+		return false
+	}
+	if s.PerModel {
+		return slices.ContainsFunc(c.Models, func(m Model) bool { return m.ID == model })
+	}
+	return md.IsDefined(strings.Split(s.Key, ".")...)
 }

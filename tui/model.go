@@ -158,6 +158,7 @@ func New(a *app.App) *Model {
 	for _, w := range append(a.Warnings, warnings...) {
 		m.addItem(&noticeItem{level: "warn", text: w})
 	}
+	m.showThinking = a.Config.TUI.ShowThinking
 	m.gitBranch = gitBranch(a.Paths.ProjectRoot)
 	m.loadTranscript()
 	return m

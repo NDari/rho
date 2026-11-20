@@ -231,7 +231,7 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 - The summary is requested at the end of the conversation itself, with the same system prompt and tools, so the provider's prompt cache covers everything except the instruction. If the model calls a tool, returns nothing, or the request overflows, Rho retries once with a plain transcript (long tool results shortened) and shows a notice.
 - The summarization prompt can be overridden with `~/.rho/COMPACT.md` (or project `.rho/COMPACT.md`).
 - Provider context-overflow error → compact immediately and retry once.
-- `/compact` manual command: allowed (cheap), even though automatic is the default. A setting to disable automatic compaction can come later.
+- `/compact` manual command: allowed (cheap), even though automatic is the default. `compaction.auto = false` turns automatic compaction off; a request the server rejects as too long is still compacted and retried.
 - The original entries stay in the log; compaction only changes what is sent.
 
 ## 9. Context: AGENTS.md, SYSTEM.md, skills, templates
@@ -271,7 +271,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 ### Commands
 `/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/help` · `/quit`, plus prompt templates and extension commands.
 
-`/config` lists the settings that can change while Rho runs (`default_model`, `theme`, `max_retries`, `bash.timeout`, `bash.max_timeout`, `compaction.reserve`, `compaction.keep_recent`, `tui.side_by_side_width`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line, so comments and layout are kept.
+`/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
 
 ## 11. Headless mode
 
