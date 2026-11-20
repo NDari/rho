@@ -178,12 +178,23 @@ func fallbackNotes(dir, fallback, version string) []string {
 
 // pathIndex returns the position of dir in PATH, or -1.
 func pathIndex(dir string) int {
+	want := resolve(dir)
 	for i, p := range filepath.SplitList(os.Getenv("PATH")) {
-		if p != "" && samePath(filepath.Clean(p), filepath.Clean(dir)) {
+		if p != "" && samePath(resolve(p), want) {
 			return i
 		}
 	}
 	return -1
+}
+
+// resolve cleans p and follows symbolic links in it (such as /var to
+// /private/var on macOS) when it exists.
+func resolve(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 // download fetches a release file and checks it against checksums.txt.

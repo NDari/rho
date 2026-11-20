@@ -383,8 +383,13 @@ func TestInstallFallsBackWhenNotWritable(t *testing.T) {
 		t.Errorf("notes = %q", notes)
 	}
 
-	// With the new folder later on PATH, the old copy still wins.
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+bin)
+	// With the new folder later on PATH, the old copy still wins, also
+	// when PATH reaches it through a symbolic link.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", link+string(os.PathListSeparator)+bin)
 	if res, err = c.Install(context.Background(), rel, filepath.Join(dir, "rho")); err != nil {
 		t.Fatal(err)
 	}
