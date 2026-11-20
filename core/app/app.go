@@ -29,6 +29,9 @@ type Options struct {
 	Version      string
 	Sink         events.Sink
 	NoExtensions bool
+	// ExtHost is the program that runs Go source extensions (see
+	// ext.Options); empty means the running executable.
+	ExtHost string
 }
 
 // App holds the assembled core.
@@ -109,6 +112,7 @@ func New(o Options) (*App, error) {
 			Version: o.Version,
 			Agent:   a.Agent,
 			Builtin: builtin,
+			ExtHost: o.ExtHost,
 			Sink:    func(e events.Event) { a.emit(e) },
 		})
 	}

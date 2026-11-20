@@ -127,6 +127,9 @@ type Options struct {
 	Agent   AgentControl
 	// Builtin are tool names extensions may not override.
 	Builtin []string
+	// ExtHost is the program that runs Go source extensions, as
+	// "ExtHost ext-host <path>". Empty means the running executable.
+	ExtHost string
 	// Launch overrides process creation (for tests).
 	Launch Launcher
 	// Sink receives notices.
@@ -880,18 +883,21 @@ func (m *Manager) launch(c Candidate) (io.ReadCloser, io.WriteCloser, io.ReadClo
 	if m.o.Launch != nil {
 		return m.o.Launch(c)
 	}
-	return defaultLauncher(c, m.o.Paths.Cwd)
+	return defaultLauncher(c, m.o.Paths.Cwd, m.o.ExtHost)
 }
 
 // defaultLauncher starts the process in the session working directory, so
 // relative paths from the model resolve as they do for built-in tools.
-func defaultLauncher(c Candidate, cwd string) (io.ReadCloser, io.WriteCloser, io.ReadCloser, func(), error) {
+func defaultLauncher(c Candidate, cwd, extHost string) (io.ReadCloser, io.WriteCloser, io.ReadCloser, func(), error) {
 	var cmd *exec.Cmd
 	switch c.Kind {
 	case KindGo:
-		exe, err := os.Executable()
-		if err != nil {
-			return nil, nil, nil, nil, err
+		exe := extHost
+		if exe == "" {
+			var err error
+			if exe, err = os.Executable(); err != nil {
+				return nil, nil, nil, nil, err
+			}
 		}
 		cmd = exec.Command(exe, "ext-host", c.Path)
 	default:
