@@ -230,7 +230,7 @@
     display: flex;
     gap: 8px;
     align-items: flex-end;
-    padding: 10px 14px 12px;
+    padding: 1.5em 14px;
     border-top: 1px solid var(--border);
     background: var(--bg);
   }

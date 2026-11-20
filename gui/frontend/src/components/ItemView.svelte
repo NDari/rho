@@ -119,7 +119,9 @@
   }
   .thinking {
     color: var(--fg-muted);
-    margin-bottom: 6px;
+  }
+  .thinking:not(:last-child) {
+    margin-bottom: 1.5em;
   }
   .thinking summary,
   .compaction summary {

@@ -502,7 +502,9 @@ func (m *Model) inputContentHeight() int {
 	return min(max(1, n), 10)
 }
 
-func (m *Model) inputHeight() int { return m.inputContentHeight() + 2 }
+// inputHeight counts the input box, its borders and the blank line above
+// and below it.
+func (m *Model) inputHeight() int { return m.inputContentHeight() + 4 }
 
 func (m *Model) updateCompletion() {
 	val := m.input.Value()
@@ -829,12 +831,14 @@ func (m *Model) View() tea.View {
 	if m.comp != nil {
 		parts = append(parts, m.comp.render(m.renderCtx(), 8)...)
 	}
+	parts = append(parts, "")
 	parts = append(parts, m.inputView()...)
-	parts = append(parts, m.statusLine())
+	parts = append(parts, "", m.statusLine())
 	v.SetContent(strings.Join(parts, "\n"))
 	if m.dlg == nil && m.picker == nil && m.search == nil {
 		if cur := m.input.Cursor(); cur != nil {
-			cur.Y += len(parts) - 1 - m.inputContentHeight() - 1
+			// Below the input: its bottom border, a blank line and the status bar.
+			cur.Y += len(parts) - m.inputContentHeight() - 3
 			cur.X++
 			v.Cursor = cur
 		}

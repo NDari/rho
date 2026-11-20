@@ -775,7 +775,8 @@
     padding: 18px 18px 24px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    /* one line of space between items */
+    gap: 1.5em;
   }
   .empty {
     margin: 18vh auto 0;
