@@ -30,6 +30,7 @@ var builtinCommands = []commandInfo{
 	{"config", "change and save settings [key value]"},
 	{"extensions", "list extensions and turn them on or off"},
 	{"reload", "restart extensions and reload context files"},
+	{"keybindings", "list the key bindings"},
 	{"help", "show keys and commands"},
 	{"quit", "exit Rho"},
 }
@@ -112,6 +113,8 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		return m.quit()
 	case "help":
 		m.addItem(&textItem{title: "Rho help", body: m.helpText(), md: true})
+	case "keybindings", "keys":
+		m.addItem(&textItem{title: "Key bindings", body: keyBindingsText(), md: true})
 	case "model":
 		if !idle() {
 			return nil

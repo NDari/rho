@@ -143,3 +143,12 @@ func TestStatusItemsAreStable(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyBindingsText(t *testing.T) {
+	text := keyBindingsText()
+	for _, want := range []string{"| ctrl+o |", "| ctrl+f |", "**Search**", "can't be changed yet"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}

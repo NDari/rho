@@ -269,7 +269,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · while busy: Enter steers, Alt+Enter queues a follow-up.
 
 ### Commands
-`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/help` · `/quit`, plus prompt templates and extension commands.
+`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.
 
 `/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
 
@@ -326,7 +326,7 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 ## 14. Configuration
 
 - Global: `~/.rho/config.toml`; project: `.rho/config.toml` (restricted keys, see §13). Project overrides global.
-- Contents: default model, providers, models, theme, keybindings, bash timeout defaults, compaction reserve (internal for now), side-by-side diff width.
+- Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, compaction reserve (internal for now), side-by-side diff width.
 - Data directories via Go's standard per-OS config/cache locations where appropriate; `~/.rho/` as the user-facing home.
 
 ## 15. Platforms
@@ -350,7 +350,7 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 7. **M6 - Branching:** rewind, fork, tree view, side conversations.
 8. **M7 - Extensions:** protocol, manager, trust store, Yaegi host, executable extensions.
 9. **M8 - Polish & Windows beta:** OpenAI Responses API, model switching UX, cost tracking, docs, packaging/releases.
-10. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings.
+10. **Later:** Wails GUI, external RPC mode, HTML export, images in TUI, Anthropic, native Gemini API, extension SDK, in-memory extension transport, optional compaction settings, custom key bindings (`tui.keybindings` is parsed but not applied yet; `/keybindings` lists the fixed bindings).
 
 ## 17. Decisions on former open questions
 
