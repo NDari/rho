@@ -306,6 +306,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.afterInputChange()
 		return m, cmd
 
+	case editorDoneMsg:
+		m.finishEditor(msg)
+		return m, nil
+
 	case tea.KeyPressMsg:
 		return m, m.handleKey(msg)
 	}
@@ -404,6 +408,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+f":
 		m.search = &searchState{}
 		return nil
+	case "ctrl+g":
+		m.comp = nil
+		return m.openEditor()
 	case "pgup":
 		m.scroll(-m.transcriptHeight() + 2)
 		return nil

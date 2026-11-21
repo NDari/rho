@@ -123,6 +123,7 @@ See [docs/configuration.md](docs/configuration.md) for all settings.
 | Ctrl+O | expand tool output and diffs |
 | Ctrl+T | show thinking |
 | Ctrl+F | search the transcript |
+| Ctrl+G | edit the input in `$VISUAL` or `$EDITOR` (GUI editors need a wait flag, e.g. `code --wait`) |
 | PgUp/PgDn, mouse wheel | scroll |
 
 Type `/help` for all commands.

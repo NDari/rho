@@ -16,6 +16,7 @@ var keyBindings = []keyGroup{
 		{"shift+enter, alt+enter, ctrl+j", "new line"},
 		{"↑ / ↓ on the first / last line", "previous / next prompt from history"},
 		{"tab", "accept the completion"},
+		{"ctrl+g", "edit the input in $VISUAL or $EDITOR"},
 		{"ctrl+c", "clear the input; press twice to quit"},
 		{"ctrl+d", "quit (on empty input)"},
 	}},

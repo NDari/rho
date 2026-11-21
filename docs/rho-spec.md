@@ -272,7 +272,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Multi-line editor, history, paste handling.
 - Completion for `/commands` and `@file` paths (inserts file reference/contents).
 - Mouse: the wheel scrolls; dragging selects transcript text and copies it on release (OSC 52, to both the clipboard and the primary selection). On by default; `tui.mouse_select = false` leaves selection to the terminal. Shift+drag always uses the terminal's selection.
-- Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · while busy: Enter steers, Alt+Enter queues a follow-up.
+- Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · Ctrl+G edit the input in `$VISUAL` or `$EDITOR` (else `vi`, or `notepad` on Windows; editors with arguments such as `code --wait` work; the text comes back unsent, and an empty file or a failed editor leaves the input as it was) · while busy: Enter steers, Alt+Enter queues a follow-up.
 
 ### Commands
 `/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.

@@ -5,7 +5,7 @@ Ideas for the TUI and GUI that are not built yet, with the notes from discussing
 | # | Feature | TUI | GUI | Status |
 |---|---|---|---|---|
 | 1 | File restore and a changes view | yes | yes | to discuss |
-| 2 | Edit the prompt in an external editor (Ctrl+G) | yes | no | ready |
+| 2 | Edit the prompt in an external editor (Ctrl+G) | done | no | done |
 | 3 | Notifications when a turn needs you | yes | yes | ready |
 | 4 | Sessions sidebar | no | yes | GUI only |
 | 5 | Open another project (`/open`) | no | done | GUI only |
@@ -54,7 +54,7 @@ Some harnesses snapshot the whole project into a hidden git repository before ea
 
 ## 2. Edit the prompt in an external editor (TUI)
 
-**Ready.** Ctrl+G opens the current input in `$VISUAL` or `$EDITOR` (falling back to `vi`, or `notepad` on Windows), as in other terminal agents. Rho writes the input to a temporary `.md` file, suspends the TUI while the editor runs (Bubble Tea's `tea.ExecProcess`) and puts the saved text back into the input. Not sent automatically. An empty file or a non-zero exit leaves the input unchanged.
+**Done.** Ctrl+G opens the current input in `$VISUAL` or `$EDITOR` (falling back to `vi`, or `notepad` on Windows), as in other terminal agents. Rho writes the input to a temporary `.md` file, suspends the TUI while the editor runs (Bubble Tea's `tea.ExecProcess`) and puts the saved text back into the input. Not sent automatically. An empty file or a non-zero exit leaves the input unchanged.
 
 Not needed in the GUI.
 
