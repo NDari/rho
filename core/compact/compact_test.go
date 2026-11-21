@@ -53,6 +53,29 @@ func TestShouldCompact(t *testing.T) {
 	}
 }
 
+func TestOutputLimit(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		maxOutput, window, tokens, estimated int
+		want                                 int
+	}{
+		{"far from the window", 16384, 128000, 50000, 2000, 16384},
+		{"64k just under the trigger", 16384, 64000, 47000, 2000, 12904},
+		{"large estimated tail widens the margin", 16384, 64000, 45000, 30000, 11500},
+		{"1M window near the trigger", 16384, 1000000, 983000, 2000, 12904},
+		{"never below the floor", 16384, 64000, 62000, 0, MinOutput},
+		{"model limit below the floor", 2048, 64000, 63000, 0, 2048},
+		{"unknown window", 16384, 0, 50000, 0, 16384},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := OutputLimit(tt.maxOutput, tt.window, tt.tokens, tt.estimated); got != tt.want {
+				t.Errorf("OutputLimit = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTranscriptShortensResults(t *testing.T) {
 	msgs := []provider.Message{
 		{Role: provider.RoleToolResult, Content: []provider.Block{provider.ToolResult("a", strings.Repeat("y", 10000), false)}},

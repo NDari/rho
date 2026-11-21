@@ -18,6 +18,8 @@ type Step struct {
 	Calls    []Call
 	Err      error
 	Usage    provider.Usage
+	// Stop, if set, replaces the stop reason.
+	Stop provider.StopReason
 	// Wait blocks until the context is cancelled (for cancel tests).
 	Wait bool
 	// Check, if set, inspects the request.
@@ -101,6 +103,9 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 	stop := provider.StopEnd
 	if len(s.Calls) > 0 {
 		stop = provider.StopToolUse
+	}
+	if s.Stop != "" {
+		stop = s.Stop
 	}
 	usage := s.Usage
 	msg.Meta.Usage = &usage

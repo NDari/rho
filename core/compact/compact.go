@@ -54,6 +54,28 @@ func KeepTokens(keepRecent, window, reserve int) int {
 	return min(keepRecent, usable(window, reserve)/2)
 }
 
+// MinOutput is the lowest output limit OutputLimit sends (unless the
+// model's own limit is lower). Below it, the server decides.
+const MinOutput = 4096
+
+// outputMargin is the least room OutputLimit leaves for errors in the
+// token estimate.
+const outputMargin = 4096
+
+// OutputLimit is the output token limit for a request: maxOutput, lowered
+// when the context (tokens, of which estimated were counted from
+// characters rather than reported by the provider) and the output would
+// not fit the window. The margin grows with the estimated part, which can
+// be off by a quarter for dense code. Requests far from the window keep
+// maxOutput.
+func OutputLimit(maxOutput, window, tokens, estimated int) int {
+	if window <= 0 || maxOutput <= 0 {
+		return maxOutput
+	}
+	room := window - tokens - max(outputMargin, estimated/4)
+	return min(maxOutput, max(room, MinOutput))
+}
+
 // FindCut chooses the index of the first message to keep verbatim, keeping
 // roughly keepTokens of recent messages. Cuts never fall on a tool result
 // (which would separate it from its call) or a synthetic message without

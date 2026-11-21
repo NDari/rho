@@ -447,7 +447,7 @@ func (a *Agent) appendMessage(m provider.Message) error {
 }
 
 func (a *Agent) loop(ctx context.Context) error {
-	overflowRetried := false
+	overflowRetried, cutoffRetried := false, false
 	for {
 		if err := a.maybeCompact(ctx); err != nil && !errors.Is(err, ErrNothingToCompact) {
 			if ctx.Err() != nil {
@@ -476,18 +476,30 @@ func (a *Agent) loop(ctx context.Context) error {
 			}
 			return err
 		}
+		a.addCost(resp.Usage)
+		// A response cut off at a lowered output limit may have had room
+		// after compaction: compact and send the request again, once.
+		if resp.StopReason == provider.StopMaxTokens && req.MaxTokens < a.Model().MaxOutput && !cutoffRetried && a.compactionRaisesLimit(req.MaxTokens) {
+			cutoffRetried = true
+			a.emit(events.Notice{Level: "warn", Text: fmt.Sprintf("the response was cut off at an output limit lowered to %d tokens to fit the context window; compacting and retrying", req.MaxTokens)})
+			if cerr := a.compact(ctx, "auto"); cerr == nil {
+				continue
+			} else if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Compaction failed or had nothing to do: keep the response.
+		}
 		resp.Message.Meta.Model = a.Model().ID
 		if err := a.appendMessage(resp.Message); err != nil {
 			return err
 		}
-		a.addCost(resp.Usage)
 		a.emitUsage(a.Session().BuildContext(), resp.Usage)
 
 		calls := resp.Message.ToolCalls()
 		if len(calls) == 0 {
 			switch {
 			case resp.StopReason == provider.StopMaxTokens:
-				a.emit(events.Notice{Level: "warn", Text: "the response was cut off at the output token limit"})
+				a.emit(events.Notice{Level: "warn", Text: fmt.Sprintf("the response was cut off at the output token limit (%d tokens)", req.MaxTokens)})
 			case strings.TrimSpace(resp.Message.TextContent()) == "":
 				a.emit(events.Notice{Level: "warn", Text: "the model returned no answer and no tool calls"})
 			}
@@ -558,7 +570,12 @@ func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
 	}
 	cv := a.Session().BuildContext()
 	req, err := a.requestFor(cv.Messages, cv.Aside)
-	return req, prov, err
+	if err != nil {
+		return req, prov, err
+	}
+	tokens, estimated := a.estimateContext(cv)
+	req.MaxTokens = compact.OutputLimit(model.MaxOutput, model.ContextWindow, tokens, estimated)
+	return req, prov, nil
 }
 
 // providerFor returns the model's provider, with XML tool calling when the
@@ -792,6 +809,20 @@ func (a *Agent) maybeCompact(ctx context.Context) error {
 	return a.compact(ctx, "auto")
 }
 
+// summaryGuess is roughly how many tokens a compaction summary takes.
+const summaryGuess = 2000
+
+// compactionRaisesLimit reports whether compacting would likely leave room
+// for an output limit above limit. A context already near the size
+// compaction keeps would not.
+func (a *Agent) compactionRaisesLimit(limit int) bool {
+	model := a.Model()
+	cc := a.Config().Compaction
+	tokens, _ := a.estimateContext(a.Session().BuildContext())
+	after := min(tokens, compact.KeepTokens(cc.KeepRecent, model.ContextWindow, cc.Reserve)+1500+summaryGuess)
+	return compact.OutputLimit(model.MaxOutput, model.ContextWindow, after, after) > limit
+}
+
 func (a *Agent) compact(ctx context.Context, reason string) error {
 	sess := a.Session()
 	cv := sess.BuildContext()
@@ -872,6 +903,13 @@ func (a *Agent) summarize(ctx context.Context, prov provider.Provider, model con
 // EstimateContext estimates the tokens the context will use: the last
 // reported usage plus a rough estimate for newer messages.
 func (a *Agent) EstimateContext(cv session.Context) int {
+	total, _ := a.estimateContext(cv)
+	return total
+}
+
+// estimateContext returns the EstimateContext total and the part of it
+// counted from characters rather than reported by the provider.
+func (a *Agent) estimateContext(cv session.Context) (total, estimated int) {
 	sess := a.Session()
 	var compactionTS time.Time
 	if cv.Compaction != nil {
@@ -889,17 +927,16 @@ func (a *Agent) EstimateContext(cv session.Context) int {
 		if !ok || e.TS.Before(compactionTS) {
 			break
 		}
-		total := m.Meta.Usage.Total()
 		for _, later := range cv.Messages[i+1:] {
-			total += later.EstimateTokens()
+			estimated += later.EstimateTokens()
 		}
-		return total
+		return m.Meta.Usage.Total() + estimated, estimated
 	}
-	total := 1500 // system prompt and tool definitions, roughly
+	estimated = 1500 // system prompt and tool definitions, roughly
 	for _, m := range cv.Messages {
-		total += m.EstimateTokens()
+		estimated += m.EstimateTokens()
 	}
-	return total
+	return estimated, estimated
 }
 
 func (a *Agent) emitUsage(cv session.Context, u provider.Usage) {

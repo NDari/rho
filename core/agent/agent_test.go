@@ -221,6 +221,123 @@ func TestOverflowCompactsAndRetries(t *testing.T) {
 	}
 }
 
+// smallWindow sets a window too small for the model's whole output limit,
+// but large enough that the first turns do not compact.
+func smallWindow(a *Agent) {
+	cfg := a.Config()
+	cfg.Models[0].ContextWindow = 10000
+	cfg.Models[0].MaxOutput = 8000
+	a.SetConfig(cfg)
+}
+
+func TestOutputLimitLoweredNearWindow(t *testing.T) {
+	var sent []int
+	check := func(r provider.Request) { sent = append(sent, r.MaxTokens) }
+	fp := fake.New("fake", fake.Step{Text: "a", Check: check})
+	a, _, _ := newTestAgent(t, fp)
+	if err := a.Run(context.Background(), provider.UserText("one")); err != nil {
+		t.Fatal(err)
+	}
+	fp.Add(fake.Step{Text: "b", Check: check})
+	smallWindow(a)
+	if err := a.Run(context.Background(), provider.UserText("two")); err != nil {
+		t.Fatal(err)
+	}
+	if sent[0] != 1000 {
+		t.Errorf("large window: max tokens = %d, want the model's 1000", sent[0])
+	}
+	if sent[1] >= 8000 || sent[1] < 4096 {
+		t.Errorf("small window: max tokens = %d, want lowered to fit", sent[1])
+	}
+}
+
+func TestCutOffAtLoweredLimitCompactsAndRetries(t *testing.T) {
+	fp := fake.New("fake",
+		fake.Step{Text: strings.Repeat("x", 80000)}, // about 20k tokens
+		fake.Step{Text: "partial", Stop: provider.StopMaxTokens},
+		fake.Step{Text: "SUMMARY"}, // compaction
+		fake.Step{Text: "after"},
+	)
+	a, rec, _ := newTestAgent(t, fp)
+	// Below the compaction trigger (24k), but too full for the whole
+	// output limit; compaction would make room for it.
+	cfg := a.Config()
+	cfg.Models[0].ContextWindow = 40000
+	cfg.Models[0].MaxOutput = 30000
+	a.SetConfig(cfg)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+	cv := a.Session().BuildContext()
+	if cv.Compaction == nil {
+		t.Fatal("no compaction entry")
+	}
+	for _, m := range cv.Messages {
+		if m.TextContent() == "partial" {
+			t.Error("the cut-off response was kept")
+		}
+	}
+	if got := cv.Messages[len(cv.Messages)-1].TextContent(); got != "after" {
+		t.Errorf("last answer = %q", got)
+	}
+	if !strings.Contains(strings.Join(rec.types(), ","), "compaction_start") {
+		t.Error("no compaction event")
+	}
+}
+
+func TestCutOffInSmallContextIsKept(t *testing.T) {
+	// The limit is lowered because the window is small, not because the
+	// context is full, so compacting would not help.
+	fp := fake.New("fake",
+		fake.Step{Text: "first"},
+		fake.Step{Text: "partial", Stop: provider.StopMaxTokens},
+	)
+	a, _, _ := newTestAgent(t, fp)
+	smallWindow(a)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+	cv := a.Session().BuildContext()
+	if cv.Compaction != nil {
+		t.Error("compacted a context that compaction cannot shrink")
+	}
+	if got := cv.Messages[len(cv.Messages)-1].TextContent(); got != "partial" {
+		t.Errorf("last answer = %q", got)
+	}
+}
+
+func TestCutOffAtModelLimitIsKept(t *testing.T) {
+	fp := fake.New("fake", fake.Step{Text: "partial", Stop: provider.StopMaxTokens})
+	a, rec, _ := newTestAgent(t, fp)
+	if err := a.Run(context.Background(), provider.UserText("one")); err != nil {
+		t.Fatal(err)
+	}
+	cv := a.Session().BuildContext()
+	if cv.Compaction != nil {
+		t.Error("compacted after a cut-off at the model's own limit")
+	}
+	if got := cv.Messages[len(cv.Messages)-1].TextContent(); got != "partial" {
+		t.Errorf("last answer = %q", got)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	warned := false
+	for _, e := range rec.events {
+		if n, ok := e.(events.Notice); ok && strings.Contains(n.Text, "cut off at the output token limit (1000 tokens)") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Error("no cut-off warning")
+	}
+}
+
 func TestRepairToolPairs(t *testing.T) {
 	msgs := []provider.Message{
 		provider.UserText("hi"),

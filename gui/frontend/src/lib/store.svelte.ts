@@ -160,6 +160,12 @@ export class Store {
         break;
       case "message_start":
         if (!this.cur || this.cur.text || this.cur.thinking || this.cur.composing) {
+          if (this.cur) {
+            // A discarded partial response.
+            endThinking(this.cur);
+            this.cur.streaming = false;
+            this.cur.composing = "";
+          }
           this.cur = this.add({
             kind: "assistant",
             text: "",

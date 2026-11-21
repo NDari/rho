@@ -649,6 +649,11 @@ func (m *Model) handleEvent(e events.Event) {
 		m.busy = true
 	case events.MessageStart:
 		if m.cur == nil || !m.cur.empty() {
+			if m.cur != nil { // a discarded partial response
+				m.cur.endThinking(time.Now())
+				m.cur.streaming = false
+				m.cur.touch()
+			}
 			m.cur = &assistantItem{streaming: true}
 			m.addItem(m.cur)
 		}
