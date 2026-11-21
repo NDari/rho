@@ -1,0 +1,105 @@
+# Feature requests
+
+Ideas for the TUI and GUI that are not built yet, with the notes from discussing them. Nothing here is decided until it moves into the spec ([rho-spec.md](rho-spec.md)).
+
+| # | Feature | TUI | GUI | Status |
+|---|---|---|---|---|
+| 1 | File restore and a changes view | yes | yes | to discuss |
+| 2 | Edit the prompt in an external editor (Ctrl+G) | yes | no | ready |
+| 3 | Notifications when a turn needs you | yes | yes | ready |
+| 4 | Sessions sidebar | no | yes | GUI only |
+| 5 | Open another project (`/open`) | no | done | GUI only |
+| 6 | Terminal in the GUI | no | yes | needs dependencies |
+
+## 1. File restore and a changes view
+
+**To discuss.** A diff view of what the agent changed is wanted, especially in the GUI; restoring files on rewind has many edge cases to settle first.
+
+### The idea
+
+Today `/rewind` only rewinds the conversation and shows a banner that files on disk are not reverted (spec 7.5). The proposal is a store of file contents kept by Rho itself, not git:
+
+- `edit` and `write` already read a file before changing it. They would save that content (or "did not exist") and the new content as blobs named by their hash, in a folder next to the session file, for example `~/.rho/sessions/<session>.files/`.
+- The tool result entry records the path and both hashes. That is a new field on a new entry, so session files stay append-only.
+- `/rewind` puts back the "before" content of every file changed after the chosen point, newest first, and deletes files the agent created.
+- Since "after" is stored too, a `/tree` checkout could move the files to any branch: undo back to the common ancestor, then apply the other branch's changes.
+- The same records give a **changes view**: the files changed in the last turn or the session, with their diffs, and a way to revert one file. In the GUI this could become a review pane where comments on lines are sent back as a follow-up message.
+
+It works for any file content, but only `edit` and `write` write files today, so in practice it covers text.
+
+### Not covered
+
+- Changes made through `bash` (`sed -i`, `npm install`, `go generate`, `rm`, `git checkout`, ...).
+- Changes made by the user or other programs in the meantime.
+- Effects outside the project: databases, network calls, installed packages.
+
+### The git alternative
+
+Some harnesses snapshot the whole project into a hidden git repository before each turn. That also covers `bash`, but it needs a `git` binary (Rho has no external dependencies today), scans the whole tree on every snapshot (slow in large repositories), must decide what to do with ignored folders like `node_modules`, and snapshots files the agent never touched.
+
+### Edge cases to settle
+
+- **Conflicts:** the file changed after the agent wrote it (by the user, an editor, `bash`). Compare with the recorded "after" hash and skip and list such files instead of overwriting them? Offer to overwrite anyway?
+- **Partial restores:** some files restore and others conflict. Is the rewind still done, and how is that shown?
+- **Files outside the project folder:** the tools accept any path. Restore them, ask, or refuse?
+- **Moves and deletes:** a `bash` `mv` or `rm` of a file the agent created or edited. The file is gone or somewhere else; what does restore do?
+- **File modes, symbolic links and line endings:** restore the mode bits; write through or replace a link; keep CRLF files as they were.
+- **Large files:** a size limit above which the content is not kept and the file is marked as not restorable.
+- **Secrets:** blobs copy files such as `.env` into `~/.rho`. Same permissions as the session files? Excluded patterns?
+- **Storage and cleanup:** when are blobs deleted (with the session, after some time, `/compact`)? Forks share blobs with the session they came from.
+- **Two Rho instances in one project:** each only knows its own changes.
+- **Windows:** files locked by another program.
+- **Undo of a restore:** keep the pre-restore content too, so a mistaken rewind can be taken back?
+- **Scope of the changes view:** last turn, whole session, current branch only, or the working tree compared with git `HEAD` when there is a repository.
+
+## 2. Edit the prompt in an external editor (TUI)
+
+**Ready.** Ctrl+G opens the current input in `$VISUAL` or `$EDITOR` (falling back to `vi`, or `notepad` on Windows), as in other terminal agents. Rho writes the input to a temporary `.md` file, suspends the TUI while the editor runs (Bubble Tea's `tea.ExecProcess`) and puts the saved text back into the input. Not sent automatically. An empty file or a non-zero exit leaves the input unchanged.
+
+Not needed in the GUI.
+
+## 3. Notifications (both)
+
+**Ready.** Tell the user when Rho needs them while they are looking elsewhere:
+
+- when a turn ends (done, failed after retries, or cancelled),
+- when an extension asks a question (`ui/confirm`, `ui/select`, `ui/input`).
+
+Only when the window is not focused.
+
+- **TUI:** a desktop notification through the terminal (OSC 9 or OSC 777, which many terminals support), or the bell. Focus comes from terminal focus reporting where the terminal supports it. A setting such as `tui.notify = auto | bell | off`.
+- **GUI:** a system notification, and on macOS a dock badge. Check what Wails v3 offers for notifications and whether it works with the pure-Go backend on Linux; otherwise use D-Bus directly there.
+
+## 4. Sessions sidebar (GUI only)
+
+**Ready.** `/resume` already picks a session, but only from the current folder. The GUI gets a sidebar, which can be hidden, that lists sessions from every project:
+
+- grouped by project folder, newest first, with the title (first message or label), date, model and size,
+- search by title and folder,
+- rename (sets the label), delete (with a confirmation),
+- picking a session in another folder switches to that project first, as `/open` does (see 5).
+
+**Decided: no `/sessions` in the TUI.** It would overlap with `/resume` and only add the list across all projects. Picking a session from another folder would then need a project switch, which the TUI is not getting (see 5). In the terminal, `/resume` covers the current folder, and `rho --session FILE` or starting `rho -r` in the other folder covers the rest.
+
+## 5. Open another project (GUI only)
+
+**Decided: GUI only, and the GUI already has it.** The GUI has `/open` (with a folder dialog, or `/open path`). It is more useful there, since the GUI is often started from a launcher instead of in the project folder. In the terminal, starting `rho` in another folder does the same, so the TUI does not get `/open`, and the `/cd` idea is dropped.
+
+Possible GUI additions: a list of recent project folders (the folders that have sessions) when `/open` has no path, next to the folder dialog.
+
+## 6. Terminal in the GUI
+
+**Needs dependencies.** A terminal panel at the bottom of the window, opened in the project folder, toggled with a key (Ctrl+` in many editors).
+
+- Needs a pseudo terminal on the Go side (for example `creack/pty` on Linux and macOS, ConPTY on Windows) and a terminal widget in the frontend (for example xterm.js). Both are new dependencies to approve.
+- A smaller first step: an **Open in terminal** action that starts the system terminal in the project folder.
+- Later, the agent's `bash` output could be opened in the panel.
+
+## Other ideas from the same review
+
+Mentioned while comparing Rho with other harnesses and editors, not requested yet:
+
+- **Images:** paste or drop a screenshot into the input for models with `supports_images`. In the TUI, paste an image path or read an image from the clipboard.
+- **Edit an earlier prompt and send it again** in one step, instead of `/rewind` and retyping.
+- **Custom key bindings in the TUI:** `tui.keybindings` is read but not applied yet.
+- **GUI command palette** (Ctrl+K).
