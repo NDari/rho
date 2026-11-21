@@ -65,14 +65,14 @@ const outputMargin = 4096
 // OutputLimit is the output token limit for a request: maxOutput, lowered
 // when the context (tokens, of which estimated were counted from
 // characters rather than reported by the provider) and the output would
-// not fit the window. The margin grows with the estimated part, which can
-// be off by a quarter for dense code. Requests far from the window keep
-// maxOutput.
+// not fit the window. The margin grows with the estimated part: characters
+// / 4 undercounts code and tool output by up to about half. Requests far
+// from the window keep maxOutput.
 func OutputLimit(maxOutput, window, tokens, estimated int) int {
 	if window <= 0 || maxOutput <= 0 {
 		return maxOutput
 	}
-	room := window - tokens - max(outputMargin, estimated/4)
+	room := window - tokens - max(outputMargin, estimated/2)
 	return min(maxOutput, max(room, MinOutput))
 }
 

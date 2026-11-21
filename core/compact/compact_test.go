@@ -61,7 +61,7 @@ func TestOutputLimit(t *testing.T) {
 	}{
 		{"far from the window", 16384, 128000, 50000, 2000, 16384},
 		{"64k just under the trigger", 16384, 64000, 47000, 2000, 12904},
-		{"large estimated tail widens the margin", 16384, 64000, 45000, 30000, 11500},
+		{"large estimated tail widens the margin", 16384, 64000, 40000, 20000, 14000},
 		{"1M window near the trigger", 16384, 1000000, 983000, 2000, 12904},
 		{"never below the floor", 16384, 64000, 62000, 0, MinOutput},
 		{"model limit below the floor", 2048, 64000, 63000, 0, 2048},
