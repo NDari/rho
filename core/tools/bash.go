@@ -126,7 +126,7 @@ func (Bash) Execute(ctx context.Context, env *Env, raw json.RawMessage, progress
 	isError := false
 	switch {
 	case ctx.Err() != nil:
-		status = "Command cancelled by user."
+		status = "Command cancelled by " + events.CancelledBy(ctx) + "."
 		isError = true
 	case runCtx.Err() != nil:
 		status = fmt.Sprintf("Command timed out after %ds and was killed.", timeout)

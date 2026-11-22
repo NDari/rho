@@ -32,6 +32,10 @@ type TurnEnd struct {
 	// prompt text for frontends to drop the prompt from the transcript and
 	// put it back in the editor.
 	Unanswered string `json:"unanswered,omitempty"`
+	// CancelledBy names who or what cancelled the turn when Reason is
+	// "cancelled": "the user", "the RPC client", "extension NAME" or
+	// "Rho (shutting down)".
+	CancelledBy string `json:"cancelled_by,omitempty"`
 }
 
 // MessageStart begins a streamed assistant message.

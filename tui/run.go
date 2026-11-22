@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/update"
@@ -86,7 +87,7 @@ func Run(a *app.App, o Options) error {
 		go a.StartExtensions(context.Background(), m.NewUI())
 	}
 	_, err := p.Run()
-	a.Agent.Cancel()
+	a.Agent.CancelBy(events.ByShutdown)
 	a.Agent.Wait()
 	a.StopExtensions()
 	_ = a.Agent.Session().Close()

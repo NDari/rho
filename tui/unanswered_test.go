@@ -23,6 +23,28 @@ func (p fakeProviders) Get(name string) (provider.Provider, error) {
 	return nil, errors.New("unknown provider " + name)
 }
 
+// newTestModel builds a TUI model around an agent with the fake provider.
+func newTestModel(t *testing.T, steps ...fake.Step) (*Model, *agent.Agent) {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Providers["fake"] = config.Provider{Type: config.ProviderOpenAICompat, BaseURL: "http://x"}
+	model := config.Model{ID: "m", Provider: "fake", ContextWindow: 100000, MaxOutput: 1000}
+	cfg.Models = []config.Model{model}
+	paths := config.Paths{Home: filepath.Join(dir, "home"), Cwd: dir, ProjectRoot: dir, ProjectDir: filepath.Join(dir, ".rho")}
+	ag := agent.New(agent.Options{
+		Config:    cfg,
+		Paths:     paths,
+		Session:   session.New("", dir, "test"),
+		Providers: fakeProviders{"fake": fake.New("fake", steps...)},
+		Model:     model,
+		Tools:     tools.Builtins(),
+	})
+	m := New(&app.App{Config: cfg, Paths: paths, Agent: ag})
+	m.width, m.height = 80, 24
+	return m, ag
+}
+
 // TestUnansweredPromptReturnsToEditor sends a prompt that fails before any
 // reply and checks that it leaves the transcript and goes back into the
 // editor.
@@ -33,23 +55,7 @@ func TestUnansweredPromptReturnsToEditor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.typed, func(t *testing.T) {
-			dir := t.TempDir()
-			cfg := config.Defaults()
-			cfg.Providers["fake"] = config.Provider{Type: config.ProviderOpenAICompat, BaseURL: "http://x"}
-			model := config.Model{ID: "m", Provider: "fake", ContextWindow: 100000, MaxOutput: 1000}
-			cfg.Models = []config.Model{model}
-			paths := config.Paths{Home: filepath.Join(dir, "home"), Cwd: dir, ProjectRoot: dir, ProjectDir: filepath.Join(dir, ".rho")}
-			fp := fake.New("fake", fake.Step{Err: &provider.Error{Kind: provider.ErrAuth, StatusCode: 401, Message: "bad key"}})
-			ag := agent.New(agent.Options{
-				Config:    cfg,
-				Paths:     paths,
-				Session:   session.New("", dir, "test"),
-				Providers: fakeProviders{"fake": fp},
-				Model:     model,
-				Tools:     tools.Builtins(),
-			})
-			m := New(&app.App{Config: cfg, Paths: paths, Agent: ag})
-			m.width, m.height = 80, 24
+			m, ag := newTestModel(t, fake.Step{Err: &provider.Error{Kind: provider.ErrAuth, StatusCode: 401, Message: "bad key"}})
 			m.input.SetValue(tt.typed)
 			m.submit(false)
 			ag.Wait()

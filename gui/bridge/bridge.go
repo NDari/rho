@@ -33,6 +33,9 @@ const (
 	EventBatch = "rho:events"
 	// EventUIRequest asks the frontend to show an extension prompt.
 	EventUIRequest = "rho:ui"
+	// EventUIClose withdraws an extension prompt that is no longer waited
+	// for (a UIClose).
+	EventUIClose = "rho:ui-close"
 )
 
 // flushInterval batches streamed events to about the display frame rate.
@@ -186,7 +189,7 @@ func (b *Bridge) close() {
 // shutdown cancels any running turn, stops extensions and closes the
 // session.
 func shutdown(a *app.App) {
-	a.Agent.Cancel()
+	a.Agent.CancelBy(events.ByShutdown)
 	a.Agent.Wait()
 	a.StopExtensions()
 	_ = a.Agent.Session().Close()
@@ -751,6 +754,13 @@ type UIRequest struct {
 	Options     []string `json:"options,omitempty"`
 }
 
+// UIClose tells the frontend that nobody waits for the answer to the
+// prompt with the given ID any more, and why.
+type UIClose struct {
+	ID     int64  `json:"id"`
+	Reason string `json:"reason"`
+}
+
 // Respond answers the extension prompt with the given ID. ok is false when
 // the user dismissed it.
 func (b *Bridge) Respond(id int64, value string, ok bool) {
@@ -791,8 +801,17 @@ func (b *Bridge) ask(ctx context.Context, r UIRequest) (reply, error) {
 		b.mu.Lock()
 		delete(b.asks, r.ID)
 		b.mu.Unlock()
+		b.host.Emit(EventUIClose, UIClose{ID: r.ID, Reason: closeReason(ctx)})
 		return reply{}, ctx.Err()
 	}
+}
+
+// closeReason says why ctx ended, for a prompt that was closed.
+func closeReason(ctx context.Context) string {
+	if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
+		return cause.Error()
+	}
+	return "no longer needed"
 }
 
 // extUI implements ext.UI. It is a separate type so its methods are not

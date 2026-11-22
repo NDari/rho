@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/provider/fake"
 )
 
@@ -19,13 +20,16 @@ type fakeHost struct {
 	mu        sync.Mutex
 	events    []map[string]any
 	uiReqs    chan UIRequest
+	uiCloses  chan UIClose
 	clipboard string
 	title     string
 	folder    string
 	updates   []string
 }
 
-func newFakeHost() *fakeHost { return &fakeHost{uiReqs: make(chan UIRequest, 4)} }
+func newFakeHost() *fakeHost {
+	return &fakeHost{uiReqs: make(chan UIRequest, 4), uiCloses: make(chan UIClose, 4)}
+}
 
 func (h *fakeHost) Emit(name string, data any) {
 	switch name {
@@ -41,6 +45,8 @@ func (h *fakeHost) Emit(name string, data any) {
 		}
 	case EventUIRequest:
 		h.uiReqs <- data.(UIRequest)
+	case EventUIClose:
+		h.uiCloses <- data.(UIClose)
 	case EventUpdate:
 		h.mu.Lock()
 		h.updates = append(h.updates, data.(string))
@@ -232,13 +238,18 @@ func TestExtensionPrompts(t *testing.T) {
 		})
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// A withdrawn prompt is closed in the frontend, with the reason.
+	ctx, cancel := context.WithCancelCause(context.Background())
+	var id int64
 	go func() {
-		<-h.uiReqs
-		cancel()
+		id = (<-h.uiReqs).ID
+		cancel(&events.Cancelled{By: "extension guard"})
 	}()
 	if _, err := ui.Confirm(ctx, "t", "m"); !errors.Is(err, context.Canceled) {
 		t.Errorf("cancelled prompt error = %v", err)
+	}
+	if c := <-h.uiCloses; c.ID != id || c.Reason != "cancelled by extension guard" {
+		t.Errorf("close = %+v, want id %d and the reason", c, id)
 	}
 }
 

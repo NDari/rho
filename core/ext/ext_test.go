@@ -409,7 +409,7 @@ func (a *fakeAgent) SetActiveTools(names []string) error {
 	a.record("set_tools " + strings.Join(names, "+"))
 	return nil
 }
-func (a *fakeAgent) Cancel()                       { a.record("cancel") }
+func (a *fakeAgent) CancelBy(by string)            { a.record("cancel by " + by) }
 func (a *fakeAgent) Compact(context.Context) error { a.record("compact"); return nil }
 func (a *fakeAgent) Info() ext.SessionInfo         { return ext.SessionInfo{ID: "s1", Model: "m1"} }
 func (a *fakeAgent) Messages() []ext.SessionEntry {
@@ -471,7 +471,7 @@ func TestNotificationsAndAgentControl(t *testing.T) {
 	}
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	if got := strings.Join(ag.calls, ","); got != "set_model big,cancel,compact,set_model missing" {
+	if got := strings.Join(ag.calls, ","); got != "set_model big,cancel by extension ctl,compact,set_model missing" {
 		t.Errorf("agent calls = %s", got)
 	}
 }

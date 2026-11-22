@@ -66,6 +66,8 @@
   let picker: PickerSpec | null = $state(null);
   let dialog: DialogSpec | null = $state(null);
   let uiQueue: UIRequest[] = $state([]);
+  // The id of the extension prompt on screen, if any.
+  let shownUI: number | null = null;
   let composer: ReturnType<typeof Composer> | undefined = $state();
   let scroller: HTMLDivElement | undefined = $state();
   let content: HTMLDivElement | undefined = $state();
@@ -137,7 +139,9 @@
   $effect(() => {
     const r = uiQueue[0];
     if (!r || dialog || picker) return;
+    shownUI = r.id;
     const answer = (value: string, ok: boolean) => {
+      shownUI = null;
       uiQueue = uiQueue.slice(1);
       void Bridge.Respond(r.id, value, ok);
     };
@@ -651,6 +655,18 @@
     const offUI = Events.On("rho:ui", (ev: { data: UIRequest }) => {
       uiQueue = [...uiQueue, ev.data];
     });
+    // A withdrawn prompt leaves the screen (or the queue) without an answer.
+    const offUIClose = Events.On("rho:ui-close", (ev: { data: { id: number; reason: string } }) => {
+      const r = uiQueue.find((q) => q.id === ev.data.id);
+      if (!r) return;
+      uiQueue = uiQueue.filter((q) => q !== r);
+      if (shownUI === r.id) {
+        shownUI = null;
+        dialog = null;
+        picker = null;
+        store.notice("warn", `Prompt "${r.title}" closed: ${ev.data.reason}`);
+      }
+    });
     const offUpdate = Events.On("rho:update", (ev: { data: string }) => {
       update = ev.data;
     });
@@ -679,6 +695,7 @@
     return () => {
       offEvents();
       offUI();
+      offUIClose();
       offUpdate();
       ro.disconnect();
     };

@@ -118,7 +118,7 @@ type Agent struct {
 	toolOverride []string
 
 	busy      bool
-	cancel    context.CancelFunc
+	cancel    context.CancelCauseFunc
 	done      chan struct{}
 	steering  []string
 	followUps []string
@@ -346,7 +346,7 @@ func (a *Agent) start() (context.Context, error) {
 	if a.busy {
 		return nil, ErrBusy
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	a.busy = true
 	a.cancel = cancel
 	a.done = make(chan struct{})
@@ -365,12 +365,17 @@ func (a *Agent) Wait() {
 	}
 }
 
-// Cancel aborts the current turn.
-func (a *Agent) Cancel() {
+// Cancel aborts the current turn on the user's behalf.
+func (a *Agent) Cancel() { a.CancelBy(events.ByUser) }
+
+// CancelBy aborts the current turn, recording who or what cancelled it
+// (for example events.ByRPCClient or "extension guard"), so tool results,
+// turn_end and closed prompts can say so.
+func (a *Agent) CancelBy(by string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cancel != nil {
-		a.cancel()
+		a.cancel(&events.Cancelled{By: by})
 	}
 }
 
@@ -460,7 +465,10 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 			reason = "error"
 			a.emit(events.Error{Message: err.Error()})
 		}
-		unanswered := ""
+		unanswered, cancelledBy := "", ""
+		if reason == "cancelled" {
+			cancelledBy = events.CancelledBy(ctx)
+		}
 		if reason == "cancelled" || reason == "error" {
 			unanswered = a.withdrawUnanswered(promptID)
 		}
@@ -473,11 +481,11 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		if ctx.Err() == nil {
 			a.lastErr = err
 		} else {
-			a.lastErr = ctx.Err()
+			a.lastErr = context.Cause(ctx)
 		}
 		done := a.done
 		a.mu.Unlock()
-		a.emit(events.TurnEnd{Reason: reason, Unanswered: unanswered})
+		a.emit(events.TurnEnd{Reason: reason, Unanswered: unanswered, CancelledBy: cancelledBy})
 		close(done)
 	}()
 	a.emit(events.TurnStart{})
@@ -947,7 +955,7 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block, offered []
 			runs[k].args = call.Args
 			switch {
 			case ctx.Err() != nil:
-				runs[k].res = tools.Result{Content: []provider.Block{provider.Text("Cancelled by the user.")}, IsError: true}
+				runs[k].res = tools.Result{Content: []provider.Block{provider.Text("Cancelled by " + events.CancelledBy(ctx) + ".")}, IsError: true}
 			case a.hasSteering():
 				runs[k].res = tools.Result{Content: []provider.Block{provider.Text("Skipped: the user interrupted with a new message.")}, IsError: true}
 			default:
@@ -1095,6 +1103,11 @@ func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call 
 		if len(newArgs) > 0 {
 			args = newArgs
 		}
+	}
+	// The turn may have been cancelled while a hook waited (an extension
+	// asking the user); a cancelled call must not run.
+	if ctx.Err() != nil {
+		return tools.Result{Content: []provider.Block{provider.Text("Cancelled by " + events.CancelledBy(ctx) + ".")}, IsError: true}, args
 	}
 	res := t.Execute(ctx, env, args, func(s string) {
 		a.emit(events.ToolOutput{ID: call.ID, Text: s})

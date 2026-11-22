@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
@@ -111,6 +112,9 @@ type Model struct {
 	quitting      bool
 	ext           ExtensionCommands
 	pendingSelect func()
+	// uiSeq numbers extension prompts; prompts are those on screen.
+	uiSeq   atomic.Int64
+	prompts map[int64]openPrompt
 	// postReload items are shown after the next transcript reload (for
 	// notices about the session change that causes the reload).
 	postReload []item
@@ -133,6 +137,7 @@ func New(a *app.App) *Model {
 		events:   &eventQueue{},
 		statuses: map[string]string{},
 		uiReqs:   make(chan tea.Msg, 16),
+		prompts:  map[int64]openPrompt{},
 	}
 	themes, warnings := LoadThemes(a.Paths.Home)
 	m.themes = themes
@@ -777,7 +782,11 @@ func (m *Model) handleEvent(e events.Event) {
 			}
 		}
 		if ev.Reason == "cancelled" {
-			m.addItem(&noticeItem{level: "warn", text: "cancelled"})
+			text := "cancelled"
+			if ev.CancelledBy != "" && ev.CancelledBy != events.ByUser {
+				text += " by " + ev.CancelledBy
+			}
+			m.addItem(&noticeItem{level: "warn", text: text})
 		}
 		left := m.agent.TakeQueue()
 		if ev.Unanswered != "" {

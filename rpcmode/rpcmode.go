@@ -87,7 +87,7 @@ func Run(ctx context.Context, o app.Options, in io.Reader, out io.Writer) error 
 // stop cancels the turn and stops the extensions, once.
 func (s *server) stop() {
 	s.stopOnce.Do(func() {
-		s.app.Agent.Cancel()
+		s.app.Agent.CancelBy(events.ByShutdown)
 		s.app.Agent.Wait()
 		s.app.StopExtensions()
 	})
@@ -147,7 +147,7 @@ func (s *server) handle(ctx context.Context, method string, params json.RawMessa
 		}
 		return struct{}{}, a.Agent.FollowUp(t)
 	case "cancel":
-		a.Agent.Cancel()
+		a.Agent.CancelBy(events.ByRPCClient)
 		return struct{}{}, nil
 	case "wait":
 		a.Agent.Wait()
@@ -189,19 +189,24 @@ func (s *server) handle(ctx context.Context, method string, params json.RawMessa
 	return nil, &rpc.Error{Code: rpc.CodeMethodNotFound, Message: "unknown method " + method}
 }
 
+// uiClosed tells the client that Rho no longer waits for the answer to a
+// ui/ request (rpc.Withdrawn: the request id and why), so it can close
+// its prompt.
+const uiClosed = "ui/closed"
+
 // clientUI forwards extensions' UI requests to the client. A client that
 // does not answer them gets the headless defaults: no, or cancelled.
 type clientUI struct{ conn *rpc.Conn }
 
 func (u clientUI) Confirm(ctx context.Context, title, message string) (bool, error) {
 	var r ext.ConfirmResult
-	err := u.conn.Call(ctx, "ui/confirm", ext.ConfirmParams{Title: title, Message: message}, &r)
+	err := u.conn.CallWithdrawable(ctx, "ui/confirm", ext.ConfirmParams{Title: title, Message: message}, &r, uiClosed)
 	return r.Confirmed && err == nil, nil
 }
 
 func (u clientUI) Select(ctx context.Context, title string, options []string) (string, error) {
 	var r ext.ValueResult
-	if err := u.conn.Call(ctx, "ui/select", ext.SelectParams{Title: title, Options: options}, &r); err != nil {
+	if err := u.conn.CallWithdrawable(ctx, "ui/select", ext.SelectParams{Title: title, Options: options}, &r, uiClosed); err != nil {
 		return "", err
 	}
 	if r.Cancelled {
@@ -212,7 +217,7 @@ func (u clientUI) Select(ctx context.Context, title string, options []string) (s
 
 func (u clientUI) Input(ctx context.Context, title, placeholder string) (string, error) {
 	var r ext.ValueResult
-	if err := u.conn.Call(ctx, "ui/input", ext.InputParams{Title: title, Placeholder: placeholder}, &r); err != nil {
+	if err := u.conn.CallWithdrawable(ctx, "ui/input", ext.InputParams{Title: title, Placeholder: placeholder}, &r, uiClosed); err != nil {
 		return "", err
 	}
 	if r.Cancelled {

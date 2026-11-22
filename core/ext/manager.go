@@ -81,6 +81,12 @@ type Extension struct {
 	// cannot stall the agent.
 	notes     chan note
 	notesConn *rpc.Conn
+	// waits are the calls to the extension waiting for a reply, and
+	// prompts the UI prompts it has open. While a prompt is open the
+	// calls' timeouts are paused, so time spent waiting on the user does
+	// not count.
+	waits   map[*waitingCall]struct{}
+	prompts map[*openPrompt]struct{}
 }
 
 type note struct {
@@ -115,6 +121,155 @@ func (e *Extension) enqueue(method string, params any) {
 	case ch <- note{method, params}:
 	default:
 		e.log(method + ": dropped, the extension is not keeping up")
+	}
+}
+
+// waitingCall is a call to the extension waiting for its reply.
+type waitingCall struct {
+	timer  *time.Timer // nil without a timeout
+	left   time.Duration
+	since  time.Time
+	paused bool
+}
+
+func (w *waitingCall) pause() {
+	if w.timer != nil && !w.paused && w.timer.Stop() {
+		w.paused = true
+		w.left -= time.Since(w.since)
+	}
+}
+
+func (w *waitingCall) resume() {
+	if w.paused {
+		w.paused = false
+		w.since = time.Now()
+		w.timer.Reset(max(w.left, 0))
+	}
+}
+
+// openPrompt is a UI prompt the extension opened. tied prompts were opened
+// while a call was waiting and are closed once no call waits any more, so
+// a prompt cannot be answered after the call it was for was decided.
+type openPrompt struct {
+	cancel context.CancelCauseFunc
+	tied   bool
+	ended  chan struct{} // closed when the frontend has given its answer
+}
+
+// promptCloseWait is how long a call that closed prompts waits for the
+// frontends to take them down, so that the close reaches them before what
+// follows the call (such as turn_end), even with a frontend that ignores
+// the close.
+const promptCloseWait = time.Second
+
+// call sends a request and waits for the reply. timeout (0 for none)
+// limits the time the extension takes, not the time its prompts to the
+// user are open.
+func (e *Extension) call(ctx context.Context, timeout time.Duration, method string, params, result any) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	w := &waitingCall{left: timeout}
+	e.mu.Lock()
+	conn := e.conn
+	if timeout > 0 {
+		w.since = time.Now()
+		w.timer = time.AfterFunc(timeout, func() {
+			cancel(fmt.Errorf("%s: no reply within %s", method, timeout))
+		})
+		if len(e.prompts) > 0 {
+			w.pause()
+		}
+	}
+	if e.waits == nil {
+		e.waits = map[*waitingCall]struct{}{}
+	}
+	e.waits[w] = struct{}{}
+	e.mu.Unlock()
+	err := conn.Call(ctx, method, params, result)
+	e.endCall(ctx, w, err)
+	if cause := context.Cause(ctx); err != nil && cause != nil && errors.Is(err, context.Canceled) {
+		return cause
+	}
+	return err
+}
+
+// endCall forgets a call that ended with err (or whose ctx ended) and
+// closes the prompts tied to it, giving the reason as their context's
+// cause.
+func (e *Extension) endCall(ctx context.Context, w *waitingCall, err error) {
+	e.mu.Lock()
+	delete(e.waits, w)
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	stopped := e.Status != StatusRunning
+	var closing []*openPrompt
+	if len(e.waits) == 0 {
+		for p := range e.prompts {
+			if p.tied {
+				closing = append(closing, p)
+			}
+		}
+	}
+	e.mu.Unlock()
+	if len(closing) == 0 {
+		return
+	}
+	// The turn was cancelled (the cause says by whom), the call timed out,
+	// the extension stopped, or it replied without waiting for its prompt.
+	reason := context.Cause(ctx)
+	switch {
+	case reason != nil:
+	case stopped || errors.Is(err, rpc.ErrClosed):
+		reason = fmt.Errorf("extension %s stopped", e.Name)
+	default:
+		reason = fmt.Errorf("extension %s finished without waiting for the answer", e.Name)
+	}
+	for _, p := range closing {
+		p.cancel(reason)
+	}
+	wait := time.NewTimer(promptCloseWait)
+	defer wait.Stop()
+	for _, p := range closing {
+		select {
+		case <-p.ended:
+		case <-wait.C:
+			return
+		}
+	}
+}
+
+// prompt registers a UI prompt the extension opened and returns its
+// context and a function to call when it is answered. connCtx ends when
+// the extension stops. When Rho closes the prompt, context.Cause of the
+// returned context says why.
+func (e *Extension) prompt(connCtx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	stop := context.AfterFunc(connCtx, func() { cancel(fmt.Errorf("extension %s stopped", e.Name)) })
+	e.mu.Lock()
+	p := &openPrompt{cancel: cancel, tied: len(e.waits) > 0, ended: make(chan struct{})}
+	if len(e.prompts) == 0 {
+		for w := range e.waits {
+			w.pause()
+		}
+	}
+	if e.prompts == nil {
+		e.prompts = map[*openPrompt]struct{}{}
+	}
+	e.prompts[p] = struct{}{}
+	e.mu.Unlock()
+	return ctx, func() {
+		e.mu.Lock()
+		delete(e.prompts, p)
+		if len(e.prompts) == 0 {
+			for w := range e.waits {
+				w.resume()
+			}
+		}
+		e.mu.Unlock()
+		stop()
+		cancel(nil)
+		close(p.ended)
 	}
 }
 
@@ -157,8 +312,9 @@ type AgentControl interface {
 	// SetActiveTools changes the tools offered from the next request on;
 	// nil goes back to the configured set.
 	SetActiveTools(names []string) error
-	// Cancel stops the current turn, if any.
-	Cancel()
+	// CancelBy stops the current turn, if any, recording who cancelled
+	// it.
+	CancelBy(by string)
 	// Compact compacts the conversation now; it fails while a turn runs.
 	Compact(ctx context.Context) error
 	Info() SessionInfo
@@ -198,6 +354,9 @@ type Manager struct {
 	warnings []string
 	// toolHooks serializes before_tool_call and after_tool_call.
 	toolHooks sync.Mutex
+	// testTimeout replaces extensions.timeout in tests, which need less
+	// than a second.
+	testTimeout time.Duration
 }
 
 // NewManager creates a manager.
@@ -229,6 +388,9 @@ func (m *Manager) ui() UI {
 }
 
 func (m *Manager) timeout() time.Duration {
+	if m.testTimeout > 0 {
+		return m.testTimeout
+	}
 	if t := m.o.Config.Extensions.Timeout; t > 0 {
 		return time.Duration(t) * time.Second
 	}
@@ -559,9 +721,7 @@ func (m *Manager) SetEnabled(ctx context.Context, name string, on bool) error {
 	e.mu.Unlock()
 	if !on {
 		if status == StatusRunning && e.hasHook(HookSessionEnd) {
-			hctx, cancel := context.WithTimeout(ctx, m.timeout())
-			_ = e.conn.Call(hctx, "hook/"+HookSessionEnd, HookParams{}, nil)
-			cancel()
+			_ = e.call(ctx, m.timeout(), "hook/"+HookSessionEnd, HookParams{}, nil)
 		}
 		stopOne(e, StatusDisabled)
 		return nil
@@ -590,9 +750,7 @@ func (m *Manager) SetEnabled(ctx context.Context, name string, on bool) error {
 	switch status {
 	case StatusRunning:
 		if fresh.hasHook(HookSessionStart) {
-			hctx, cancel := context.WithTimeout(ctx, m.timeout())
-			_ = fresh.conn.Call(hctx, "hook/"+HookSessionStart, HookParams{}, nil)
-			cancel()
+			_ = fresh.call(ctx, m.timeout(), "hook/"+HookSessionStart, HookParams{}, nil)
 		}
 		return nil
 	case StatusNotApproved:
@@ -650,7 +808,9 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 				return ConfirmResult{}, nil
 			}
 			// A dismissed or failed prompt counts as "no".
-			ok, err := ui.Confirm(ctx, p.Title, p.Message)
+			pctx, done := e.prompt(ctx)
+			ok, err := ui.Confirm(pctx, p.Title, p.Message)
+			done()
 			return ConfirmResult{Confirmed: ok && err == nil}, nil
 		case "ui/select":
 			var p SelectParams
@@ -658,7 +818,9 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			if ui == nil {
 				return ValueResult{Cancelled: true}, nil
 			}
-			v, err := ui.Select(ctx, p.Title, p.Options)
+			pctx, done := e.prompt(ctx)
+			v, err := ui.Select(pctx, p.Title, p.Options)
+			done()
 			return ValueResult{Value: v, Cancelled: err != nil}, nil
 		case "ui/input":
 			var p InputParams
@@ -666,7 +828,9 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			if ui == nil {
 				return ValueResult{Cancelled: true}, nil
 			}
-			v, err := ui.Input(ctx, p.Title, p.Placeholder)
+			pctx, done := e.prompt(ctx)
+			v, err := ui.Input(pctx, p.Title, p.Placeholder)
+			done()
 			return ValueResult{Value: v, Cancelled: err != nil}, nil
 		case "session/info", "session/messages", "agent/set_model", "agent/set_tools", "agent/cancel", "agent/compact":
 			m.mu.Lock()
@@ -675,7 +839,7 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			if ag == nil {
 				return nil, errors.New("no agent")
 			}
-			res, err := agentMethod(ctx, ag, method, params)
+			res, err := agentMethod(ctx, ag, e.Name, method, params)
 			if err == nil && method == "agent/set_tools" {
 				m.o.Sink(events.Notice{Level: "info", Text: fmt.Sprintf("extension %s set the tools: %s", e.Name, strings.Join(ag.Info().Tools, ", "))})
 			}
@@ -705,7 +869,7 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 
 // agentMethod serves the session/ and agent/ requests other than
 // session/append_message.
-func agentMethod(ctx context.Context, ag AgentControl, method string, params json.RawMessage) (any, error) {
+func agentMethod(ctx context.Context, ag AgentControl, name, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "session/info":
 		return ag.Info(), nil
@@ -726,7 +890,7 @@ func agentMethod(ctx context.Context, ag AgentControl, method string, params jso
 		}
 		return struct{}{}, ag.SetActiveTools(p.Tools)
 	case "agent/cancel":
-		ag.Cancel()
+		ag.CancelBy("extension " + name)
 		return struct{}{}, nil
 	default: // agent/compact
 		return struct{}{}, ag.Compact(ctx)
@@ -776,9 +940,7 @@ func (m *Manager) RunCommand(ctx context.Context, name, args string) error {
 			if c.Name == name {
 				// Commands may show UI and wait for the user, so they get a
 				// generous timeout.
-				cctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
-				defer cancel()
-				return e.conn.Call(cctx, "command/run", CommandRunParams{Name: name, Args: args}, nil)
+				return e.call(ctx, 10*m.timeout(), "command/run", CommandRunParams{Name: name, Args: args}, nil)
 			}
 		}
 	}
@@ -833,9 +995,7 @@ func (m *Manager) callHooks(ctx context.Context, hook string, p HookParams) {
 		if !e.hasHook(hook) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, m.timeout())
-		_ = e.conn.Call(hctx, "hook/"+hook, p, nil)
-		cancel()
+		_ = e.call(ctx, m.timeout(), "hook/"+hook, p, nil)
 	}
 }
 
@@ -849,10 +1009,8 @@ func (m *Manager) BeforeToolCall(ctx context.Context, name string, args json.Raw
 		if !e.hasHook(HookBeforeToolCall) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
 		var res HookResult
-		err := e.conn.Call(hctx, "hook/"+HookBeforeToolCall, HookParams{Tool: name, Args: args}, &res)
-		cancel()
+		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeToolCall, HookParams{Tool: name, Args: args}, &res)
 		if err != nil {
 			e.log("before_tool_call: " + err.Error())
 			continue
@@ -875,11 +1033,9 @@ func (m *Manager) AfterToolCall(ctx context.Context, name string, args json.RawM
 		if !e.hasHook(HookAfterToolCall) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, m.timeout())
 		var hr HookResult
 		r := toWire(res.Content, res.IsError)
-		err := e.conn.Call(hctx, "hook/"+HookAfterToolCall, HookParams{Tool: name, Args: args, Result: &r}, &hr)
-		cancel()
+		err := e.call(ctx, m.timeout(), "hook/"+HookAfterToolCall, HookParams{Tool: name, Args: args, Result: &r}, &hr)
 		if err != nil {
 			e.log("after_tool_call: " + err.Error())
 			continue
@@ -898,10 +1054,8 @@ func (m *Manager) UserMessage(ctx context.Context, text string) (string, string)
 		if !e.hasHook(HookUserMessage) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
 		var res HookResult
-		err := e.conn.Call(hctx, "hook/"+HookUserMessage, HookParams{Text: text}, &res)
-		cancel()
+		err := e.call(ctx, 10*m.timeout(), "hook/"+HookUserMessage, HookParams{Text: text}, &res)
 		if err != nil {
 			e.log("user_message: " + err.Error())
 			continue
@@ -924,10 +1078,8 @@ func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provi
 		if !e.hasHook(HookBeforeRequest) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
 		var res HookResult
-		err := e.conn.Call(hctx, "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Tools: tools, Aside: aside}, &res)
-		cancel()
+		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Tools: tools, Aside: aside}, &res)
 		if err != nil {
 			e.log("before_request: " + err.Error())
 			continue
@@ -984,10 +1136,8 @@ func (m *Manager) BeforeCompaction(ctx context.Context, msgs []provider.Message)
 		if !e.hasHook(HookBeforeCompaction) {
 			continue
 		}
-		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
 		var hr HookResult
-		err := e.conn.Call(hctx, "hook/"+HookBeforeCompaction, HookParams{Transcript: compact.Transcript(msgs, 4000)}, &hr)
-		cancel()
+		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeCompaction, HookParams{Transcript: compact.Transcript(msgs, 4000)}, &hr)
 		if err == nil && strings.TrimSpace(hr.Summary) != "" {
 			return hr.Summary, true
 		}
@@ -1056,11 +1206,11 @@ func (t *extTool) Execute(ctx context.Context, _ *tools.Env, args json.RawMessag
 		defer t.m.progress.Delete(callID)
 	}
 	var res ToolResult
-	err := t.ext.conn.Call(ctx, "tool/execute", ToolExecuteParams{CallID: callID, Name: t.info.Name, Args: args}, &res)
+	err := t.ext.call(ctx, 0, "tool/execute", ToolExecuteParams{CallID: callID, Name: t.info.Name, Args: args}, &res)
 	if err != nil {
 		if ctx.Err() != nil {
 			_ = t.ext.conn.Notify("tool/cancel", map[string]string{"call_id": callID})
-			return tools.Result{Content: []provider.Block{provider.Text("Cancelled by the user.")}, IsError: true}
+			return tools.Result{Content: []provider.Block{provider.Text("Cancelled by " + events.CancelledBy(ctx) + ".")}, IsError: true}
 		}
 		return tools.Result{Content: []provider.Block{provider.Text("extension error: " + err.Error())}, IsError: true}
 	}

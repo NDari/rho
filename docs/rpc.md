@@ -59,10 +59,17 @@ rho --mode rpc --tools read --no-project-context
 | `ui/input` | `title`, `placeholder` | `{"value": "...", "cancelled": false}` |
 | `ui/notify` (notification) | `level`, `text` | |
 | `ui/status` (notification) | `key`, `text` (empty clears) | |
+| `ui/closed` (notification) | `id` (of the `ui/` request), `reason` | |
 
 The `ui/` requests come from extensions. A client without a user interface can answer them with an error (for example "method not found"): Rho then treats a confirm as no and a select or input as cancelled, as in headless mode.
 
-Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`; `unanswered` holds the prompt text when the turn ended before anything was saved after it, in which case the conversation was moved back to before the prompt and the next `prompt` replaces it), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
+When Rho stops waiting for the answer to a `ui/` request, it sends `ui/closed` with that request's `id` and the `reason`, for example `cancelled by the RPC client`, `cancelled by extension guard` or `extension guard stopped`. Close the prompt and do not answer it; an answer that comes anyway is ignored. `ui/closed` comes before the `turn_end` of the turn that withdrew the prompt (Rho waits up to a second for it to be written). To handle every case:
+
+- Match `ui/closed` to its prompt by `id`, not by "the prompt on screen".
+- Ignore a `ui/closed` whose `id` you do not know: your answer and the close can cross, so a prompt you just answered may still be closed.
+- When the connection closes (Rho shut down or exited), close all open prompts; a `ui/closed` may not be sent then.
+
+Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`; `cancelled_by` says who cancelled: `the user`, `the RPC client`, `extension NAME` or `Rho (shutting down)`; `unanswered` holds the prompt text when the turn ended before anything was saved after it, in which case the conversation was moved back to before the prompt and the next `prompt` replaces it), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
 
 ## Embedding in Go
 

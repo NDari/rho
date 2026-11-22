@@ -345,7 +345,8 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 
 ### 12.5 Lifecycle
 - Started at session start; one process per extension, running in the session working directory (`RHO_EXTENSION_DIR` points to the extension's own directory; manifests may use `${dir}`).
-- Per-call timeouts (configurable).
+- Per-call timeouts (configurable). Time an extension's UI prompt is open does not count against the call that is waiting; a prompt opened during a call is closed when the call ends (e.g. the turn is cancelled), the frontends take it off the screen with the reason, and RPC clients get `ui/closed` (before the call's `turn_end`; Rho waits up to a second for the frontend). A tool call cancelled while its `before_tool_call` hook waits does not run.
+- Cancels record who cancelled (the user, the RPC client, an extension by name, or Rho shutting down); cancelled tool results, `turn_end` (`cancelled_by`) and closed prompts say so.
 - Crash → extension marked failed, user notified, Rho continues. `/reload` restarts all extensions (this is "hot reload").
 - `/extensions` lists extensions; Enter turns one on or off without restarting the others and saves the choice in `extensions.disabled` in the global config. Tab shows status, registrations and errors.
 

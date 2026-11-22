@@ -197,6 +197,7 @@ In headless mode, `ui/confirm` answers `false`, and `ui/select` and `ui/input` a
 ### Lifecycle
 
 - One process per extension, started with the session.
-- Hooks and commands have a per-call timeout (`extensions.timeout` in `config.toml`, default 30 seconds; longer for hooks that may wait on the user). Tools run until they finish or the user cancels.
+- Hooks and commands have a per-call timeout (`extensions.timeout` in `config.toml`, default 30 seconds; longer for hooks that may wait on the user). Time a `ui/confirm`, `ui/select` or `ui/input` prompt is open does not count, so a prompt can wait for the user as long as it takes. Tools run until they finish or the user cancels.
+- A prompt opened while Rho waits for a hook, command or tool is closed (answered as dismissed) when that call ends, so it cannot be answered after the call was decided. The TUI and GUI take it off the screen and say why: the turn was cancelled (by the user, the RPC client or an extension, named), the extension stopped, or it replied without waiting for the answer. A tool call cancelled while its `before_tool_call` hook waits never runs, and its result says who cancelled it.
 - If an extension crashes, it is marked failed, you are notified, and Rho continues. `/reload` restarts everything.
 - There are no per-token or per-frame hooks, which keeps out-of-process extensions cheap.

@@ -18,7 +18,7 @@ func (nopAgent) Prompt(provider.Message) error { return nil }
 func (nopAgent) FollowUp(string) error         { return nil }
 func (nopAgent) SetModel(string) error         { return nil }
 func (nopAgent) SetActiveTools([]string) error { return nil }
-func (nopAgent) Cancel()                       {}
+func (nopAgent) CancelBy(string)               {}
 func (nopAgent) Compact(context.Context) error { return nil }
 func (nopAgent) Info() SessionInfo             { return SessionInfo{} }
 func (nopAgent) Messages() []SessionEntry      { return nil }

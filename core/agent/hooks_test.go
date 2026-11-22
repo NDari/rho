@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,5 +256,65 @@ func TestMessageEndAndToolEndHooks(t *testing.T) {
 	want := []string{`bash {"command":"rm -rf /"} error=true`, `read {"path":"b.txt"} error=true`}
 	if strings.Join(ends, "|") != strings.Join(want, "|") {
 		t.Errorf("tool_end = %q, want %q (the blocked call too, and the rewritten arguments)", ends, want)
+	}
+}
+
+// waitingHooks waits in before_tool_call until the turn is cancelled and
+// then lets the call through, as a hook that is skipped on error does.
+type waitingHooks struct {
+	testHooks
+	waiting chan struct{}
+}
+
+func (h waitingHooks) BeforeToolCall(ctx context.Context, _ string, args json.RawMessage) (json.RawMessage, string) {
+	close(h.waiting)
+	<-ctx.Done()
+	return args, ""
+}
+
+// TestCancelDuringBeforeToolCallSkipsTheTool cancels the turn while a
+// before_tool_call hook is waiting (an extension asking the user): the
+// tool must not run, and the result and turn_end say who cancelled.
+func TestCancelDuringBeforeToolCallSkipsTheTool(t *testing.T) {
+	tests := []struct {
+		name   string
+		cancel func(a *Agent)
+		by     string
+	}{
+		{"by the user", func(a *Agent) { a.Cancel() }, events.ByUser},
+		{"by the RPC client", func(a *Agent) { a.CancelBy(events.ByRPCClient) }, events.ByRPCClient},
+		{"by an extension", func(a *Agent) { a.CancelBy("extension guard") }, "extension guard"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fp := fake.New("fake", fake.Step{Calls: []fake.Call{{Name: "write", Args: map[string]string{"path": "a.txt", "content": "hi\n"}}}})
+			a, rec, dir := newTestAgent(t, fp)
+			h := waitingHooks{waiting: make(chan struct{})}
+			a.SetHooks(h)
+			if err := a.Prompt(provider.UserText("write a file")); err != nil {
+				t.Fatal(err)
+			}
+			<-h.waiting
+			tt.cancel(a)
+			a.Wait()
+			if _, err := os.Stat(filepath.Join(dir, "a.txt")); err == nil {
+				t.Error("the file was written after the turn was cancelled")
+			}
+			cv := a.Session().BuildContext()
+			last := cv.Messages[len(cv.Messages)-1]
+			want := "Cancelled by " + tt.by + "."
+			if last.Role != provider.RoleToolResult || last.Content[0].Content[0].Text != want {
+				t.Errorf("last message = %+v, want a tool result %q", last, want)
+			}
+			var end events.TurnEnd
+			for _, e := range rec.events {
+				if te, ok := e.(events.TurnEnd); ok {
+					end = te
+				}
+			}
+			if end.Reason != "cancelled" || end.CancelledBy != tt.by {
+				t.Errorf("turn_end = %+v, want cancelled by %q", end, tt.by)
+			}
+		})
 	}
 }

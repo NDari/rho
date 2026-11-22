@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -12,12 +14,23 @@ import (
 
 // uiRequestMsg asks the TUI to show a prompt on behalf of an extension.
 type uiRequestMsg struct {
-	kind    string // confirm, select, input, notify, status
+	kind    string // confirm, select, input, notify, status, or close
+	id      int64
 	title   string
-	message string
+	message string // for close, why the prompt was closed
 	options []string
 	key     string
 	reply   chan uiReply
+	// done is closed when the asker stops waiting for the answer.
+	done <-chan struct{}
+}
+
+// openPrompt is an extension prompt on screen, so a close request closes
+// that prompt and not a later one.
+type openPrompt struct {
+	title  string
+	dlg    *dialog
+	picker *picker
 }
 
 type uiReply struct {
@@ -86,7 +99,17 @@ func (m *Model) dialogView() []string {
 }
 
 func (m *Model) handleUIRequest(r uiRequestMsg) {
+	if r.kind == "close" {
+		m.closePrompt(r.id, r.message)
+		return
+	}
+	select {
+	case <-r.done:
+		return // withdrawn before it was shown
+	default:
+	}
 	send := func(v string, ok bool) {
+		delete(m.prompts, r.id)
 		if r.reply != nil {
 			r.reply <- uiReply{value: v, ok: ok}
 		}
@@ -110,12 +133,14 @@ func (m *Model) handleUIRequest(r uiRequestMsg) {
 		return
 	case "confirm":
 		m.dlg = &dialog{kind: "confirm", title: r.title, message: r.message, respond: func(v string, ok bool) tea.Cmd { send(v, ok); return nil }}
+		m.prompts[r.id] = openPrompt{title: r.title, dlg: m.dlg}
 	case "input":
 		ti := textinput.New()
 		ti.Placeholder = r.message
 		ti.Focus()
 		ti.SetWidth(max(10, m.width-6))
 		m.dlg = &dialog{kind: "input", title: r.title, input: ti, respond: func(v string, ok bool) tea.Cmd { send(v, ok); return nil }}
+		m.prompts[r.id] = openPrompt{title: r.title, dlg: m.dlg}
 	case "select":
 		var items []pickerItem
 		for _, o := range r.options {
@@ -125,7 +150,29 @@ func (m *Model) handleUIRequest(r uiRequestMsg) {
 		m.picker = p
 		// Closing the picker without a choice must still answer.
 		m.pendingSelect = func() { send("", false) }
+		m.prompts[r.id] = openPrompt{title: r.title, picker: p}
 	}
+	m.dirty = true
+}
+
+// closePrompt removes the extension prompt with the given id, if it is
+// still on screen, when its asker stopped waiting, and says why.
+func (m *Model) closePrompt(id int64, reason string) {
+	p, ok := m.prompts[id]
+	if !ok {
+		return
+	}
+	delete(m.prompts, id)
+	switch {
+	case p.dlg != nil && m.dlg == p.dlg:
+		m.dlg = nil
+	case p.picker != nil && m.picker == p.picker:
+		m.picker = nil
+		m.pendingSelect = nil
+	default:
+		return
+	}
+	m.notice("warn", fmt.Sprintf("Prompt %q closed: %s", p.title, reason))
 	m.dirty = true
 }
 
@@ -136,7 +183,9 @@ type UI struct {
 }
 
 func (u UI) ask(ctx context.Context, r uiRequestMsg) (uiReply, error) {
+	r.id = u.m.uiSeq.Add(1)
 	r.reply = make(chan uiReply, 1)
+	r.done = ctx.Done()
 	select {
 	case u.m.uiReqs <- r:
 	case <-ctx.Done():
@@ -146,8 +195,24 @@ func (u UI) ask(ctx context.Context, r uiRequestMsg) (uiReply, error) {
 	case rep := <-r.reply:
 		return rep, nil
 	case <-ctx.Done():
+		// Take the prompt off the screen, saying why.
+		closeMsg := uiRequestMsg{kind: "close", id: r.id, message: closeReason(ctx)}
+		go func() {
+			select {
+			case u.m.uiReqs <- closeMsg:
+			case <-time.After(5 * time.Second): // the TUI has quit
+			}
+		}()
 		return uiReply{}, ctx.Err()
 	}
+}
+
+// closeReason says why ctx ended, for a prompt that was closed.
+func closeReason(ctx context.Context) string {
+	if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
+		return cause.Error()
+	}
+	return "no longer needed"
 }
 
 // ErrDismissed is returned when the user dismisses a prompt.

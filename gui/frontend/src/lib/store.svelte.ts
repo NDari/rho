@@ -320,7 +320,10 @@ export class Store {
             t.isError = true;
           }
         }
-        if (e.reason === "cancelled") this.notice("warn", "Cancelled");
+        if (e.reason === "cancelled") {
+          const by = e.cancelled_by && e.cancelled_by !== "the user" ? " by " + e.cancelled_by : "";
+          this.notice("warn", "Cancelled" + by);
+        }
         // A prompt that got no reply was taken off the conversation: drop
         // it from the transcript and put it back in the composer, so
         // sending again (edited or not) replaces it.

@@ -168,6 +168,24 @@ func (c *Conn) write(m Message) error {
 
 // Call sends a request and waits for the response. result may be nil.
 func (c *Conn) Call(ctx context.Context, method string, params, result any) error {
+	return c.call(ctx, method, params, result, "")
+}
+
+// Withdrawn are the params of the notification CallWithdrawable sends.
+type Withdrawn struct {
+	ID     int64  `json:"id"`
+	Reason string `json:"reason"`
+}
+
+// CallWithdrawable is Call, but when ctx ends before the reply it sends
+// the notification withdraw with the request's id and the reason
+// (context.Cause of ctx), so the other side can drop the request, for
+// example close a dialog it shows.
+func (c *Conn) CallWithdrawable(ctx context.Context, method string, params, result any, withdraw string) error {
+	return c.call(ctx, method, params, result, withdraw)
+}
+
+func (c *Conn) call(ctx context.Context, method string, params, result any, withdraw string) error {
 	id := c.nextID.Add(1)
 	raw, err := json.Marshal(params)
 	if err != nil {
@@ -205,6 +223,9 @@ func (c *Conn) Call(ctx context.Context, method string, params, result any) erro
 		c.pmu.Lock()
 		delete(c.pending, id)
 		c.pmu.Unlock()
+		if withdraw != "" {
+			_ = c.Notify(withdraw, Withdrawn{ID: id, Reason: context.Cause(ctx).Error()})
+		}
 		return ctx.Err()
 	}
 }
