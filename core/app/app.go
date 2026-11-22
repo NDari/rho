@@ -198,19 +198,30 @@ type agentControl struct {
 }
 
 // Info implements ext.AgentControl.
-func (c agentControl) Info() ext.SessionInfo {
-	sess := c.Session()
+func (c agentControl) Info() ext.SessionInfo { return sessionInfo(c.Agent, c.cwd) }
+
+// Messages implements ext.AgentControl.
+func (c agentControl) Messages() []ext.SessionEntry { return sessionMessages(c.Agent) }
+
+// SessionInfo describes the current session (as extensions see it).
+func (a *App) SessionInfo() ext.SessionInfo { return sessionInfo(a.Agent, a.Paths.Cwd) }
+
+// SessionMessages returns the current branch's messages with their entry
+// ids (as extensions see them).
+func (a *App) SessionMessages() []ext.SessionEntry { return sessionMessages(a.Agent) }
+
+func sessionInfo(ag *agent.Agent, cwd string) ext.SessionInfo {
+	sess := ag.Session()
 	cv := sess.BuildContext()
-	m := c.Model()
+	m := ag.Model()
 	return ext.SessionInfo{
-		ID: sess.ID(), File: sess.Path(), Cwd: c.cwd, Model: m.ID, Busy: c.Busy(), Aside: cv.Aside,
-		ContextTokens: c.EstimateContext(cv), ContextWindow: m.ContextWindow, Cost: c.Cost(),
+		ID: sess.ID(), File: sess.Path(), Cwd: cwd, Model: m.ID, Busy: ag.Busy(), Aside: cv.Aside,
+		ContextTokens: ag.EstimateContext(cv), ContextWindow: m.ContextWindow, Cost: ag.Cost(),
 	}
 }
 
-// Messages implements ext.AgentControl.
-func (c agentControl) Messages() []ext.SessionEntry {
-	cv := c.Session().BuildContext()
+func sessionMessages(ag *agent.Agent) []ext.SessionEntry {
+	cv := ag.Session().BuildContext()
 	out := make([]ext.SessionEntry, len(cv.Messages))
 	for i, m := range cv.Messages {
 		out[i] = ext.SessionEntry{Message: m}

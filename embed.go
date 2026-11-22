@@ -7,5 +7,5 @@ import "embed"
 // Files holds the user documentation, the built-in skills and the
 // examples, at their paths in the repository.
 //
-//go:embed docs/configuration.md docs/extensions.md docs/rho-spec.md docs/gui.md docs/builtin examples
+//go:embed docs/configuration.md docs/extensions.md docs/rpc.md docs/rho-spec.md docs/gui.md docs/builtin examples
 var Files embed.FS

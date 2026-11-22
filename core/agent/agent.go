@@ -1109,6 +1109,17 @@ func (a *Agent) addCost(u provider.Usage) {
 	a.mu.Unlock()
 }
 
+// LastError returns the error that ended the last turn (nil if it
+// finished, or while a turn runs).
+func (a *Agent) LastError() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.busy {
+		return nil
+	}
+	return a.lastErr
+}
+
 // LastTurn returns the statistics of the current or last turn.
 func (a *Agent) LastTurn() TurnStats {
 	a.mu.Lock()

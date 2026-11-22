@@ -8,10 +8,10 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 
 ## Architecture rules
 
-- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, `gui/`) consume the event stream from `core/events` and call the command API.
+- `core/` is a library with **no UI code**. Frontends (`tui/`, `headless/`, `rpcmode/`, `gui/`) consume the event stream from `core/events` and call the command API.
 - Keep package seams clean (see the package layout in the spec, section 3). Do not import `tui/`, `headless/` or `gui/` from `core/`.
 - `gui/` is a separate Go module that builds the `rho-gui` binary (spec section 18). Never import Wails or `gui/` from the root module.
-- JSON-RPC is only for extensions (and a later external RPC mode), never between core and built-in frontends.
+- JSON-RPC is only for extensions and RPC mode (`rpcmode/`, for other programs), never between core and built-in frontends.
 - Session files are append-only JSONL. Never rewrite existing entries.
 
 ## Code conventions

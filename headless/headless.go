@@ -87,17 +87,22 @@ func Run(ctx context.Context, a *app.App, text string, o Options) error {
 		}
 		return err
 	}
+	// Through the agent's sink, so it cannot interleave with other lines.
+	a.Agent.Emit(TurnResult(a, err))
+	return err
+}
+
+// TurnResult describes the last turn, which err ended (nil: it finished).
+func TurnResult(a *app.App, err error) Result {
 	stats := a.Agent.LastTurn()
 	r := Result{
-		Status: status(err), Answer: final, Model: a.Agent.Model().ID,
+		Status: status(err), Answer: lastAssistantText(a), Model: a.Agent.Model().ID,
 		Steps: stats.Steps, Usage: stats.Usage, Cost: stats.Cost, Session: a.Agent.Session().Path(),
 	}
 	if err != nil {
 		r.Error = err.Error()
 	}
-	// Through the agent's sink, so it cannot interleave with other lines.
-	a.Agent.Emit(r)
-	return err
+	return r
 }
 
 func status(err error) string {

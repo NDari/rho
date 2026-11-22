@@ -13,6 +13,7 @@ import (
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/ext/yaegihost"
 	"github.com/NDari/rho/headless"
+	"github.com/NDari/rho/rpcmode"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -31,6 +32,7 @@ type rootFlags struct {
 	system   string
 	appendS  []string
 	maxSteps int
+	mode     string
 }
 
 func newRootCmd() *cobra.Command {
@@ -61,7 +63,8 @@ func newRootCmd() *cobra.Command {
 	fl.BoolVar(&f.noProj, "no-project-context", false, "ignore the project's .rho directory and AGENTS.md files (for untrusted checkouts)")
 	fl.StringVar(&f.system, "system-file", "", "replace the system prompt with this file")
 	fl.StringArrayVar(&f.appendS, "append-system-file", nil, "append this file to the system prompt (repeatable)")
-	fl.IntVar(&f.maxSteps, "max-steps", 0, "with -p, stop with an error after this many model responses (0: no limit)")
+	fl.IntVar(&f.maxSteps, "max-steps", 0, "with -p or --mode rpc, stop a turn with an error after this many model responses (0: no limit)")
+	fl.StringVar(&f.mode, "mode", "", `"rpc": let another program drive Rho with JSON-RPC on stdin and stdout (see docs/rpc.md)`)
 	fl.StringVar(&toolList, "tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 	cmd.AddCommand(&cobra.Command{
 		Use:    "ext-host <path>",
@@ -78,11 +81,21 @@ func newRootCmd() *cobra.Command {
 
 func run(cmd *cobra.Command, f rootFlags, args []string) error {
 	text := strings.Join(args, " ")
+	switch f.mode {
+	case "":
+	case "rpc":
+		if f.print || f.json || f.resume || text != "" {
+			return errors.New("--mode rpc takes no prompt and cannot be combined with -p, --json or -r")
+		}
+		return runRPC(cmd, f)
+	default:
+		return fmt.Errorf("unknown --mode %q (the only mode is rpc)", f.mode)
+	}
 	if f.json && !f.print {
 		return errors.New("--json requires -p")
 	}
 	if f.maxSteps != 0 && !f.print {
-		return errors.New("--max-steps requires -p")
+		return errors.New("--max-steps requires -p or --mode rpc")
 	}
 	if f.maxSteps < 0 {
 		return errors.New("--max-steps must not be negative")
@@ -91,6 +104,23 @@ func run(cmd *cobra.Command, f rootFlags, args []string) error {
 		return runPrint(cmd, f, text)
 	}
 	return runTUI(f, text)
+}
+
+func runRPC(cmd *cobra.Command, f rootFlags) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return rpcmode.Run(ctx, app.Options{
+		Model:             f.model,
+		Continue:          f.cont,
+		SessionFile:       f.sessionF,
+		Version:           version,
+		NoExtensions:      f.noExt,
+		Tools:             f.tools,
+		NoProjectContext:  f.noProj,
+		SystemFile:        f.system,
+		AppendSystemFiles: f.appendS,
+		MaxSteps:          f.maxSteps,
+	}, cmd.InOrStdin(), cmd.OutOrStdout())
 }
 
 func runPrint(cmd *cobra.Command, f rootFlags, text string) error {

@@ -36,7 +36,7 @@ That covers guards, retrieval, personas, input policies and custom tools.
 
 ### What is missing
 
-- **No way to drive Rho from another program** except embedding `core/app` in Go (see section 3).
+- Nothing major: other programs drive Rho with RPC mode (section 3).
 
 ### Changes, highest value and lowest impact first
 
@@ -49,7 +49,7 @@ That covers guards, retrieval, personas, input policies and custom tools.
 | 5 | **Done.** Self-extension kit: embed `docs/` and `examples/` in the binary, add `rho docs [topic]`, and a built-in skill that tells the model how to write extensions | Small | "Write me an extension that..." working inside Rho |
 | 6 | **Done.** Headless results: a final JSON object (answer, usage, cost, stop reason), a non-zero exit code on failure, `--max-steps` | Small | CI and bots |
 
-On looks: extension tools could return display data (markdown, diffs) so they get rich cards in the TUI and GUI. Worthwhile, but lower value than RPC mode.
+On looks: extension tools could return display data (markdown, diffs) so they get rich cards in the TUI and GUI. Worthwhile, and the next extension change.
 
 ## 3. Rho outside the coding workflow
 
@@ -77,10 +77,10 @@ Possible today: the documents folder as the project, a persona in `--system-file
 
 ### Slack, web chat, IDE plugins
 
-These need a way to drive Rho from outside:
+These drive Rho from outside:
 
 - **Go programs can embed `core/app` today**, as the GUI does, but that API is not documented as stable.
-- **Other languages need the external RPC mode** the spec already plans (`rho --mode rpc`): JSON-RPC over stdio carrying the command API and the event stream. Medium effort, and the main thing between Rho and "use it anywhere".
+- **Other languages use RPC mode** (done): `rho --mode rpc` speaks JSON-RPC on stdio, with the command API as requests and the event stream as notifications ([rpc.md](rpc.md)). A bot or plugin starts `rho` as a child process.
 
 ### Design change: profiles
 
@@ -88,7 +88,6 @@ A profile is a named bundle of system prompt, allowed tools, context rules, skil
 
 ## Suggested order
 
-1. Changes 1 to 6 are done.
-2. RPC mode.
-3. Parallel tool calls, then HTML export.
-4. The Anthropic provider and the approval extension, in whichever order users need.
+1. Changes 1 to 6 and RPC mode are done.
+2. Parallel tool calls, then HTML export.
+3. The Anthropic provider and the approval extension, in whichever order users need.

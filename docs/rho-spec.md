@@ -71,6 +71,7 @@ core/session/       JSONL tree store, context assembly, checkout
 core/compact/       compaction policy + summarizer
 core/prompt/        system prompt, AGENTS.md, SYSTEM.md, skills, prompt templates
 core/docs/          the built-in docs and skills: rho docs, and the installed copy for the model
+rpcmode/            rho --mode rpc: JSON-RPC on stdio for other programs (a frontend, like headless/)
 core/provider/      neutral message types; fake/ (tests), registry/
 core/provider/openaicompat/  Chat Completions and Responses API adapters
 core/provider/xmltools/      XML tool calling for models without native tool calls
@@ -306,7 +307,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - `--max-steps N` stops the turn with an error after N model responses, so a stuck run cannot loop forever. A final answer within the limit is a success.
 - Works with `-c` / `-r`, `--model`, `--tools`, `--no-project-context`, `--system-file` and `--append-system-file`.
 - Used heavily for automated tests.
-- External JSON-RPC mode (`rho --mode rpc`) is a later addition.
+- **RPC mode** (`rho --mode rpc`): another program drives Rho with JSON-RPC 2.0 on stdin and stdout, newline-delimited as for extensions (it reuses `core/ext/rpc`). Requests: `initialize`, `prompt`, `steer`, `follow_up`, `cancel`, `wait` (the turn result, as in `rho -p --json`), `session/info`, `session/messages`, `session/new`, `set_model`, `compact`, `shutdown`, and the `exit` notification. Every core event is sent as an `event` notification. Extensions' `ui/` requests are forwarded to the client; a client that cannot answer gets the headless defaults. The protocol is in [rpc.md](rpc.md); it is versioned (`protocol_version` 1) and is the stable way to embed Rho, while `core/app` is not promised to be.
 
 ## 12. Extensions
 
