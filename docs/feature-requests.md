@@ -11,6 +11,7 @@ Ideas for Rho, mostly the TUI and GUI, that are not built yet, with the notes fr
 | 5 | Open another project (`/open`) | no | done | GUI only |
 | 6 | Terminal in the GUI | no | yes | needs dependencies |
 | 7 | Built-in source code for the model | core | core | to discuss |
+| 8 | Shared theme set (UI, syntax highlighting, export) | yes | yes | ready |
 
 ## 1. File restore and a changes view
 
@@ -111,6 +112,29 @@ Possible GUI additions: a list of recent project folders (the folders that have 
 
 - **Internals are not the API.** A model reading the source may build an extension on behavior that is not promised and changes between versions. If this is done, the skill must say that `extensions.md` defines the API and the source is only for checking details, and it may be worth embedding only the API's own definitions first (`core/ext/protocol.go` and `core/ext/yaegihost/api.go`, about 13 KB).
 - Better docs may cover the same need: answering in `extensions.md` the questions a model would otherwise answer from the code.
+
+## 8. Shared theme set (both, and the HTML export)
+
+**Ready.** A set of complete themes, each chosen with one `theme` setting, that changes everything at once: the UI colors, syntax highlighting, Markdown code blocks and diffs, in the TUI, the GUI and the HTML export. Users can add their own in the same format.
+
+### Today
+
+- **TUI:** a theme (`dark` or `light`, or a TOML file in `~/.rho/themes/`) sets about 22 color roles (accent, text, muted, border, user background, status bar, diff backgrounds and signs, ...) plus a `chroma` field that names one of Chroma's 74 syntax styles. The `chroma` style only colors code tokens; everything else comes from the roles. The built-ins pair Gruvbox with the `gruvbox` style and a GitHub-like light theme with `catppuccin-latte`. The `chroma` field is not documented, and an unknown style name silently falls back to Chroma's default.
+- **GUI:** light, dark or system only, kept by the GUI itself; code is highlighted with highlight.js.
+- **HTML export:** follows the system's light or dark scheme; code is not highlighted.
+
+### The idea
+
+- **Built-in themes:** the most popular themes with public, well documented palettes, about ten, each tuned by hand and paired with the matching Chroma style. A first list: Gruvbox Dark and Light, Catppuccin Mocha and Latte, Tokyo Night, Nord, Dracula, One Dark, Rosé Pine, and Solarized Dark and Light (Chroma has a style for each).
+- **One format, embedded and user-defined:** each built-in is a TOML file in the format `~/.rho/themes/` already uses, embedded in the binary. A user theme can start from any built-in (`base = "nord"`) and override some roles.
+- **One setting for every frontend:** the GUI reads the same `theme` and maps the roles onto its CSS variables and its highlight.js colors (or switches to Chroma's HTML output for code, so the colors are exactly the same). "System" stays available in the GUI as a pair of themes, one for light and one for dark. If sharing turns out to be awkward, the TUI and GUI settings can be split.
+- **Export:** the page uses the current theme's colors and highlights code with Chroma's HTML formatter.
+- **Picking:** `/theme` lists the built-in and user themes in both frontends, and the choice applies at once.
+- **Checks:** warn on an unknown theme or Chroma style name instead of falling back silently. Document the theme format and the role names.
+
+### Not taken
+
+- **bubbletint** (`github.com/lrstanley/bubbletint/v2`): over 770 schemes from iTerm2-Color-Schemes, with Chroma and Glamour mappings and following the terminal's theme. Its schemes are terminal palettes (the 16 ANSI colors plus foreground and background), so every Rho role would still be derived automatically, and 770 unchecked themes would vary in quality. It could come back later for "match my terminal".
 
 ## Other ideas from the same review
 
