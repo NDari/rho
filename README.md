@@ -93,8 +93,11 @@ rho -c                    # continue the last session in this directory
 rho -r                    # pick a session to resume
 rho -p "summarize README.md"          # print mode: one turn, print the answer
 git diff | rho -p "review this diff"  # piped input is added to the prompt
-rho -p --json "list the TODOs" > events.jsonl  # stream events as JSON lines
+rho -p --json "list the TODOs" > events.jsonl  # stream events as JSON lines, ending with a result line
+rho -p --max-steps 20 "fix the lint errors"     # stop with exit status 1 after 20 model responses
 ```
+
+In `--json` mode the last line is `{"type":"result","status":"done","answer":"...","steps":3,"usage":{...},"cost":0.01,...}`, so `tail -n 1` gives a script everything it needs. `rho -p` exits with status 1 when the turn does not finish (an error, a cancel, a blocked prompt or the step limit).
 
 See [docs/configuration.md](docs/configuration.md) for all settings.
 

@@ -30,6 +30,7 @@ type rootFlags struct {
 	noProj   bool
 	system   string
 	appendS  []string
+	maxSteps int
 }
 
 func newRootCmd() *cobra.Command {
@@ -60,6 +61,7 @@ func newRootCmd() *cobra.Command {
 	fl.BoolVar(&f.noProj, "no-project-context", false, "ignore the project's .rho directory and AGENTS.md files (for untrusted checkouts)")
 	fl.StringVar(&f.system, "system-file", "", "replace the system prompt with this file")
 	fl.StringArrayVar(&f.appendS, "append-system-file", nil, "append this file to the system prompt (repeatable)")
+	fl.IntVar(&f.maxSteps, "max-steps", 0, "with -p, stop with an error after this many model responses (0: no limit)")
 	fl.StringVar(&toolList, "tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 	cmd.AddCommand(&cobra.Command{
 		Use:    "ext-host <path>",
@@ -78,6 +80,12 @@ func run(cmd *cobra.Command, f rootFlags, args []string) error {
 	text := strings.Join(args, " ")
 	if f.json && !f.print {
 		return errors.New("--json requires -p")
+	}
+	if f.maxSteps != 0 && !f.print {
+		return errors.New("--max-steps requires -p")
+	}
+	if f.maxSteps < 0 {
+		return errors.New("--max-steps must not be negative")
 	}
 	if f.print {
 		return runPrint(cmd, f, text)
@@ -115,6 +123,7 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 		NoProjectContext:  f.noProj,
 		SystemFile:        f.system,
 		AppendSystemFiles: f.appendS,
+		MaxSteps:          f.maxSteps,
 	})
 	if err != nil {
 		return err

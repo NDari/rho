@@ -62,7 +62,26 @@ type Options struct {
 	// --append-system-file prompt files (see prompt.Options).
 	SystemFile        string
 	AppendSystemFiles []string
+	// MaxSteps, if positive, ends a turn with ErrMaxSteps once it has had
+	// that many model responses.
+	MaxSteps int
 }
+
+// TurnStats describes the current or last turn.
+type TurnStats struct {
+	// Steps is the number of model responses.
+	Steps int
+	// Usage and Cost add up every model request of the turn, compaction
+	// included. Cost is 0 when the model has no pricing.
+	Usage provider.Usage
+	Cost  float64
+}
+
+// ErrBlocked ends a turn whose message an extension blocked.
+var ErrBlocked = errors.New("the message was blocked by an extension")
+
+// ErrMaxSteps ends a turn that reached Options.MaxSteps.
+var ErrMaxSteps = errors.New("the turn reached its step limit")
 
 // ErrBusy is returned when a command needs the agent to be idle.
 var ErrBusy = errors.New("the agent is busy")
@@ -83,9 +102,11 @@ type Agent struct {
 	skills    []prompt.Skill
 	sink      events.Sink
 	hooks     Hooks
-	// systemFile and appendFiles are fixed for the agent's life.
+	// systemFile, appendFiles and maxSteps are fixed for the agent's life.
 	systemFile  string
 	appendFiles []string
+	maxSteps    int
+	turn        TurnStats
 
 	busy      bool
 	cancel    context.CancelFunc
@@ -111,6 +132,7 @@ func New(o Options) *Agent {
 
 		systemFile:  o.SystemFile,
 		appendFiles: o.AppendSystemFiles,
+		maxSteps:    o.MaxSteps,
 	}
 	if a.sink == nil {
 		a.sink = func(events.Event) {}
@@ -320,6 +342,7 @@ func (a *Agent) start() (context.Context, error) {
 	a.cancel = cancel
 	a.done = make(chan struct{})
 	a.lastErr = nil
+	a.turn = TurnStats{}
 	return ctx, nil
 }
 
@@ -421,6 +444,8 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		switch {
 		case ctx.Err() != nil:
 			reason = "cancelled"
+		case errors.Is(err, ErrBlocked):
+			reason = "blocked" // the notice already says why
 		case err != nil:
 			reason = "error"
 			a.emit(events.Error{Message: err.Error()})
@@ -444,6 +469,7 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 	a.emit(events.TurnStart{})
 	first, ok := a.filterUser(ctx, first)
 	if !ok {
+		err = ErrBlocked
 		return
 	}
 	if err = a.appendMessage(first); err != nil {
@@ -476,6 +502,13 @@ func (a *Agent) loop(ctx context.Context) error {
 			}
 			a.emit(events.Notice{Level: "warn", Text: "automatic compaction failed: " + err.Error()})
 		}
+		if a.maxSteps > 0 && a.LastTurn().Steps >= a.maxSteps {
+			unit := "responses"
+			if a.maxSteps == 1 {
+				unit = "response"
+			}
+			return fmt.Errorf("%w: stopped after %d model %s", ErrMaxSteps, a.maxSteps, unit)
+		}
 		req, prov, err := a.buildRequest(ctx)
 		if err != nil {
 			return err
@@ -498,6 +531,9 @@ func (a *Agent) loop(ctx context.Context) error {
 			return err
 		}
 		a.addCost(resp.Usage)
+		a.mu.Lock()
+		a.turn.Steps++
+		a.mu.Unlock()
 		// A response cut off at a lowered output limit may have had room
 		// after compaction: compact and send the request again, once.
 		if resp.StopReason == provider.StopMaxTokens && req.MaxTokens < a.Model().MaxOutput && !cutoffRetried && a.compactionRaisesLimit(req.MaxTokens) {
@@ -1048,7 +1084,19 @@ func (a *Agent) addCost(u provider.Usage) {
 	c := cost(a.Model(), u)
 	a.mu.Lock()
 	a.cost += c
+	a.turn.Cost += c
+	a.turn.Usage.InputTokens += u.InputTokens
+	a.turn.Usage.OutputTokens += u.OutputTokens
+	a.turn.Usage.CacheReadTokens += u.CacheReadTokens
+	a.turn.Usage.CacheWriteTokens += u.CacheWriteTokens
 	a.mu.Unlock()
+}
+
+// LastTurn returns the statistics of the current or last turn.
+func (a *Agent) LastTurn() TurnStats {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.turn
 }
 
 func cost(m config.Model, u provider.Usage) float64 {

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -65,19 +66,28 @@ func TestUserMessageHookBlocks(t *testing.T) {
 	fp := fake.New("fake") // any request would fail the turn
 	a, rec, _ := newTestAgent(t, fp)
 	a.SetHooks(testHooks{user: func(string) (string, string) { return "", "no secrets (blocked by extension guard)" }})
-	if err := a.Run(context.Background(), provider.UserText("my password is hunter2")); err != nil {
-		t.Fatal(err)
+	if err := a.Run(context.Background(), provider.UserText("my password is hunter2")); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("err = %v, want ErrBlocked", err)
 	}
 	if n := len(a.Session().BuildContext().Messages); n != 0 {
 		t.Errorf("a blocked message was saved (%d messages)", n)
 	}
-	found := false
+	found, reason := false, ""
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	for _, e := range rec.events {
 		if n, ok := e.(events.Notice); ok && strings.Contains(n.Text, "message not sent: no secrets") {
 			found = true
 		}
+		if te, ok := e.(events.TurnEnd); ok {
+			reason = te.Reason
+		}
+		if _, ok := e.(events.Error); ok {
+			t.Errorf("a blocked message should not be reported as an error: %+v", e)
+		}
+	}
+	if reason != "blocked" {
+		t.Errorf("turn end reason = %q, want blocked", reason)
 	}
 	if !found {
 		t.Errorf("no notice about the blocked message: %v", rec.events)
@@ -156,5 +166,30 @@ func TestUserMessageHookBlocksAFollowUp(t *testing.T) {
 	}
 	if n := len(a.Session().BuildContext().Messages); n != 2 {
 		t.Errorf("messages = %d, want the question and one answer", n)
+	}
+}
+
+func TestMaxStepsAndTurnStats(t *testing.T) {
+	call := fake.Step{Calls: []fake.Call{{Name: "read", Args: map[string]string{"path": "missing.txt"}}}, Usage: provider.Usage{InputTokens: 100, OutputTokens: 10}}
+	fp := fake.New("fake", call, call, call)
+	a, _, _ := newTestAgent(t, fp)
+	a.maxSteps = 2
+	err := a.Run(context.Background(), provider.UserText("loop"))
+	if !errors.Is(err, ErrMaxSteps) {
+		t.Fatalf("err = %v, want ErrMaxSteps", err)
+	}
+	st := a.LastTurn()
+	if st.Steps != 2 || st.Usage.InputTokens != 200 || st.Usage.OutputTokens != 20 {
+		t.Errorf("stats = %+v, want 2 steps and the usage of both", st)
+	}
+
+	fp = fake.New("fake", fake.Step{Text: "done", Usage: provider.Usage{InputTokens: 7, OutputTokens: 3}})
+	a, _, _ = newTestAgent(t, fp)
+	a.maxSteps = 1
+	if err := a.Run(context.Background(), provider.UserText("one answer")); err != nil {
+		t.Fatalf("a final answer at the limit is not an error: %v", err)
+	}
+	if st := a.LastTurn(); st.Steps != 1 || st.Usage.InputTokens != 7 {
+		t.Errorf("stats = %+v; a new turn must start from zero", st)
 	}
 }

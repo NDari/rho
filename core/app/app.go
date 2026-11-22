@@ -40,6 +40,9 @@ type Options struct {
 	// directory, not Cwd.
 	SystemFile        string
 	AppendSystemFiles []string
+	// MaxSteps, if positive, limits each turn to that many model
+	// responses (see agent.Options).
+	MaxSteps int
 	// ExtHost is the program that runs Go source extensions (see
 	// ext.Options); empty means the running executable.
 	ExtHost string
@@ -130,6 +133,7 @@ func New(o Options) (*App, error) {
 
 		SystemFile:        systemFile,
 		AppendSystemFiles: appendFiles,
+		MaxSteps:          o.MaxSteps,
 	})
 	if !o.NoExtensions {
 		// Extension tools may not take the name of a built-in tool that is

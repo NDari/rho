@@ -39,7 +39,7 @@ Extension tools and commands; the `before_tool_call` and `after_tool_call` hooks
 | 3 | **Done.** Behavior hooks: `before_request` (change the system prompt and messages for that one request, never the session file) and `user_message` (transform or block input) | Small to medium, in `core/agent/agent.go` | Retrieval, memory, personas, policies |
 | 4 | Following and driving the agent: notifications when a message or tool call ends, plus `session/info`, `session/messages`, `agent/set_model`, `agent/cancel` and `agent/compact` | Small | Logging, auto-continue, reviewers that post their results |
 | 5 | Self-extension kit: embed `docs/` and `examples/` in the binary, add `rho docs [topic]`, and a built-in skill that tells the model how to write extensions | Small | "Write me an extension that..." working inside Rho |
-| 6 | Headless results: a final JSON object (answer, usage, cost, stop reason), a non-zero exit code on failure, `--max-turns` | Small | CI and bots |
+| 6 | **Done.** Headless results: a final JSON object (answer, usage, cost, stop reason), a non-zero exit code on failure, `--max-steps` | Small | CI and bots |
 
 On looks: extension tools could return display data (markdown, diffs) so they get rich cards in the TUI and GUI. Worthwhile, but lower value than the six above.
 

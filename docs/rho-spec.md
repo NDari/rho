@@ -299,7 +299,9 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 ## 11. Headless mode
 
 - `rho -p "prompt"`: run one turn (with tools), print the final assistant text.
-- `rho -p --json "prompt"`: stream core events as JSONL to stdout.
+- `rho -p --json "prompt"`: stream core events as JSONL to stdout. The last line is a `result` object: `status` (`done`, `error`, `cancelled`, `blocked` when an extension blocked the prompt, or `max_steps`), `error`, `answer` (the last assistant text), `model`, `steps` (model responses), `usage` and `cost` summed over every request of the turn (compaction included), and the `session` file.
+- Exit status: 0 when the turn finished, 1 otherwise (error, cancel, blocked prompt, step limit), with the reason on stderr.
+- `--max-steps N` stops the turn with an error after N model responses, so a stuck run cannot loop forever. A final answer within the limit is a success.
 - Works with `-c` / `-r`, `--model`, `--tools`, `--no-project-context`, `--system-file` and `--append-system-file`.
 - Used heavily for automated tests.
 - External JSON-RPC mode (`rho --mode rpc`) is a later addition.

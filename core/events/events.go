@@ -23,7 +23,8 @@ type TurnStart struct{}
 
 // TurnEnd is emitted when control returns to the user.
 type TurnEnd struct {
-	// Reason is "done", "cancelled" or "error".
+	// Reason is "done", "cancelled", "blocked" (an extension blocked the
+	// message) or "error".
 	Reason string `json:"reason"`
 }
 

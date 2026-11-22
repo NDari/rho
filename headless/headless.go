@@ -4,10 +4,12 @@ package headless
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 
+	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/provider"
@@ -52,16 +54,65 @@ func Sink(o Options) events.Sink {
 	}
 }
 
-// Run sends one prompt and waits for the turn to finish. In print mode the
-// final assistant text is written to Out.
+// Result is the last line of JSON mode, so scripts need not follow the
+// event stream.
+type Result struct {
+	// Status is "done", "error", "cancelled", "blocked" (an extension
+	// blocked the prompt) or "max_steps".
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	// Answer is the last assistant text of the turn.
+	Answer string `json:"answer"`
+	Model  string `json:"model"`
+	// Steps counts model responses; Usage and Cost add up every request
+	// of the turn, compaction included (Cost is 0 without pricing).
+	Steps   int            `json:"steps"`
+	Usage   provider.Usage `json:"usage"`
+	Cost    float64        `json:"cost"`
+	Session string         `json:"session,omitempty"`
+}
+
+// Type implements events.Event.
+func (Result) Type() string { return "result" }
+
+// Run sends one prompt and waits for the turn to finish. Print mode writes
+// the final assistant text to Out; JSON mode ends with a Result line. The
+// error is the one that ended the turn, so the exit status can report it.
 func Run(ctx context.Context, a *app.App, text string, o Options) error {
 	err := a.Agent.Run(ctx, provider.UserText(text))
+	final := lastAssistantText(a)
 	if !o.JSON {
-		if final := lastAssistantText(a); final != "" {
+		if final != "" {
 			fmt.Fprintln(o.Out, final)
 		}
+		return err
 	}
+	stats := a.Agent.LastTurn()
+	r := Result{
+		Status: status(err), Answer: final, Model: a.Agent.Model().ID,
+		Steps: stats.Steps, Usage: stats.Usage, Cost: stats.Cost, Session: a.Agent.Session().Path(),
+	}
+	if err != nil {
+		r.Error = err.Error()
+	}
+	// Through the agent's sink, so it cannot interleave with other lines.
+	a.Agent.Emit(r)
 	return err
+}
+
+func status(err error) string {
+	switch {
+	case err == nil:
+		return "done"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, agent.ErrBlocked):
+		return "blocked"
+	case errors.Is(err, agent.ErrMaxSteps):
+		return "max_steps"
+	default:
+		return "error"
+	}
 }
 
 func lastAssistantText(a *app.App) string {
