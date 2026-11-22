@@ -41,7 +41,7 @@ Compared with what pi offers extensions:
 
 - **No model calls.** An extension that needs the model (to classify, summarize or run a small sub-agent) has to start `rho -p`.
 - **Plain results.** Extension tools return text, while built-in tools get diff and code cards.
-- **Smaller:** no hooks for model changes, session switches (new, resume, fork), turn start or compaction end; no per-extension settings in `config.toml`; no provider registration; no key bindings or CLI flags.
+- **Smaller:** no hooks for model changes, session switches (new, resume, fork), turn start or compaction end; no per-extension settings in `config.toml`; no provider registration or provider-level hooks (see [provider requests](#provider-requests-to-discuss)); no key bindings or CLI flags.
 
 Replacing a built-in tool already works: disable it in `tools.disabled` and an extension can register a tool with its name (a sandboxed `bash`, for example).
 
@@ -66,6 +66,53 @@ The idea: an extension declares itself a gate in its `initialize` reply (for exa
 - add an optional `message` to `ui/select`, shown above the options in the TUI and GUI;
 - add a `level` (for example `warning`) to `ui/confirm` and `ui/select`, so a risky prompt stands out;
 - or add a dedicated `ui/approve` request with structured fields (kind, command, path, inside or outside the project, diff) that the frontends render as an approval card.
+
+### Provider requests (to discuss)
+
+The built-in rate limiter (`core/provider/ratelimit`) was used as a test of what extensions can see. As an extension it could hold requests in `before_request` (its timeout is 10 times `extensions.timeout`, so waits of a minute fit), learn real usage from `message_end`, and show the wait with `ui/status`. It could not match the built-in one:
+
+- **Requests that skip the hooks:** the agent's retries (`streamWithRetry`) run after `before_request`, and compaction requests do not run it at all. The limiter wraps the provider, so it sees every request.
+- **No provider results:** an extension never sees a 429, a status code or an error kind, so it can neither wait for the window nor tell a rate limit from an exhausted quota. `message_end` has usage only for saved assistant messages, not for compaction or failed attempts.
+- **No headers:** `x-ratelimit-remaining-*` and `retry-after` are not exposed, and an extension cannot add request headers (proxies, tracing, per-request auth).
+- **No settings:** an extension has no section in `config.toml`, so the limits could not stay next to the provider.
+
+pi exposes most of this (`before_provider_request`, `before_provider_headers`, `after_provider_response` with status and headers, `provider_stream_event`, `registerProvider`). Ideas, in order of value for the work:
+
+1. **A notification when each attempt ends** (like `message_end` and `tool_end`): provider, model, attempt number, purpose (turn, side conversation, compaction), status, error kind (rate limited, quota, context overflow, network, other), `retry_after`, usage, duration and the `x-ratelimit-*` headers. Enough on its own for cost and usage tracking, 429 alerts and adaptive limits.
+2. **A `before_send` hook on each attempt,** with the same fields and an estimated token count, at the provider seam where `ratelimit.Wrap` is, so retries and compaction pass through it. Replying later delays the attempt; `{"block": "reason"}` stops it. Items 1 and 2 are one design (an attempt and its outcome) and close the gap the limiter showed.
+3. **Per-extension settings,** for example `[extensions.settings.<name>]`, passed in `initialize` and perhaps declared there so `/config` can list them. Any extension with options needs this.
+4. **Request headers** as an `{"headers": {...}}` result of `before_send`, rather than another hook.
+5. **Providers written as extensions** (`provider/stream`): the most power and the most work (streaming over JSON-RPC, cancellation, usage). It would also let the deferred native Anthropic provider ship as an extension.
+
+The same test against other built-ins: approval needs [guards that fail closed](#guards-that-fail-closed-to-discuss) and [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss); plan mode (`agent/set_tools`) and custom compaction (`before_compaction`) work today; file checkpoints mostly work with `before_tool_call` and `tool_end` but miss what `bash` changes (a limit for core too); "a turn needs you" notifications have `turn_end` but nothing for a prompt waiting on the user (pi has `ui_prompt_start` and `ui_prompt_end`).
+
+### Provider middleware (to review with the extension API)
+
+The same test with XML tool calling (`core/provider/xmltools`, which also wraps the provider) goes further than the rate limiter. On the request it adds instructions built from the tool schemas, sends no native tools, replays earlier calls and results as XML, can move the system prompt into the first user message and adds a stop sequence. On the streamed reply it splits text from `<tool_call>` blocks, emits tool-call events as they arrive (so tool cards show live), types the arguments by schema, decodes HTML entities and stops the request when the model starts writing a tool result itself.
+
+`before_request` covers appending the instructions and rewriting the history. Already in the provider-requests list: per-model settings (item 3) and a hook on every attempt (item 2, which would also need to change the request, not only delay or block it). New:
+
+- **Tool schemas:** `before_request` gets tool names only, so instructions cannot be written and arguments cannot be typed, and other extensions' tools are unknown.
+- **Native tools off but callable:** an empty `tools` result means no change, and a tool that was not offered is refused.
+- **An empty system prompt:** an empty `system` result means no change. Small.
+- **Request parameters** such as stop sequences. Small.
+- **Changing the reply before it is saved and before tools run:** `message_end` is a notification after the save. The heart of it.
+- **Changing the reply as it streams,** emitting tool-call events and stopping early while keeping what came. Providers written as extensions (item 5) would cover this only by reimplementing the OpenAI adapter.
+
+The rate limiter needs to watch an attempt; XML tools need to sit in the middle of it. Both point at one mechanism: **provider middleware**. An extension registers to wrap the provider for some models; Rho gives it the full request (tool schemas and parameters included); the extension calls back (for example `provider/stream`) to run it on the real provider, gets the stream events and sends its own back, including tool calls and "stop". Rate limits, headers, redaction, caching and routing between models fit the same shape, and it would cover items 1, 2 and 4 above.
+
+Costs to weigh: a JSON-RPC round trip per streamed token, and parsing in a Go extension runs under yaegi, so XML tools themselves should stay in core. Middleware pays off for transforms that touch a request or reply less often than per token.
+
+### What extensions cost (measured)
+
+Benchmarks: `go test -run '^$' -bench . ./core/ext/yaegihost/ ./core/ext/` (the same workloads compiled and under Yaegi, and hooks end to end through each kind of extension process; see the comments in the two `bench_test.go` files). Findings on one Linux machine, 2026-11-22:
+
+- **Calls into the standard library run compiled:** JSON and regexp work is about as fast under Yaegi. The extension's own loops are 5 to 90 times slower (about 90 when each step calls a function, such as `unicode.IsLetter` per rune).
+- **Ranging over a string is quadratic in Yaegi v0.16.3** (the latest release): a token count over 100k tokens takes 1 s instead of 0.7 ms. Ranging over `[]rune(s)` is linear. Yaegi v0.16.3 also lacks the `min` and `max` builtins.
+- **Hooks end to end:** a small round trip costs 38 µs for a Go extension and 32 µs for a compiled one, mostly the process boundary. `before_request` with 100k tokens costs 6.2 ms (Go) against 3.9 ms (compiled); most of that gap is the host converting messages through JSON twice more each way (`yaegihost/host.go`), not interpretation.
+- **Against real requests** (local qwen sessions: median 4.9 s per request, about 59 tokens per second), today's hooks cost under 1% of a request, and a middleware call per streamed token would be about 0.3% of the time between tokens.
+
+Next steps from this: drop the host's extra JSON passes (internal, no API change); warn about ranging over strings in `extensions.md` and report it to Yaegi; native helpers in `yaegihost.Symbols` for loops over every rune or byte (a token estimator, a text walker); batch streamed chunks for middleware. Comparing with Sobek (a JavaScript interpreter) would only change the interpreted-loop numbers; estimated at half a day as a scratch test, on hold.
 
 ### Changes, highest value and lowest impact first
 
