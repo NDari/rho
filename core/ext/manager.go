@@ -193,6 +193,8 @@ type Manager struct {
 	exts     []*Extension
 	progress sync.Map // call id -> func(string)
 	warnings []string
+	// toolHooks serializes before_tool_call and after_tool_call.
+	toolHooks sync.Mutex
 }
 
 // NewManager creates a manager.
@@ -822,8 +824,12 @@ func (m *Manager) callHooks(ctx context.Context, hook string, p HookParams) {
 	}
 }
 
-// BeforeToolCall implements agent.Hooks.
+// BeforeToolCall implements agent.Hooks. Tool hooks are serialized, so an
+// extension never handles two at once even when read-only calls run in
+// parallel.
 func (m *Manager) BeforeToolCall(ctx context.Context, name string, args json.RawMessage) (json.RawMessage, string) {
+	m.toolHooks.Lock()
+	defer m.toolHooks.Unlock()
 	for _, e := range m.running() {
 		if !e.hasHook(HookBeforeToolCall) {
 			continue
@@ -846,8 +852,10 @@ func (m *Manager) BeforeToolCall(ctx context.Context, name string, args json.Raw
 	return args, ""
 }
 
-// AfterToolCall implements agent.Hooks.
+// AfterToolCall implements agent.Hooks; see BeforeToolCall.
 func (m *Manager) AfterToolCall(ctx context.Context, name string, args json.RawMessage, res tools.Result) tools.Result {
+	m.toolHooks.Lock()
+	defer m.toolHooks.Unlock()
 	for _, e := range m.running() {
 		if !e.hasHook(HookAfterToolCall) {
 			continue

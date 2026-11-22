@@ -46,6 +46,19 @@ type Tool interface {
 	Execute(ctx context.Context, env *Env, args json.RawMessage, progress func(string)) Result
 }
 
+// Concurrent is implemented by tools whose calls may run at the same time
+// as other such calls from the same response: read-only tools that keep no
+// state. Calls to other tools run one at a time, in order.
+type Concurrent interface {
+	Concurrent() bool
+}
+
+// IsConcurrent reports whether calls to t may run in parallel.
+func IsConcurrent(t Tool) bool {
+	c, ok := t.(Concurrent)
+	return ok && c.Concurrent() && t.ReadOnly()
+}
+
 // Builtins returns every built-in tool.
 func Builtins() []Tool {
 	return []Tool{Read{}, Write{}, Edit{}, Bash{}, Grep{}, Find{}, Ls{}}

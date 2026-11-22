@@ -38,6 +38,9 @@ func (Ls) Spec() provider.ToolSpec {
 // ReadOnly implements Tool.
 func (Ls) ReadOnly() bool { return true }
 
+// Concurrent implements Concurrent.
+func (Ls) Concurrent() bool { return true }
+
 type lsArgs struct {
 	Path  string `json:"path"`
 	Limit int    `json:"limit"`

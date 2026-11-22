@@ -78,7 +78,7 @@ The `rho` package:
 
 | Symbol | Purpose |
 |---|---|
-| `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
+| `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. Calls to extension tools run one at a time, never in parallel. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
 | `RegisterCommand(name, description, func(args string) error)` | add a slash command |
 | `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError` (tool hooks, `tool_end`), `Transcript`, `Text` (`user_message`), `System`, `Messages` and `Aside` (`before_request`), `EntryID` and `Message` (`message_end`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System` and `Messages` |
 | `Info(name, version)` | set the extension name and version |

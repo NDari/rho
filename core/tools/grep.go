@@ -55,6 +55,9 @@ func (Grep) Spec() provider.ToolSpec {
 // ReadOnly implements Tool.
 func (Grep) ReadOnly() bool { return true }
 
+// Concurrent implements Concurrent.
+func (Grep) Concurrent() bool { return true }
+
 type grepArgs struct {
 	Pattern    string `json:"pattern"`
 	Path       string `json:"path"`

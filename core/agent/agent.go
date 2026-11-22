@@ -857,41 +857,86 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 		Shell:          bash.Shell,
 	}
 	hooks := a.getHooks()
-	for _, call := range calls {
-		var res tools.Result
-		var dur time.Duration
-		args := call.Args
-		a.emit(events.ToolStart{ID: call.ID, Name: call.Name, Args: call.Args})
-		switch {
-		case ctx.Err() != nil:
-			res = tools.Result{Content: []provider.Block{provider.Text("Cancelled by the user.")}, IsError: true}
-		case a.hasSteering():
-			res = tools.Result{Content: []provider.Block{provider.Text("Skipped: the user interrupted with a new message.")}, IsError: true}
-		default:
-			start := time.Now()
-			res, args = a.execute(ctx, byName, call, env, cv.Aside)
-			dur = time.Since(start)
+	for i := 0; i < len(calls); {
+		// Consecutive calls to concurrent tools run together; any other
+		// call runs alone.
+		j := i + 1
+		if concurrent(byName, calls[i]) {
+			for j < len(calls) && j-i < maxParallelTools && concurrent(byName, calls[j]) {
+				j++
+			}
 		}
-		if hooks != nil {
-			hooks.ToolEnd(call.Name, args, res)
+		batch := calls[i:j]
+		i = j
+		runs := make([]toolRun, len(batch))
+		var wg sync.WaitGroup
+		for k, call := range batch {
+			a.emit(events.ToolStart{ID: call.ID, Name: call.Name, Args: call.Args})
+			runs[k].args = call.Args
+			switch {
+			case ctx.Err() != nil:
+				runs[k].res = tools.Result{Content: []provider.Block{provider.Text("Cancelled by the user.")}, IsError: true}
+			case a.hasSteering():
+				runs[k].res = tools.Result{Content: []provider.Block{provider.Text("Skipped: the user interrupted with a new message.")}, IsError: true}
+			default:
+				wg.Add(1)
+				go func(r *toolRun, call provider.Block) {
+					defer wg.Done()
+					start := time.Now()
+					r.res, r.args = a.execute(ctx, byName, call, env, cv.Aside)
+					r.dur = time.Since(start)
+					a.finishTool(hooks, call, *r)
+				}(&runs[k], call)
+				continue
+			}
+			a.finishTool(hooks, call, runs[k])
 		}
-		block := provider.Block{Type: provider.BlockToolResult, CallID: call.ID, Content: res.Content, IsError: res.IsError}
-		a.emit(events.ToolEnd{ID: call.ID, Name: call.Name, Result: block, Display: res.Display, Duration: dur})
-		msg := provider.Message{Role: provider.RoleToolResult, Content: []provider.Block{block}}
-		entry := session.Entry{Type: session.TypeMessage, Message: &msg}
-		if res.Display != nil {
-			entry.Display, _ = json.Marshal(res.Display)
-		}
-		e, err := a.Session().Append(entry)
-		if err != nil {
-			return fmt.Errorf("save session: %w", err)
-		}
-		a.emit(events.MessageEnd{EntryID: e.ID, Message: msg})
-		if hooks != nil {
-			hooks.MessageEnd(e.ID, msg)
+		wg.Wait()
+		// Results are saved in call order, whatever order they finished in.
+		for k, call := range batch {
+			r := runs[k]
+			block := provider.Block{Type: provider.BlockToolResult, CallID: call.ID, Content: r.res.Content, IsError: r.res.IsError}
+			msg := provider.Message{Role: provider.RoleToolResult, Content: []provider.Block{block}}
+			entry := session.Entry{Type: session.TypeMessage, Message: &msg}
+			if r.res.Display != nil {
+				entry.Display, _ = json.Marshal(r.res.Display)
+			}
+			e, err := a.Session().Append(entry)
+			if err != nil {
+				return fmt.Errorf("save session: %w", err)
+			}
+			a.emit(events.MessageEnd{EntryID: e.ID, Message: msg})
+			if hooks != nil {
+				hooks.MessageEnd(e.ID, msg)
+			}
 		}
 	}
 	return nil
+}
+
+// maxParallelTools caps how many concurrent tool calls run at once.
+const maxParallelTools = 8
+
+// toolRun is the outcome of one tool call.
+type toolRun struct {
+	res  tools.Result
+	args json.RawMessage
+	dur  time.Duration
+}
+
+// concurrent reports whether a call may run alongside others.
+func concurrent(byName map[string]tools.Tool, call provider.Block) bool {
+	t, ok := byName[call.Name]
+	return ok && call.ArgsError == "" && tools.IsConcurrent(t)
+}
+
+// finishTool reports a finished (or skipped) call as soon as it ends.
+func (a *Agent) finishTool(hooks Hooks, call provider.Block, r toolRun) {
+	if hooks != nil {
+		hooks.ToolEnd(call.Name, r.args, r.res)
+	}
+	block := provider.Block{Type: provider.BlockToolResult, CallID: call.ID, Content: r.res.Content, IsError: r.res.IsError}
+	a.emit(events.ToolEnd{ID: call.ID, Name: call.Name, Result: block, Display: r.res.Display, Duration: r.dur})
 }
 
 // execute runs one tool call and returns its result and the arguments it

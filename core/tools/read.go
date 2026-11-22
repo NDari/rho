@@ -58,6 +58,9 @@ func (Read) Spec() provider.ToolSpec {
 // ReadOnly implements Tool.
 func (Read) ReadOnly() bool { return true }
 
+// Concurrent implements Concurrent.
+func (Read) Concurrent() bool { return true }
+
 type readArgs struct {
 	Path   string `json:"path"`
 	Offset int    `json:"offset"`

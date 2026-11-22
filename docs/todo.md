@@ -14,7 +14,7 @@ In order of how much they matter for adoption:
 4. **File checkpoints and a changes view.** Item 1 in [feature-requests.md](feature-requests.md).
 5. **MCP.** A non-goal for core, but it is how most internal systems (docs, trackers, GitHub) get connected. A bridge written as an executable extension needs no core change.
 
-Smaller: an optional `powershell` tool so Windows works without Git Bash (as in pi), a note to the model after the third identical tool error in a row, parallel tool calls, a web fetch tool, HTML export, and images in the TUI.
+Smaller: an optional `powershell` tool so Windows works without Git Bash (as in pi), a note to the model after the third identical tool error in a row, a web fetch tool, HTML export, and images in the TUI.
 
 ## 2. Extensibility
 
@@ -89,5 +89,5 @@ A profile is a named bundle of system prompt, allowed tools, context rules, skil
 ## Suggested order
 
 1. Changes 1 to 6 and RPC mode are done.
-2. Parallel tool calls, then HTML export.
+2. Parallel tool calls (done: consecutive `read`, `grep`, `find` and `ls` calls run together), then HTML export.
 3. The Anthropic provider and the approval extension, in whichever order users need.

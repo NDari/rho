@@ -41,6 +41,9 @@ func (Find) Spec() provider.ToolSpec {
 // ReadOnly implements Tool.
 func (Find) ReadOnly() bool { return true }
 
+// Concurrent implements Concurrent.
+func (Find) Concurrent() bool { return true }
+
 type findArgs struct {
 	Pattern string `json:"pattern"`
 	Path    string `json:"path"`

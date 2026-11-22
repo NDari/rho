@@ -92,7 +92,7 @@ Clean package seams keep personal patches small and easy to rebase.
 ## 4. Agent loop
 
 - A **turn** = user message → model streams → zero or more tool calls → tool results → model continues → until the model stops calling tools.
-- Tool calls within one assistant message execute **sequentially** by default (simple, predictable diffs). Parallel execution can be considered later.
+- Tool calls within one assistant message run **in order**, except that consecutive calls to concurrent tools run **in parallel** (at most 8 at once). Concurrent tools are read-only built-ins that keep no state: `read`, `grep`, `find` and `ls`. Anything that writes, `bash`, and extension tools run alone, so diffs stay predictable and an extension never handles two calls at once. Results are saved in call order whatever order they finish in; each card finishes as soon as its call does. `before_tool_call` and `after_tool_call` hooks are serialized.
 - **Steering message:** sent while the agent is working. Interrupts after the current tool finishes; remaining queued tool calls are skipped with a "skipped by user" result; the steering message is injected and the loop continues.
 - **Follow-up message:** queued; delivered when the agent finishes the turn.
 - **Cancel (Esc / Ctrl+C):** aborts the stream or kills the running tool (process tree), records a cancelled result, returns control to the user.
