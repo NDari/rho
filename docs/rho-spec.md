@@ -262,6 +262,8 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 - **Skills:** Agent Skills format (`SKILL.md` with `name` and `description` frontmatter). Discovered from `~/.rho/skills/` and `.rho/skills/`. Only names, descriptions and paths go into the system prompt; the model reads a skill on demand with `read`.
 - **Prompt templates:** markdown files in `~/.rho/prompts/` and `.rho/prompts/` become slash commands (`/name args…`), with `$ARGS` / `$1…` substitution.
 - `/context` command shows exactly what was loaded and its token cost.
+- **Prompt files from the command line:** `--system-file <file>` replaces the system prompt (and any `SYSTEM.md`); `--append-system-file <file>` (repeatable in `rho`) is added after the `APPEND_SYSTEM.md` files. Both are read on every request, like the files above, and a file that cannot be read is an error at start.
+- **Ignoring the project:** `--no-project-context` ignores every Rho file the project provides: its `.rho/` directory (config, `SYSTEM.md`, `APPEND_SYSTEM.md`, `COMPACT.md`, skills, prompts, extensions) and its `AGENTS.md` files. The global files in `~/.rho` still load. It is meant for untrusted checkouts, such as reviewing a pull request, together with `--tools` and `RHO_HOME`.
 
 ## 10. TUI
 
@@ -298,7 +300,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 
 - `rho -p "prompt"`: run one turn (with tools), print the final assistant text.
 - `rho -p --json "prompt"`: stream core events as JSONL to stdout.
-- Works with `-c` / `-r`, `--model` and `--tools`.
+- Works with `-c` / `-r`, `--model`, `--tools`, `--no-project-context`, `--system-file` and `--append-system-file`.
 - Used heavily for automated tests.
 - External JSON-RPC mode (`rho --mode rpc`) is a later addition.
 
@@ -343,6 +345,7 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 - No permission prompts in core; an extension can add them via `before_tool_call`.
 - Project extensions require hash-based approval (§12.3).
 - **Project config is restricted:** `.rho/config.toml` may not set provider endpoints (`base_url`), API key sources, extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
+- **Untrusted checkouts:** project instruction files (`SYSTEM.md`, `AGENTS.md`, skills, prompts) load without approval, so a repository can steer the model. `--no-project-context` ignores all of them, and `--tools` limits what the model can do.
 
 ## 14. Configuration
 

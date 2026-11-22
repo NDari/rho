@@ -576,11 +576,12 @@ func (p Paths) GlobalFile() string { return filepath.Join(p.Home, "config.toml")
 // per-model setting, defines the model at all), which then overrides the
 // global value.
 func (p Paths) ProjectSets(s Setting, model string) bool {
-	if p.ProjectDir == "" || p.ProjectDir == p.Home {
+	path := p.Project("config.toml")
+	if path == "" {
 		return false
 	}
 	var c Config
-	md, err := toml.DecodeFile(filepath.Join(p.ProjectDir, "config.toml"), &c)
+	md, err := toml.DecodeFile(path, &c)
 	if err != nil {
 		return false
 	}
@@ -593,11 +594,12 @@ func (p Paths) ProjectSets(s Setting, model string) bool {
 // ProjectDisables reports whether the project config lists extension name
 // in extensions.disabled.
 func (p Paths) ProjectDisables(name string) bool {
-	if p.ProjectDir == "" || p.ProjectDir == p.Home {
+	path := p.Project("config.toml")
+	if path == "" {
 		return false
 	}
 	var c Config
-	if _, err := toml.DecodeFile(filepath.Join(p.ProjectDir, "config.toml"), &c); err != nil {
+	if _, err := toml.DecodeFile(path, &c); err != nil {
 		return false
 	}
 	return slices.Contains(c.Extensions.Disabled, name)

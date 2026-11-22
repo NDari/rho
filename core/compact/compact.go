@@ -22,7 +22,10 @@ var defaultInstructions string
 // Instructions returns the summarization instructions, honoring
 // .rho/COMPACT.md and ~/.rho/COMPACT.md overrides.
 func Instructions(p config.Paths) string {
-	for _, path := range []string{filepath.Join(p.ProjectDir, "COMPACT.md"), filepath.Join(p.Home, "COMPACT.md")} {
+	for _, path := range []string{p.Project("COMPACT.md"), filepath.Join(p.Home, "COMPACT.md")} {
+		if path == "" {
+			continue
+		}
 		if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
 			return string(data)
 		}

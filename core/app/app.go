@@ -32,6 +32,14 @@ type Options struct {
 	NoExtensions bool
 	// Tools, when not nil, replaces the tools.enabled setting for this run.
 	Tools []string
+	// NoProjectContext ignores every Rho file the project provides (see
+	// config.Paths.NoProject).
+	NoProjectContext bool
+	// SystemFile replaces the system prompt; AppendSystemFiles are added
+	// after it. Relative paths are relative to the process's working
+	// directory, not Cwd.
+	SystemFile        string
+	AppendSystemFiles []string
 	// ExtHost is the program that runs Go source extensions (see
 	// ext.Options); empty means the running executable.
 	ExtHost string
@@ -65,6 +73,11 @@ func New(o Options) (*App, error) {
 		}
 	}
 	paths, err := config.ResolvePaths(cwd)
+	if err != nil {
+		return nil, err
+	}
+	paths.NoProject = o.NoProjectContext
+	systemFile, appendFiles, err := promptFiles(o.SystemFile, o.AppendSystemFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +127,9 @@ func New(o Options) (*App, error) {
 		Tools:     builtin,
 		Skills:    skills,
 		Sink:      o.Sink,
+
+		SystemFile:        systemFile,
+		AppendSystemFiles: appendFiles,
 	})
 	if !o.NoExtensions {
 		// Extension tools may not take the name of a built-in tool that is
@@ -139,6 +155,36 @@ func New(o Options) (*App, error) {
 		}
 	}
 	return a, nil
+}
+
+// promptFiles makes the system prompt files absolute and checks that they
+// can be read, so a typo fails at start rather than on the first request.
+func promptFiles(system string, appends []string) (string, []string, error) {
+	check := func(p string) (string, error) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.ReadFile(abs); err != nil {
+			return "", fmt.Errorf("prompt file: %w", err)
+		}
+		return abs, nil
+	}
+	var err error
+	if system != "" {
+		if system, err = check(system); err != nil {
+			return "", nil, err
+		}
+	}
+	var out []string
+	for _, p := range appends {
+		abs, err := check(p)
+		if err != nil {
+			return "", nil, err
+		}
+		out = append(out, abs)
+	}
+	return system, out, nil
 }
 
 // ParseToolList splits a comma-separated list of tool names, as given to

@@ -27,6 +27,9 @@ type rootFlags struct {
 	noExt    bool
 	sessionF string
 	tools    []string
+	noProj   bool
+	system   string
+	appendS  []string
 }
 
 func newRootCmd() *cobra.Command {
@@ -54,6 +57,9 @@ func newRootCmd() *cobra.Command {
 	fl.StringVarP(&f.model, "model", "m", "", "model id, or provider/name")
 	fl.BoolVar(&f.noExt, "no-extensions", false, "do not load extensions")
 	fl.StringVar(&f.sessionF, "session", "", "open a specific session file")
+	fl.BoolVar(&f.noProj, "no-project-context", false, "ignore the project's .rho directory and AGENTS.md files (for untrusted checkouts)")
+	fl.StringVar(&f.system, "system-file", "", "replace the system prompt with this file")
+	fl.StringArrayVar(&f.appendS, "append-system-file", nil, "append this file to the system prompt (repeatable)")
 	fl.StringVar(&toolList, "tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 	cmd.AddCommand(&cobra.Command{
 		Use:    "ext-host <path>",
@@ -105,6 +111,10 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 		Sink:         headless.Sink(hopts),
 		NoExtensions: f.noExt,
 		Tools:        f.tools,
+
+		NoProjectContext:  f.noProj,
+		SystemFile:        f.system,
+		AppendSystemFiles: f.appendS,
 	})
 	if err != nil {
 		return err

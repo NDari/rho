@@ -25,9 +25,9 @@ type Skill struct {
 func LoadSkills(p config.Paths) ([]Skill, []string) {
 	byName := map[string]Skill{}
 	var warnings []string
-	for _, dir := range []string{filepath.Join(p.Home, "skills"), filepath.Join(p.ProjectDir, "skills")} {
+	for _, dir := range []string{filepath.Join(p.Home, "skills"), p.Project("skills")} {
 		entries, err := os.ReadDir(dir)
-		if err != nil {
+		if dir == "" || err != nil {
 			continue
 		}
 		for _, e := range entries {

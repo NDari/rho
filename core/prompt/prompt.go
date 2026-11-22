@@ -37,6 +37,11 @@ type Options struct {
 	Date   time.Time
 	// Aside marks a read-only side conversation.
 	Aside bool
+	// SystemFile replaces the system prompt (and any SYSTEM.md), and
+	// AppendFiles are appended after the APPEND_SYSTEM.md files. They are
+	// read on every build, like the files Rho finds itself.
+	SystemFile  string
+	AppendFiles []string
 }
 
 // builtin is the built-in system prompt. Its tool guidelines follow the
@@ -97,19 +102,32 @@ func Build(p config.Paths, o Options) (Built, error) {
 		b.Parts = append(b.Parts, Part{Name: name, Path: path, Tokens: EstimateTokens(text)})
 	}
 
-	if path, text, err := firstFile(filepath.Join(p.ProjectDir, "SYSTEM.md"), filepath.Join(p.Home, "SYSTEM.md")); err != nil {
+	if o.SystemFile != "" {
+		data, err := os.ReadFile(o.SystemFile)
+		if err != nil {
+			return b, fmt.Errorf("system prompt file: %w", err)
+		}
+		add("--system-file", o.SystemFile, string(data))
+	} else if path, text, err := firstFile(p.Project("SYSTEM.md"), filepath.Join(p.Home, "SYSTEM.md")); err != nil {
 		return b, err
 	} else if path != "" {
 		add("SYSTEM.md", path, text)
 	} else {
 		add("Built-in system prompt", "", builtin(o.Tools))
 	}
-	for _, path := range []string{filepath.Join(p.Home, "APPEND_SYSTEM.md"), filepath.Join(p.ProjectDir, "APPEND_SYSTEM.md")} {
+	for _, path := range []string{filepath.Join(p.Home, "APPEND_SYSTEM.md"), p.Project("APPEND_SYSTEM.md")} {
 		text, err := readOptional(path)
 		if err != nil {
 			return b, err
 		}
 		add("APPEND_SYSTEM.md", path, text)
+	}
+	for _, path := range o.AppendFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return b, fmt.Errorf("appended system prompt file: %w", err)
+		}
+		add("--append-system-file", path, string(data))
 	}
 	if len(o.Tools) > 0 {
 		add("Tool list", "", toolList(o.Tools))
@@ -182,12 +200,13 @@ type File struct {
 }
 
 // AgentsFiles returns ~/.rho/AGENTS.md followed by every AGENTS.md from the
-// project root down to the working directory.
+// project root down to the working directory (none when project files are
+// ignored).
 func AgentsFiles(p config.Paths) ([]File, error) {
 	var files []File
 	candidates := []string{filepath.Join(p.Home, "AGENTS.md")}
 	var dirs []string
-	for d := p.Cwd; ; d = filepath.Dir(d) {
+	for d := p.Cwd; !p.NoProject; d = filepath.Dir(d) {
 		dirs = append(dirs, d)
 		if d == p.ProjectRoot || filepath.Dir(d) == d {
 			break
@@ -227,6 +246,9 @@ func firstFile(paths ...string) (string, string, error) {
 }
 
 func readOptional(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
 		return "", nil

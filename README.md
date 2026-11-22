@@ -130,7 +130,7 @@ Type `/help` for all commands.
 
 ## Security
 
-Rho does not sandbox anything. The model's tools and any extensions run with your user permissions. Use a container or VM for untrusted work. Project-level extensions need your approval (and re-approval when they change), and project config cannot change API endpoints or keys.
+Rho does not sandbox anything. The model's tools and any extensions run with your user permissions. Use a container or VM for untrusted work. Project-level extensions need your approval (and re-approval when they change), and project config cannot change API endpoints or keys. Instruction files such as `AGENTS.md` load without approval; on a checkout you don't trust, use `--no-project-context` (and `--tools read` for a read-only run).
 
 ## License
 

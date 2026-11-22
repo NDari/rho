@@ -153,6 +153,12 @@ The tool descriptions are part of every request. They sit at the start of the pr
 
 Use `/context` to see exactly what is sent to the model and what each part costs.
 
+`--no-project-context` ignores every file in this table that comes from the project (the `.rho/` directory and `AGENTS.md` files) and the project's `.rho/config.toml`, for running on a checkout you don't trust. `--system-file <file>` replaces the system prompt and `--append-system-file <file>` adds to it, without putting anything in the project. For example, a read-only pull request reviewer in CI:
+
+```bash
+gh pr diff 123 | rho -p --no-project-context --tools read --system-file reviewer.md "Review this pull request."
+```
+
 ## Data Rho writes
 
 | Path | Contents |

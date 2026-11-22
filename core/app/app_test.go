@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NDari/rho/core/compact"
+	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider"
 )
 
@@ -103,5 +105,57 @@ func TestToolSelection(t *testing.T) {
 				t.Errorf("tools = %s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNoProjectContext(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("RHO_HOME", home)
+	proj := t.TempDir()
+	files := map[string]string{
+		filepath.Join(home, "config.toml"):                           "theme = \"dark\"\n",
+		filepath.Join(proj, ".git", "HEAD"):                          "",
+		filepath.Join(proj, ".rho", "config.toml"):                   "theme = \"light\"\n",
+		filepath.Join(proj, ".rho", "skills", "evil", "SKILL.md"):    "---\nname: evil\ndescription: d\n---\nbody\n",
+		filepath.Join(proj, ".rho", "prompts", "evil.md"):            "evil prompt\n",
+		filepath.Join(proj, ".rho", "extensions", "evil", "evil.go"): "package main\n",
+		filepath.Join(proj, ".rho", "COMPACT.md"):                    "evil compaction\n",
+		filepath.Join(proj, "AGENTS.md"):                             "evil agents\n",
+	}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, ignore := range []bool{false, true} {
+		a, err := New(Options{Cwd: proj, Model: "openai/test-model", NoProjectContext: ignore})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cands, _ := a.Ext.Discover()
+		loaded := map[string]bool{
+			"config":     a.Config.Theme == "light",
+			"skills":     len(a.Skills) > 0,
+			"prompts":    len(a.Templates) > 0,
+			"extensions": len(cands) > 0,
+			"compaction": strings.Contains(compact.Instructions(a.Paths), "evil"),
+		}
+		files, err := prompt.AgentsFiles(a.Paths)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded["AGENTS.md"] = len(files) > 0
+		for what, got := range loaded {
+			if got == ignore {
+				t.Errorf("NoProjectContext=%v: project %s loaded=%v", ignore, what, got)
+			}
+		}
+		_ = a.Agent.Session().Close()
+	}
+	if _, err := New(Options{Cwd: proj, Model: "openai/test-model", NoExtensions: true, SystemFile: filepath.Join(proj, "missing.md")}); err == nil {
+		t.Error("a missing --system-file should fail at start")
 	}
 }

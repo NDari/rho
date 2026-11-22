@@ -190,11 +190,11 @@ func (m *Manager) Discover() ([]Candidate, []string) {
 		project bool
 	}{
 		{filepath.Join(m.o.Paths.Home, "extensions"), false},
-		{filepath.Join(m.o.Paths.ProjectDir, "extensions"), true},
+		{m.o.Paths.Project("extensions"), true},
 	}
 	seen := map[string]bool{}
 	for _, d := range dirs {
-		if seen[d.path] {
+		if d.path == "" || seen[d.path] {
 			continue
 		}
 		seen[d.path] = true

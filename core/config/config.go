@@ -234,6 +234,20 @@ type Paths struct {
 	ProjectRoot string
 	// ProjectDir is ProjectRoot/.rho.
 	ProjectDir string
+	// NoProject ignores every Rho file the project provides: its .rho
+	// directory (config, SYSTEM.md, APPEND_SYSTEM.md, COMPACT.md, skills,
+	// prompts, extensions) and its AGENTS.md files.
+	NoProject bool
+}
+
+// Project returns the path of elem inside the project's .rho directory,
+// or "" when project files are ignored or there is no project directory
+// apart from Home.
+func (p Paths) Project(elem ...string) string {
+	if p.NoProject || p.ProjectDir == "" || p.ProjectDir == p.Home {
+		return ""
+	}
+	return filepath.Join(append([]string{p.ProjectDir}, elem...)...)
 }
 
 // ResolvePaths computes the standard paths for cwd.
@@ -287,8 +301,7 @@ func Load(p Paths) (Config, []string, error) {
 	if err := mergeFile(&cfg, p.GlobalFile(), false, &warnings); err != nil {
 		return cfg, warnings, err
 	}
-	if p.ProjectDir != "" && p.ProjectDir != p.Home {
-		project := filepath.Join(p.ProjectDir, "config.toml")
+	if project := p.Project("config.toml"); project != "" {
 		if err := mergeFile(&cfg, project, true, &warnings); err != nil {
 			return cfg, warnings, err
 		}

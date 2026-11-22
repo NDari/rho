@@ -22,6 +22,10 @@ func runTUI(f rootFlags, text string) error {
 		Version:      version,
 		NoExtensions: f.noExt,
 		Tools:        f.tools,
+
+		NoProjectContext:  f.noProj,
+		SystemFile:        f.system,
+		AppendSystemFiles: f.appendS,
 	})
 	if err != nil {
 		return err

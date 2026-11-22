@@ -71,6 +71,9 @@ func run() error {
 		model    = fs.String("m", "", "model id, or provider/name")
 		sessionF = fs.String("session", "", "open a specific session file")
 		noExt    = fs.Bool("no-extensions", false, "do not load extensions")
+		noProj   = fs.Bool("no-project-context", false, "ignore the project's .rho directory and AGENTS.md files (for untrusted checkouts)")
+		system   = fs.String("system-file", "", "replace the system prompt with this file")
+		appendS  = fs.String("append-system-file", "", "append this file to the system prompt")
 		toolList = fs.String("tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 		showVer  = fs.Bool("version", false, "print the version and exit")
 	)
@@ -96,6 +99,12 @@ func run() error {
 		Model:        *model,
 		Version:      version,
 		NoExtensions: *noExt,
+
+		NoProjectContext: *noProj,
+		SystemFile:       *system,
+	}
+	if *appendS != "" {
+		opts.AppendSystemFiles = []string{*appendS}
 	}
 	fs.Visit(func(fl *flag.Flag) {
 		if fl.Name == "tools" {

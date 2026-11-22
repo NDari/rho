@@ -25,9 +25,9 @@ type Template struct {
 func LoadTemplates(p config.Paths) ([]Template, []string) {
 	byName := map[string]Template{}
 	var warnings []string
-	for _, dir := range []string{filepath.Join(p.Home, "prompts"), filepath.Join(p.ProjectDir, "prompts")} {
+	for _, dir := range []string{filepath.Join(p.Home, "prompts"), p.Project("prompts")} {
 		entries, err := os.ReadDir(dir)
-		if err != nil {
+		if dir == "" || err != nil {
 			continue
 		}
 		for _, e := range entries {

@@ -139,3 +139,47 @@ func TestBuiltinPromptFollowsTools(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildIgnoresProjectAndUsesPromptFiles(t *testing.T) {
+	p := testPaths(t)
+	write(t, filepath.Join(p.Home, "AGENTS.md"), "global agents")
+	write(t, filepath.Join(p.ProjectRoot, "AGENTS.md"), "project agents")
+	write(t, filepath.Join(p.ProjectDir, "SYSTEM.md"), "project system")
+	write(t, filepath.Join(p.ProjectDir, "APPEND_SYSTEM.md"), "project append")
+	write(t, filepath.Join(p.Home, "APPEND_SYSTEM.md"), "global append")
+	sys := filepath.Join(t.TempDir(), "reviewer.md")
+	extra := filepath.Join(t.TempDir(), "extra.md")
+	write(t, sys, "reviewer system")
+	write(t, extra, "extra rules")
+
+	p.NoProject = true
+	b, err := Build(p, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"project agents", "project system", "project append"} {
+		if strings.Contains(b.Text, s) {
+			t.Errorf("project file loaded with NoProject: %q", s)
+		}
+	}
+	for _, s := range []string{"global agents", "global append", "You are Rho"} {
+		if !strings.Contains(b.Text, s) {
+			t.Errorf("missing %q", s)
+		}
+	}
+
+	p.NoProject = false
+	b, err = Build(p, Options{SystemFile: sys, AppendFiles: []string{extra}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.Text, "project system") || !strings.HasPrefix(b.Text, "reviewer system") {
+		t.Errorf("--system-file did not replace SYSTEM.md:\n%s", b.Text)
+	}
+	if i, j := strings.Index(b.Text, "project append"), strings.Index(b.Text, "extra rules"); i < 0 || j < i {
+		t.Errorf("--append-system-file should follow APPEND_SYSTEM.md:\n%s", b.Text)
+	}
+	if _, err := Build(p, Options{SystemFile: filepath.Join(t.TempDir(), "missing.md")}); err == nil {
+		t.Error("a missing --system-file should be an error")
+	}
+}

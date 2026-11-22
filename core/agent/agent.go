@@ -52,6 +52,10 @@ type Options struct {
 	Skills    []prompt.Skill
 	Sink      events.Sink
 	Hooks     Hooks
+	// SystemFile and AppendSystemFiles are the --system-file and
+	// --append-system-file prompt files (see prompt.Options).
+	SystemFile        string
+	AppendSystemFiles []string
 }
 
 // ErrBusy is returned when a command needs the agent to be idle.
@@ -73,6 +77,9 @@ type Agent struct {
 	skills    []prompt.Skill
 	sink      events.Sink
 	hooks     Hooks
+	// systemFile and appendFiles are fixed for the agent's life.
+	systemFile  string
+	appendFiles []string
 
 	busy      bool
 	cancel    context.CancelFunc
@@ -95,6 +102,9 @@ func New(o Options) *Agent {
 		skills:    o.Skills,
 		sink:      o.Sink,
 		hooks:     o.Hooks,
+
+		systemFile:  o.SystemFile,
+		appendFiles: o.AppendSystemFiles,
 	}
 	if a.sink == nil {
 		a.sink = func(events.Event) {}
@@ -617,7 +627,7 @@ func (a *Agent) requestFor(msgs []provider.Message, aside bool) (provider.Reques
 	a.mu.Lock()
 	skills := a.skills
 	a.mu.Unlock()
-	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: aside})
+	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: aside, SystemFile: a.systemFile, AppendFiles: a.appendFiles})
 	if err != nil {
 		return provider.Request{}, err
 	}
@@ -1025,7 +1035,7 @@ func (a *Agent) ContextReport() (ContextReport, error) {
 	a.mu.Lock()
 	skills := a.skills
 	a.mu.Unlock()
-	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: cv.Aside})
+	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: cv.Aside, SystemFile: a.systemFile, AppendFiles: a.appendFiles})
 	if err != nil {
 		return ContextReport{}, err
 	}
