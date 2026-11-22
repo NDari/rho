@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -138,7 +139,7 @@ func TestNoProjectContext(t *testing.T) {
 		cands, _ := a.Ext.Discover()
 		loaded := map[string]bool{
 			"config":     a.Config.Theme == "light",
-			"skills":     len(a.Skills) > 0,
+			"skills":     slices.ContainsFunc(a.Skills, func(s prompt.Skill) bool { return s.Name == "evil" }),
 			"prompts":    len(a.Templates) > 0,
 			"extensions": len(cands) > 0,
 			"compaction": strings.Contains(compact.Instructions(a.Paths), "evil"),

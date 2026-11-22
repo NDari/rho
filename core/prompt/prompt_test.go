@@ -85,8 +85,12 @@ func TestSkillsAndTemplates(t *testing.T) {
 	write(t, filepath.Join(p.ProjectDir, "skills", "bad", "SKILL.md"), "---\nname: bad\n---\nno description")
 	write(t, filepath.Join(p.ProjectDir, "prompts", "review.md"), "---\ndescription: Review code\n---\nReview $1 focusing on $2. All: $ARGS")
 	skills, warnings := LoadSkills(p)
-	if len(skills) != 1 || skills[0].Name != "pdf" || len(warnings) != 1 {
+	if len(skills) != 2 || skills[0].Name != "pdf" || skills[1].Name != "rho-extensions" || len(warnings) != 1 {
 		t.Errorf("skills=%+v warnings=%v", skills, warnings)
+	}
+	write(t, filepath.Join(p.Home, "skills", "rho-extensions", "SKILL.md"), "---\nname: rho-extensions\ndescription: mine\n---\nBody")
+	if skills, _ := LoadSkills(p); len(skills) != 2 || skills[1].Description != "mine" {
+		t.Errorf("a global skill should override the built-in one: %+v", skills)
 	}
 	tpls, _ := LoadTemplates(p)
 	if len(tpls) != 1 || tpls[0].Description != "Review code" {

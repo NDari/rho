@@ -7,6 +7,8 @@ There are two kinds:
 - **Go source extensions:** a `.go` file, or a directory of `.go` files, run by Rho's built-in interpreter (`rho ext-host`, based on Yaegi). No Go toolchain is needed.
 - **Executable extensions:** any program, described by a `rho-extension.toml` manifest. The program's runtime (Python, Node, a compiled binary...) is the extension's own dependency.
 
+**Letting the model write them.** This guide, the configuration guide, the spec and the examples are built into `rho`: `rho docs` lists them and `rho docs extensions` prints this one. Rho also installs them in `~/.rho/docs/<version>/` and offers the model a built-in `rho-extensions` skill that points there, so asking Rho to "write an extension that..." works without anything else. A skill of your own named `rho-extensions` replaces the built-in one.
+
 ## Where extensions live
 
 | Location | Loaded |
@@ -28,9 +30,11 @@ Use `/extensions` to list extensions: Enter turns the selected one on or off (it
 
 ## Go extensions
 
-Import the `rho` package and register things in `main`:
+Import the `rho` package and register things in `main`. A `//go:build rho` line at the top is optional: Rho's interpreter sets the `rho` build tag, so the line keeps `go build`, `go vet` and gopls from treating the file as part of a Go module it sits in, without changing how Rho runs it.
 
 ```go
+//go:build rho
+
 package main
 
 import (

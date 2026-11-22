@@ -1,3 +1,5 @@
+//go:build rho
+
 // guard is a Rho extension that asks for confirmation before risky bash
 // commands. Copy it to ~/.rho/extensions/ to use it.
 package main

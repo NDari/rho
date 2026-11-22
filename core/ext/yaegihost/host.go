@@ -61,19 +61,26 @@ func Serve(path string, in io.Reader, out io.Writer, logw io.Writer) error {
 				h.loadErr = fmt.Errorf("panic while loading: %v", r)
 			}
 		}()
-		opts := interp.Options{Stdout: logw, Stderr: logw}
-		target := path
+		// The "rho" build tag lets extension files carry //go:build rho, so
+		// go build and gopls skip them in a Go module while Rho runs them.
+		opts := interp.Options{Stdout: logw, Stderr: logw, BuildTags: []string{"rho"}}
+		// Yaegi loads packages from a GOPATH layout; build one, for a
+		// single file too, since only package loading applies BuildTags.
+		files := []string{path}
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
-			// Yaegi loads packages from a GOPATH layout; build one.
-			gopath, err := stageDir(path)
-			if err != nil {
+			if files, err = filepath.Glob(filepath.Join(path, "*.go")); err != nil {
 				h.loadErr = err
 				return
 			}
-			defer os.RemoveAll(gopath)
-			opts.GoPath = gopath
-			target = stagedPkg
 		}
+		gopath, err := stage(files)
+		if err != nil {
+			h.loadErr = err
+			return
+		}
+		defer os.RemoveAll(gopath)
+		opts.GoPath = gopath
+		target := stagedPkg
 		i := interp.New(opts)
 		if err := i.Use(stdlib.Symbols); err != nil {
 			h.loadErr = err
@@ -296,18 +303,14 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 
 const stagedPkg = "rhoextension"
 
-// stageDir copies the Go files of dir into a temporary GOPATH.
-func stageDir(dir string) (string, error) {
+// stage copies Go files (not tests) into a package in a temporary GOPATH.
+func stage(files []string) (string, error) {
 	gopath, err := os.MkdirTemp("", "rho-ext-*")
 	if err != nil {
 		return "", err
 	}
 	dst := filepath.Join(gopath, "src", stagedPkg)
 	if err := os.MkdirAll(dst, 0o700); err != nil {
-		return "", err
-	}
-	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
-	if err != nil {
 		return "", err
 	}
 	for _, f := range files {

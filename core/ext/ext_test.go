@@ -313,3 +313,33 @@ func TestMessageHooksEndToEnd(t *testing.T) {
 		t.Errorf("messages = %+v", msgs)
 	}
 }
+
+// The example in the repository carries //go:build rho, which keeps it out
+// of go build; the extension host must still run it.
+func TestTaggedExampleRuns(t *testing.T) {
+	home := t.TempDir()
+	src, err := os.ReadFile(filepath.Join("..", "..", "examples", "extensions", "guard.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(src), "//go:build rho") {
+		t.Fatal("the example lost its build tag")
+	}
+	if err := os.MkdirAll(filepath.Join(home, "extensions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "extensions", "guard.go"), src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := ext.NewManager(ext.Options{
+		Paths:  config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config: config.Defaults(),
+		UI:     &fakeUI{},
+		Launch: inProcess,
+	})
+	m.Start(context.Background())
+	defer m.Stop()
+	if !strings.Contains(m.Describe(), "hooks: before_tool_call") {
+		t.Errorf("the tagged example did not register its hook:\n%s", m.Describe())
+	}
+}

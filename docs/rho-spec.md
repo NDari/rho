@@ -70,6 +70,7 @@ core/tools/         read, write, edit, bash, grep, find, ls (+ platform files)
 core/session/       JSONL tree store, context assembly, checkout
 core/compact/       compaction policy + summarizer
 core/prompt/        system prompt, AGENTS.md, SYSTEM.md, skills, prompt templates
+core/docs/          the built-in docs and skills: rho docs, and the installed copy for the model
 core/provider/      neutral message types; fake/ (tests), registry/
 core/provider/openaicompat/  Chat Completions and Responses API adapters
 core/provider/xmltools/      XML tool calling for models without native tool calls
@@ -259,7 +260,8 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 - **AGENTS.md:** load `~/.rho/AGENTS.md`, then every `AGENTS.md` from the repo root (or filesystem root) down to cwd. Concatenate in that order with path headers.
 - **SYSTEM.md:** `.rho/SYSTEM.md` or `~/.rho/SYSTEM.md` replaces the built-in system prompt; `APPEND_SYSTEM.md` appends to it.
 - **Built-in system prompt:** short (target under 1,000 tokens): role, tools, cwd, date, platform/shell notes.
-- **Skills:** Agent Skills format (`SKILL.md` with `name` and `description` frontmatter). Discovered from `~/.rho/skills/` and `.rho/skills/`. Only names, descriptions and paths go into the system prompt; the model reads a skill on demand with `read`.
+- **Skills:** Agent Skills format (`SKILL.md` with `name` and `description` frontmatter). Discovered from `~/.rho/skills/` and `.rho/skills/`, after Rho's built-in skills (global and project skills with the same name replace them). Only names, descriptions and paths go into the system prompt; the model reads a skill on demand with `read`.
+- **Built-in docs (self-extension):** the user docs (`configuration.md`, `extensions.md`, this spec, `gui.md`), the examples and the built-in skills are embedded in the binary (`embed.go`). `rho docs [topic or file]` prints them. At start Rho installs them in `~/.rho/docs/<content hash>/` (guides at the top, skills as `skills/<name>/SKILL.md`, examples under `examples/`) and removes older copies. The built-in `rho-extensions` skill tells the model where they are, so a model inside Rho can read the guide and examples and write an extension in one session.
 - **Prompt templates:** markdown files in `~/.rho/prompts/` and `.rho/prompts/` become slash commands (`/name args…`), with `$ARGS` / `$1…` substitution.
 - `/context` command shows exactly what was loaded and its token cost.
 - **Prompt files from the command line:** `--system-file <file>` replaces the system prompt (and any `SYSTEM.md`); `--append-system-file <file>` (repeatable in `rho`) is added after the `APPEND_SYSTEM.md` files. Both are read on every request, like the files above, and a file that cannot be read is an error at start.

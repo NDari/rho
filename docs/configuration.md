@@ -167,3 +167,4 @@ gh pr diff 123 | rho -p --no-project-context --tools read --system-file reviewer
 | `~/.rho/history.jsonl` | prompt history |
 | `~/.rho/trust.json` | approved project extensions |
 | `~/.rho/update.json` | when Rho last looked for a new release, and the latest version it found |
+| `~/.rho/docs/<version>/` | a copy of the built-in docs, examples and skills for the model to read (rewritten when they change; see `rho docs`) |
