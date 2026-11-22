@@ -8,7 +8,7 @@ Status: draft v0.1 · License: MIT
 
 ## 1. Principles
 
-1. **Small core, small concepts.** The harness has few moving parts: an agent loop, four tools, a session tree, compaction, context files. Everything else is a file, an extension, or a patch to your own copy.
+1. **Small core, small concepts.** The harness has few moving parts: an agent loop, a few built-in tools, a session tree, compaction, context files. Everything else is a file, an extension, or a patch to your own copy.
 2. **Rich, beautiful UX.** Minimal does not mean bare. Diffs, syntax highlighting, markdown, themes and smooth streaming are first-class. Presentation lives in the frontend, never in the core.
 3. **No runtime dependencies.** One static Go binary. No Node, Bun, Deno or Python required, neither for the harness nor for Go extensions.
 4. **Transparent context.** The user can always see what goes into the model: system prompt, context files, skills, compaction summaries.
@@ -66,7 +66,7 @@ Status: draft v0.1 · License: MIT
 cmd/rho/            main, flag parsing, subcommands (`rho update`, `rho init`, `rho ext-host`)
 core/app/           wires config, sessions, providers, tools, extensions and the agent
 core/agent/         agent loop, turn state, steering/follow-up queue, branching
-core/tools/         read, write, edit, bash (+ platform files)
+core/tools/         read, write, edit, bash, grep, find, ls (+ platform files)
 core/session/       JSONL tree store, context assembly, checkout
 core/compact/       compaction policy + summarizer
 core/prompt/        system prompt, AGENTS.md, SYSTEM.md, skills, prompt templates
@@ -99,7 +99,7 @@ Clean package seams keep personal patches small and easy to rebase.
 
 ## 5. Tools
 
-Four tools, matching pi. Each tool returns a model-facing result plus structured **display data** for the frontend (e.g., a diff).
+Seven built-in tools. Four are offered by default, matching pi: `read`, `write`, `edit` and `bash`. The read-only search tools `grep`, `find` and `ls` are offered when `bash` is not (see Tool selection). Each tool returns a model-facing result plus structured **display data** for the frontend (e.g., a diff).
 
 ### read
 - Params: `path`, optional `offset` (line), `limit` (lines).
@@ -126,8 +126,23 @@ Four tools, matching pi. Each tool returns a model-facing result plus structured
 - Cancellation/timeout kills the **whole process tree** (Unix: process group; Windows: Job Object).
 - Exit code included in result.
 
+### grep, find, ls
+Read-only, written in Go so they behave the same on every platform and need no external programs.
+- **What they search:** `grep` and `find` walk the tree in path order and skip `.git` (and `.hg`, `.svn`), paths matched by `.gitignore` and `.ignore` files from the repository root down, and `.git/info/exclude`. Hidden files are included. Symbolic links are never followed. Ignore rules are matched with go-git's gitignore package, globs with doublestar.
+- `grep`: params `pattern` (RE2 regular expression), optional `path` (a file or directory), `glob`, `ignore_case`, `literal`, `context` (lines, at most 10), `limit` (matching lines, default 100). Prints `path:line:text`, with `path-line-text` for context lines and `--` between groups. Skips binary files (a NUL byte or invalid UTF-8 in the first 8000 bytes). Lines are cut to 500 characters around the match. Output stops at the limit or 50 KB with a note.
+- `find`: params `pattern` (glob), optional `path`, `limit` (default 1000). The glob is matched against paths relative to `path`; a glob without a slash matches names at any depth, as in rg and fd. Directories are listed too, ending in `/`.
+- `ls`: params optional `path`, `limit` (default 500). One entry per line, sorted, directories ending in `/` and symbolic links in `@`; nothing is skipped.
+- Paths in results are relative to the working directory when inside it.
+
+### Tool selection
+- `tools.enabled` lists the built-in tools to offer (default `read`, `write`, `edit`, `bash`); `--tools a,b` replaces it for one run (`rho`, `rho -p` and `rho-gui`). An unknown name is an error at start.
+- `tools.disabled` lists tools never to offer, built-in or from extensions, by name. It wins over `tools.enabled` and `--tools`. The extension keeps running (its hooks and commands still work), and `/extensions` marks the tool as disabled. A name that matches no built-in tool and no loaded extension tool gets a warning at start and on `/reload`, since it is usually a typo.
+- When `bash` is not offered, `grep`, `find` and `ls` are added unless disabled, so a read-only setup can still search.
+- An extension tool may not take the name of a built-in tool that is offered (it is ignored with a warning), with one exception: it replaces a search tool that was only added because `bash` is off, with a notice. A search tool listed in `tools.enabled` or `--tools` stays built-in.
+- The built-in system prompt's tool guidelines follow the tools offered.
+
 ### Read-only tool set
-Used in side conversations (§7.5): `read` only (plus any future read-only search/list tools). **No bash**, since no shell command can be guaranteed read-only.
+Used in side conversations (§7.5): the read-only tools offered, plus the read-only built-ins (`read`, `grep`, `find`, `ls`) that are not disabled, even when the main conversation does not offer them. **No bash**, since no shell command can be guaranteed read-only.
 
 ### Path handling
 - All tools accept absolute or cwd-relative paths.
@@ -283,7 +298,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 
 - `rho -p "prompt"`: run one turn (with tools), print the final assistant text.
 - `rho -p --json "prompt"`: stream core events as JSONL to stdout.
-- Works with `-c` / `-r` and `--model`.
+- Works with `-c` / `-r`, `--model` and `--tools`.
 - Used heavily for automated tests.
 - External JSON-RPC mode (`rho --mode rpc`) is a later addition.
 
@@ -327,12 +342,12 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 - Parity with pi: **no sandbox**. Tools and extensions run with the user's permissions. Documented prominently; recommend containers/VMs for untrusted work.
 - No permission prompts in core; an extension can add them via `before_tool_call`.
 - Project extensions require hash-based approval (§12.3).
-- **Project config is restricted:** `.rho/config.toml` may not set provider endpoints (`base_url`), API key sources or extension commands, so a cloned repo can't redirect your API keys or run code without approval. Those keys are only honored from global config (or after the project is trusted).
+- **Project config is restricted:** `.rho/config.toml` may not set provider endpoints (`base_url`), API key sources, extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
 
 ## 14. Configuration
 
 - Global: `~/.rho/config.toml`; project: `.rho/config.toml` (restricted keys, see §13). Project overrides global.
-- Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, compaction reserve (internal for now), side-by-side diff width, `update_check` (§19).
+- Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, tool selection (§5), compaction reserve (internal for now), side-by-side diff width, `update_check` (§19).
 - `rho init` writes a starting `~/.rho/config.toml` for a local llama.cpp server (`http://localhost:9931/v1`, llama-server's default port; older versions use 8080) and never replaces an existing file. When no model is configured, `rho` prints the same example and points at `rho init`; the GUI's start-up screen offers to create the file.
 - Data directories via Go's standard per-OS config/cache locations where appropriate; `~/.rho/` as the user-facing home.
 

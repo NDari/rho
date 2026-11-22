@@ -82,7 +82,7 @@ func (Read) Execute(_ context.Context, env *Env, raw json.RawMessage, _ func(str
 		return errorResult("cannot read %s: %v", a.Path, err)
 	}
 	if info.IsDir() {
-		return errorResult("%s is a directory; use bash (e.g. ls) to list it", a.Path)
+		return errorResult("%s is a directory; use ls to list it", a.Path)
 	}
 	shown := DisplayPath(env.Cwd, path)
 

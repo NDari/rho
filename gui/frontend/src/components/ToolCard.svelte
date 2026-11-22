@@ -29,6 +29,15 @@
         const i = cmd.indexOf("\n");
         return i >= 0 ? cmd.slice(0, i) + " …" : cmd;
       }
+      case "grep":
+      case "find": {
+        let s = str("pattern");
+        if (str("path")) s += " in " + relPath(cwd, str("path"));
+        if (str("glob")) s += " (" + str("glob") + ")";
+        return s;
+      }
+      case "ls":
+        return str("path") ? relPath(cwd, str("path")) : ".";
     }
     return Object.keys(args).length ? JSON.stringify(args) : "";
   });
@@ -38,7 +47,7 @@
     if (!d) return "";
     if (d.diff) return `+${d.diff.added} -${d.diff.removed}`;
     if (tool.name === "bash" && d.exit_code != null && d.exit_code > 0) return `exit ${d.exit_code}`;
-    if (tool.name === "read") return d.summary ?? "";
+    if (["read", "grep", "find", "ls"].includes(tool.name)) return d.summary ?? "";
     return "";
   });
 

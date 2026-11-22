@@ -71,6 +71,7 @@ func run() error {
 		model    = fs.String("m", "", "model id, or provider/name")
 		sessionF = fs.String("session", "", "open a specific session file")
 		noExt    = fs.Bool("no-extensions", false, "do not load extensions")
+		toolList = fs.String("tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 		showVer  = fs.Bool("version", false, "print the version and exit")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -96,6 +97,11 @@ func run() error {
 		Version:      version,
 		NoExtensions: *noExt,
 	}
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "tools" {
+			opts.Tools = app.ParseToolList(*toolList)
+		}
+	})
 	if !*noExt {
 		opts.ExtHost = extHost()
 	}

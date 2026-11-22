@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/config"
@@ -29,6 +30,8 @@ type Options struct {
 	Version      string
 	Sink         events.Sink
 	NoExtensions bool
+	// Tools, when not nil, replaces the tools.enabled setting for this run.
+	Tools []string
 	// ExtHost is the program that runs Go source extensions (see
 	// ext.Options); empty means the running executable.
 	ExtHost string
@@ -46,6 +49,10 @@ type App struct {
 	Version   string
 	// Ext is nil when extensions are disabled.
 	Ext *ext.Manager
+	// builtin are the built-in tools offered; autoTools names those added
+	// only because bash is not offered, which extension tools may replace.
+	builtin   []tools.Tool
+	autoTools []string
 }
 
 // New loads configuration and opens (or creates) a session.
@@ -65,7 +72,14 @@ func New(o Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &App{Config: cfg, Paths: paths, Registry: registry.New(cfg), Warnings: warnings, Version: o.Version}
+	if o.Tools != nil {
+		cfg.Tools.Enabled = o.Tools
+	}
+	builtin, auto, err := tools.Select(cfg.Tools.Enabled, cfg.Tools.Disabled)
+	if err != nil {
+		return nil, err
+	}
+	a := &App{Config: cfg, Paths: paths, Registry: registry.New(cfg), Warnings: warnings, Version: o.Version, builtin: builtin, autoTools: auto}
 
 	sess, err := a.openSession(o)
 	if err != nil {
@@ -97,24 +111,26 @@ func New(o Options) (*App, error) {
 		Session:   sess,
 		Providers: a.Registry,
 		Model:     model,
-		Tools:     tools.Builtins(),
+		Tools:     builtin,
 		Skills:    skills,
 		Sink:      o.Sink,
 	})
 	if !o.NoExtensions {
-		var builtin []string
-		for _, t := range tools.Builtins() {
-			builtin = append(builtin, t.Spec().Name)
-		}
+		// Extension tools may not take the name of a built-in tool that is
+		// offered, except one added automatically.
+		names := slices.DeleteFunc(tools.Names(builtin), func(n string) bool { return slices.Contains(auto, n) })
 		a.Ext = ext.NewManager(ext.Options{
 			Paths:   paths,
 			Config:  cfg,
 			Version: o.Version,
 			Agent:   a.Agent,
-			Builtin: builtin,
+			Builtin: names,
 			ExtHost: o.ExtHost,
 			Sink:    func(e events.Event) { a.emit(e) },
 		})
+	}
+	if a.Ext == nil {
+		a.Warnings = append(a.Warnings, a.unknownDisabled()...)
 	}
 	if o.Model != "" && sess.BuildContext().Model != "" && sess.BuildContext().Model != model.ID {
 		// An explicit --model wins over the session's recorded model.
@@ -123,6 +139,19 @@ func New(o Options) (*App, error) {
 		}
 	}
 	return a, nil
+}
+
+// ParseToolList splits a comma-separated list of tool names, as given to
+// --tools. The result is never nil, so an empty list offers no tools
+// beyond those added automatically.
+func ParseToolList(s string) []string {
+	out := []string{}
+	for _, n := range strings.Split(s, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // emit forwards an event to the agent's current sink.
@@ -136,7 +165,7 @@ func (a *App) StartExtensions(ctx context.Context, ui ext.UI) {
 	}
 	a.Ext.SetUI(ui)
 	a.Ext.Start(ctx)
-	a.refreshTools()
+	a.toolNotices(a.refreshTools())
 }
 
 // ReloadExtensions restarts extensions.
@@ -145,7 +174,7 @@ func (a *App) ReloadExtensions(ctx context.Context) error {
 		return nil
 	}
 	err := a.Ext.Reload(ctx)
-	a.refreshTools()
+	a.toolNotices(a.refreshTools())
 	return err
 }
 
@@ -156,9 +185,50 @@ func (a *App) StopExtensions() {
 	}
 }
 
-func (a *App) refreshTools() {
-	a.Agent.SetTools(append(tools.Builtins(), a.Ext.Tools()...))
+// refreshTools offers the built-in tools and the extension tools that are
+// not disabled. An extension tool replaces a built-in tool of the same name
+// that was added automatically; replaced names those.
+func (a *App) refreshTools() (replaced []string) {
+	extTools := tools.Without(a.Ext.Tools(), a.Agent.Config().Tools.Disabled)
+	extNames := tools.Names(extTools)
+	var ts []tools.Tool
+	for _, t := range a.builtin {
+		if n := t.Spec().Name; slices.Contains(a.autoTools, n) && slices.Contains(extNames, n) {
+			replaced = append(replaced, n)
+			continue
+		}
+		ts = append(ts, t)
+	}
+	a.Agent.SetTools(append(ts, extTools...))
 	a.Agent.SetHooks(a.Ext)
+	return replaced
+}
+
+// toolNotices reports built-in tools replaced by extension tools and
+// tools.disabled entries that match no tool.
+func (a *App) toolNotices(replaced []string) {
+	for _, n := range replaced {
+		a.emit(events.Notice{Level: "info", Text: fmt.Sprintf("an extension's %s tool replaces the built-in %s", n, n)})
+	}
+	for _, w := range a.unknownDisabled() {
+		a.emit(events.Notice{Level: "warn", Text: w})
+	}
+}
+
+// unknownDisabled describes tools.disabled entries that name neither a
+// built-in tool nor a loaded extension tool, which is usually a typo.
+func (a *App) unknownDisabled() []string {
+	known := tools.Names(tools.Builtins())
+	if a.Ext != nil {
+		known = append(known, tools.Names(a.Ext.Tools())...)
+	}
+	var out []string
+	for _, n := range a.Agent.Config().Tools.Disabled {
+		if !slices.Contains(known, n) {
+			out = append(out, fmt.Sprintf("tools.disabled: no tool named %q is loaded (built-in tools: %s)", n, strings.Join(tools.Names(tools.Builtins()), ", ")))
+		}
+	}
+	return out
 }
 
 // SetSetting changes a setting for this run and saves it to the global

@@ -9,12 +9,12 @@ The short version: much of this already works through headless mode, `RHO_HOME`,
 In order of how much they matter for adoption:
 
 1. **Approval before commands or edits.** Rho never asks before running `bash` or writing files. Many users ask about this first. Keeping core minimal, it can ship as a bundled, opt-in extension with a simple policy (for example, ask before `bash`, or before writes outside the project) that works in both the TUI and GUI. Today it exists only as the `guard.go` example.
-2. **Read-only search tools.** Side conversations (`/aside`) only get `read`, so they cannot find files, and any search otherwise goes through `bash` with truncated output. Built-in `grep`, `find` and `ls` are cheap, and the spec already allows "future read-only search/list tools".
+2. **Read-only search tools.** **Done:** built-in `grep`, `find` and `ls` (spec §5), offered in side conversations and whenever `bash` is not.
 3. **Native Anthropic provider.** Deferred in the spec. Going through an OpenAI-compatible endpoint loses prompt-caching control and thinking.
 4. **File checkpoints and a changes view.** Item 1 in [feature-requests.md](feature-requests.md).
 5. **MCP.** A non-goal for core, but it is how most internal systems (docs, trackers, GitHub) get connected. A bridge written as an executable extension needs no core change.
 
-Smaller: parallel tool calls, a web fetch tool, HTML export, images in the TUI, and running the GUI on Windows (it is cross-compiled but has never been run there).
+Smaller: an optional `powershell` tool so Windows works without Git Bash (as in pi), a note to the model after the third identical tool error in a row, parallel tool calls, a web fetch tool, HTML export, images in the TUI, and running the GUI on Windows (it is cross-compiled but has never been run there).
 
 ## 2. Extensibility
 
@@ -34,7 +34,7 @@ Extension tools and commands; the `before_tool_call` and `after_tool_call` hooks
 
 | # | Change | Effort | Unlocks |
 |---|---|---|---|
-| 1 | Tool selection: a `tools.disabled` setting and a `--tools read,grep` flag, plus the read-only search tools from gap 2 | Small | Read-only reviewers and document assistants, safer CI runs |
+| 1 | **Done.** Tool selection: `tools.enabled`, `tools.disabled` and `--tools`, plus the read-only search tools from gap 2 | Small | Read-only reviewers and document assistants, safer CI runs |
 | 2 | Context control: `--no-project-context` (skip the project's `SYSTEM.md`, `APPEND_SYSTEM.md`, `AGENTS.md`, skills and prompts) and `--system-file` / `--append-system-file` | Small | Running on untrusted checkouts. With `RHO_HOME`, this works as a profile. |
 | 3 | Behavior hooks: `before_request` (change the system prompt and messages for that one request, never the session file) and `user_message` (transform or block input) | Small to medium, in `core/agent/agent.go` | Retrieval, memory, personas, policies |
 | 4 | Following and driving the agent: notifications when a message or tool call ends, plus `session/info`, `session/messages`, `agent/set_model`, `agent/cancel` and `agent/compact` | Small | Logging, auto-continue, reviewers that post their results |
@@ -69,7 +69,7 @@ A profile is a named bundle of system prompt, allowed tools, context rules, skil
 
 ## Suggested order
 
-1. Changes 1 and 2: small, and they make reviewers and document assistants safe.
+1. Changes 1 (done) and 2: small, and they make reviewers and document assistants safe.
 2. Changes 3 and 4: the behavior hooks.
 3. Change 5: the self-extension kit.
 4. RPC mode.

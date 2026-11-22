@@ -589,7 +589,7 @@
       hint: "Enter turns the extension on or off · Esc close",
       items: list.map((x) => ({
         title: `${x.disabled ? "○" : "●"} ${x.name || x.id}`,
-        detail: `${x.kind}${x.project ? " · project" : ""} · ${x.status}${x.error ? ": " + x.error : ""} · ${x.tools} tools, ${x.commands} commands, ${x.hooks} hooks`,
+        detail: `${x.kind}${x.project ? " · project" : ""} · ${x.status}${x.error ? ": " + x.error : ""} · ${x.tools} tools${x.tools_off ? ` (${x.tools_off} disabled)` : ""}, ${x.commands} commands, ${x.hooks} hooks`,
         value: x.id,
       })),
       onpick: async (it) => {

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,6 +58,49 @@ func TestForkCopiesLabels(t *testing.T) {
 			}
 			if got := labels[dst.Leaf()]; !strings.HasPrefix(got, tc.leafWant) {
 				t.Errorf("fork point label = %q, want prefix %q", got, tc.leafWant)
+			}
+		})
+	}
+}
+
+func TestToolSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		tools   []string
+		want    string
+		wantErr bool
+	}{
+		{"default", "", nil, "read,write,edit,bash", false},
+		{"config", "[tools]\nenabled = [\"read\", \"bash\"]\ndisabled = [\"bash\"]\n", nil, "read,grep,find,ls", false},
+		{"flag replaces enabled", "[tools]\nenabled = [\"read\", \"bash\"]\n", ParseToolList("read, grep"), "read,grep,find,ls", false},
+		{"flag keeps disabled", "[tools]\ndisabled = [\"ls\"]\n", ParseToolList("read,bash,ls"), "read,bash", false},
+		{"unknown tool", "", ParseToolList("read,shell"), "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("RHO_HOME", home)
+			if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(tt.config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a, err := New(Options{Cwd: t.TempDir(), Model: "openai/test-model", NoExtensions: true, Tools: tt.tools})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("want an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = a.Agent.Session().Close() })
+			var names []string
+			for _, tl := range a.Agent.Tools() {
+				names = append(names, tl.Spec().Name)
+			}
+			if got := strings.Join(names, ","); got != tt.want {
+				t.Errorf("tools = %s, want %s", got, tt.want)
 			}
 		})
 	}

@@ -105,3 +105,37 @@ func TestExpandAppendsArgsWithoutPlaceholders(t *testing.T) {
 		t.Errorf("Expand = %q", got)
 	}
 }
+
+func TestBuiltinPromptFollowsTools(t *testing.T) {
+	specs := func(names ...string) []provider.ToolSpec {
+		var out []provider.ToolSpec
+		for _, n := range names {
+			out = append(out, provider.ToolSpec{Name: n})
+		}
+		return out
+	}
+	const intro = "You are Rho, a coding agent working in the user's terminal. You help with software engineering tasks: understanding code, making changes, running commands, and debugging.\n\nGuidelines:\n"
+	const edit = "- Read files before editing them. Use edit for targeted changes and write for new files or complete rewrites.\n- Keep changes focused on what was asked. Match the existing style of the code.\n"
+	const verify = "- Verify your work when practical (build, run tests), and report failures honestly.\n"
+	const tail = "- When requirements are unclear, ask instead of guessing.\n- Be concise. Refer to code as path:line."
+	tests := []struct {
+		name  string
+		tools []provider.ToolSpec
+		want  string
+	}{
+		{"default tools", specs("read", "write", "edit", "bash"),
+			intro + edit + "- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
+		{"with search tools", specs("read", "write", "edit", "bash", "grep", "find", "ls"),
+			intro + edit + "- Use grep, find and ls to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
+		{"read-only", specs("read", "grep", "find", "ls"),
+			intro + "- Use grep, find and ls to search and list files.\n" + tail},
+		{"read only", specs("read"), intro + tail},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := builtin(tt.tools); got != tt.want {
+				t.Errorf("got\n%s\nwant\n%s", got, tt.want)
+			}
+		})
+	}
+}

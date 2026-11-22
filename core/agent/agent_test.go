@@ -373,10 +373,12 @@ func TestAsideUsesReadOnlyTools(t *testing.T) {
 	fp := fake.New("fake",
 		fake.Step{Text: "main"},
 		fake.Step{Calls: []fake.Call{{Name: "bash", Args: map[string]string{"command": "echo hi"}}}, Check: func(r provider.Request) {
+			var names []string
 			for _, tl := range r.Tools {
-				if tl.Name != "read" {
-					t.Errorf("non-read-only tool offered in aside: %s", tl.Name)
-				}
+				names = append(names, tl.Name)
+			}
+			if got := strings.Join(names, ","); got != "read,grep,find,ls" {
+				t.Errorf("aside tools = %s, want read,grep,find,ls", got)
 			}
 		}},
 		fake.Step{Text: "aside done"},

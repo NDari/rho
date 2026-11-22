@@ -2,7 +2,7 @@
 
 A minimal-core, richly presented coding agent harness, written in Go.
 
-Rho keeps the core small (an agent loop, four tools, a session tree, compaction and context files) and puts the effort into a polished terminal experience: streaming markdown, syntax highlighting, word-level diffs and themes. It ships as a single static binary with no runtime dependencies.
+Rho keeps the core small (an agent loop, a few built-in tools, a session tree, compaction and context files) and puts the effort into a polished terminal experience: streaming markdown, syntax highlighting, word-level diffs and themes. It ships as a single static binary with no runtime dependencies.
 
 > **Status:** early development. Expect rough edges and breaking changes. The [design spec](https://github.com/NDari/rho/blob/main/docs/rho-spec.md) describes where it is going.
 
@@ -105,7 +105,7 @@ See [docs/configuration.md](docs/configuration.md) for all settings.
 - **Desktop GUI** (`rho-gui`, early, a separate download): the same sessions and commands in a desktop window. See [docs/gui.md](docs/gui.md).
 - **Providers:** any OpenAI-compatible Chat Completions endpoint (OpenAI, llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, Gemini), plus the OpenAI Responses API. Anthropic is planned.
 - **XML tool calling** for models and gateways without native tool calls, plus per-provider rate limits. See [docs/configuration.md](docs/configuration.md#models-without-native-tool-calling).
-- **Four tools:** `read`, `write`, `edit` (exact replacement, line endings preserved) and `bash` (process tree killed on cancel).
+- **Tools:** `read`, `write`, `edit` (exact replacement, line endings preserved) and `bash` (process tree killed on cancel), plus read-only `grep`, `find` and `ls` that respect `.gitignore`. Choose them with `--tools` or the `[tools]` config; see [docs/configuration.md](docs/configuration.md#tools).
 - **Session tree:** sessions are append-only JSONL. Continue, resume, rewind, fork, browse every branch with `/tree`, or start a read-only side conversation with `/aside`.
 - **Steering:** while the agent works, Enter interrupts after the current tool and Alt+Enter queues a follow-up.
 - **Automatic compaction** when the context window fills up.

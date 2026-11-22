@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -553,12 +554,24 @@ func (a *Agent) recordPartial(resp provider.Response) {
 	_ = a.appendMessage(m)
 }
 
+// activeTools are the tools offered for the next request. A side
+// conversation gets the read-only tools, plus the read-only built-ins
+// (read, grep, find, ls) that are not disabled, even when the main
+// conversation does not offer them.
 func (a *Agent) activeTools(aside bool) []tools.Tool {
 	ts := a.Tools()
-	if aside {
-		return tools.ReadOnlyTools(ts)
+	if !aside {
+		return ts
 	}
-	return ts
+	out := tools.ReadOnlyTools(ts)
+	disabled := a.Config().Tools.Disabled
+	for _, t := range tools.ReadOnlyTools(tools.Builtins()) {
+		name := t.Spec().Name
+		if !slices.Contains(disabled, name) && !slices.ContainsFunc(ts, func(o tools.Tool) bool { return o.Spec().Name == name }) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // buildRequest assembles the next model request.

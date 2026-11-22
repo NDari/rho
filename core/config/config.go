@@ -33,6 +33,7 @@ type Config struct {
 	TUI          TUI                 `toml:"tui"`
 	Compaction   Compaction          `toml:"compaction"`
 	Extensions   Extensions          `toml:"extensions"`
+	Tools        Tools               `toml:"tools"`
 	// MaxRetries is the number of retries for transient provider errors.
 	MaxRetries int `toml:"max_retries"`
 	// UpdateCheck lets Rho look for new releases once a day (default true).
@@ -183,6 +184,16 @@ type Extensions struct {
 	Disabled []string `toml:"disabled"`
 }
 
+// Tools selects the tools offered to the model.
+type Tools struct {
+	// Enabled lists the built-in tools to offer; nil means read, write,
+	// edit and bash. grep, find and ls are added whenever bash is not
+	// offered.
+	Enabled []string `toml:"enabled"`
+	// Disabled lists tools, built-in or from extensions, never to offer.
+	Disabled []string `toml:"disabled"`
+}
+
 // Defaults returns the built-in configuration.
 func Defaults() Config {
 	return Config{
@@ -291,8 +302,8 @@ func Load(p Paths) (Config, []string, error) {
 }
 
 // restrictedProjectKeys may only be set in the global config, so a cloned
-// repository can't redirect API keys or run commands.
-var restrictedProjectKeys = []string{"providers", "bash.shell"}
+// repository can't redirect API keys, run commands or turn tools back on.
+var restrictedProjectKeys = []string{"providers", "bash.shell", "tools.enabled"}
 
 func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error {
 	data, err := os.ReadFile(path)
@@ -395,6 +406,15 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 	}
 	if defined("extensions", "disabled") {
 		cfg.Extensions.Disabled = append(cfg.Extensions.Disabled, file.Extensions.Disabled...)
+	}
+	if defined("tools", "enabled") {
+		cfg.Tools.Enabled = file.Tools.Enabled
+		if cfg.Tools.Enabled == nil {
+			cfg.Tools.Enabled = []string{}
+		}
+	}
+	if defined("tools", "disabled") {
+		cfg.Tools.Disabled = append(cfg.Tools.Disabled, file.Tools.Disabled...)
 	}
 	return nil
 }

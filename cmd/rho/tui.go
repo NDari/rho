@@ -21,6 +21,7 @@ func runTUI(f rootFlags, text string) error {
 		SessionFile:  f.sessionF,
 		Version:      version,
 		NoExtensions: f.noExt,
+		Tools:        f.tools,
 	})
 	if err != nil {
 		return err

@@ -689,6 +689,11 @@ func (m *Manager) RunCommand(ctx context.Context, name, args string) error {
 	return fmt.Errorf("unknown command /%s", name)
 }
 
+// ToolDisabled reports whether tools.disabled names the tool.
+func (m *Manager) ToolDisabled(name string) bool {
+	return slices.Contains(m.o.Config.Tools.Disabled, name)
+}
+
 // Describe returns a human-readable status report.
 func (m *Manager) Describe() string {
 	exts := m.Extensions()
@@ -707,7 +712,11 @@ func (m *Manager) Describe() string {
 			fmt.Fprintf(&b, "  error: %s\n", e.Err)
 		}
 		for _, t := range e.Info.Tools {
-			fmt.Fprintf(&b, "  tool: %s\n", t.Name)
+			if m.ToolDisabled(t.Name) {
+				fmt.Fprintf(&b, "  tool: %s (disabled in tools.disabled)\n", t.Name)
+			} else {
+				fmt.Fprintf(&b, "  tool: %s\n", t.Name)
+			}
 		}
 		for _, c := range e.Info.Commands {
 			fmt.Fprintf(&b, "  command: /%s\n", c.Name)

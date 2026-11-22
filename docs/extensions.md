@@ -74,7 +74,7 @@ The `rho` package:
 
 | Symbol | Purpose |
 |---|---|
-| `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations |
+| `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
 | `RegisterCommand(name, description, func(args string) error)` | add a slash command |
 | `On(event, func(Event) Response)` | handle a hook (see below) |
 | `Info(name, version)` | set the extension name and version |

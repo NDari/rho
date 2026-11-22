@@ -233,6 +233,20 @@ func (t *toolItem) summary(cwd string) string {
 			cmd = cmd[:i] + " …"
 		}
 		return cmd
+	case "grep", "find":
+		s := str("pattern")
+		if p := str("path"); p != "" {
+			s += " in " + p
+		}
+		if g := str("glob"); g != "" {
+			s += " (" + g + ")"
+		}
+		return s
+	case "ls":
+		if p := str("path"); p != "" {
+			return p
+		}
+		return "."
 	}
 	if len(t.args) == 0 {
 		return ""
@@ -298,7 +312,7 @@ func (t *toolItem) stat() string {
 		return diffStat(d.Diff)
 	case t.name == "bash" && d.ExitCode != nil && *d.ExitCode > 0:
 		return fmt.Sprintf("exit %d", *d.ExitCode)
-	case t.name == "read":
+	case t.name == "read", t.name == "grep", t.name == "find", t.name == "ls":
 		return d.Summary
 	}
 	return ""

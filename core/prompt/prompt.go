@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,15 +39,45 @@ type Options struct {
 	Aside bool
 }
 
-const builtin = `You are Rho, a coding agent working in the user's terminal. You help with software engineering tasks: understanding code, making changes, running commands, and debugging.
+// builtin is the built-in system prompt. Its tool guidelines follow the
+// tools offered; with the default tools it reads as it always has.
+func builtin(tools []provider.ToolSpec) string {
+	has := func(name string) bool {
+		return slices.ContainsFunc(tools, func(t provider.ToolSpec) bool { return t.Name == name })
+	}
+	var search []string
+	for _, n := range []string{"grep", "find", "ls"} {
+		if has(n) {
+			search = append(search, n)
+		}
+	}
+	lines := []string{"You are Rho, a coding agent working in the user's terminal. You help with software engineering tasks: understanding code, making changes, running commands, and debugging.", "", "Guidelines:"}
+	if has("edit") || has("write") {
+		lines = append(lines, "- Read files before editing them. Use edit for targeted changes and write for new files or complete rewrites.",
+			"- Keep changes focused on what was asked. Match the existing style of the code.")
+	}
+	switch {
+	case has("bash") && len(search) > 0:
+		lines = append(lines, "- Use "+joinNames(search)+" to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.")
+	case has("bash"):
+		lines = append(lines, "- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.")
+	case len(search) > 0:
+		lines = append(lines, "- Use "+joinNames(search)+" to search and list files.")
+	}
+	if has("bash") {
+		lines = append(lines, "- Verify your work when practical (build, run tests), and report failures honestly.")
+	}
+	lines = append(lines, "- When requirements are unclear, ask instead of guessing.", "- Be concise. Refer to code as path:line.")
+	return strings.Join(lines, "\n")
+}
 
-Guidelines:
-- Read files before editing them. Use edit for targeted changes and write for new files or complete rewrites.
-- Keep changes focused on what was asked. Match the existing style of the code.
-- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.
-- Verify your work when practical (build, run tests), and report failures honestly.
-- When requirements are unclear, ask instead of guessing.
-- Be concise. Refer to code as path:line.`
+// joinNames joins names as "a", "a and b" or "a, b and c".
+func joinNames(names []string) string {
+	if len(names) <= 1 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
 
 const asideNote = `You are in a side conversation. It shares the main conversation's context, but nothing here is carried back automatically. You can only read files in this mode: do not attempt to modify files or run commands.`
 
@@ -71,7 +102,7 @@ func Build(p config.Paths, o Options) (Built, error) {
 	} else if path != "" {
 		add("SYSTEM.md", path, text)
 	} else {
-		add("Built-in system prompt", "", builtin)
+		add("Built-in system prompt", "", builtin(o.Tools))
 	}
 	for _, path := range []string{filepath.Join(p.Home, "APPEND_SYSTEM.md"), filepath.Join(p.ProjectDir, "APPEND_SYSTEM.md")} {
 		text, err := readOptional(path)
@@ -86,7 +117,7 @@ func Build(p config.Paths, o Options) (Built, error) {
 	if o.Aside {
 		add("Side conversation note", "", asideNote)
 	}
-	add("Environment", "", environment(p, o.Date))
+	add("Environment", "", environment(p, o.Date, slices.ContainsFunc(o.Tools, func(t provider.ToolSpec) bool { return t.Name == "bash" })))
 
 	files, err := AgentsFiles(p)
 	if err != nil {
@@ -126,7 +157,7 @@ func toolList(tools []provider.ToolSpec) string {
 	return b.String()
 }
 
-func environment(p config.Paths, date time.Time) string {
+func environment(p config.Paths, date time.Time, bash bool) string {
 	if date.IsZero() {
 		date = time.Now()
 	}
@@ -138,7 +169,7 @@ func environment(p config.Paths, date time.Time) string {
 	}
 	fmt.Fprintf(&b, "\n- Platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&b, "\n- Date: %s", date.Format("2006-01-02"))
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && bash {
 		b.WriteString("\n- The bash tool runs Git Bash: use Unix commands. Windows paths like C:\\x\\y can be written /c/x/y.")
 	}
 	return b.String()

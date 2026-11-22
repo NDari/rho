@@ -662,16 +662,18 @@ func (b *Bridge) SetSetting(key, value string) (SettingResult, error) {
 
 // ExtensionInfo describes a discovered extension.
 type ExtensionInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Project  bool   `json:"project,omitempty"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
-	Tools    int    `json:"tools"`
-	Commands int    `json:"commands"`
-	Hooks    int    `json:"hooks"`
-	Disabled bool   `json:"disabled,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Project bool   `json:"project,omitempty"`
+	Status  string `json:"status"`
+	Error   string `json:"error,omitempty"`
+	Tools   int    `json:"tools"`
+	// ToolsOff counts the tools turned off by tools.disabled.
+	ToolsOff int  `json:"tools_off,omitempty"`
+	Commands int  `json:"commands"`
+	Hooks    int  `json:"hooks"`
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Extensions lists the discovered extensions.
@@ -682,10 +684,16 @@ func (b *Bridge) Extensions() []ExtensionInfo {
 	var out []ExtensionInfo
 	for _, x := range b.core().Ext.Extensions() {
 		x.Lock()
+		off := 0
+		for _, t := range x.Info.Tools {
+			if b.core().Ext.ToolDisabled(t.Name) {
+				off++
+			}
+		}
 		out = append(out, ExtensionInfo{
 			ID: x.ID, Name: x.Name, Kind: x.Kind, Project: x.Project,
 			Status: x.Status, Error: x.Err,
-			Tools: len(x.Info.Tools), Commands: len(x.Info.Commands), Hooks: len(x.Info.Hooks),
+			Tools: len(x.Info.Tools), ToolsOff: off, Commands: len(x.Info.Commands), Hooks: len(x.Info.Hooks),
 			Disabled: x.Status == ext.StatusDisabled,
 		})
 		x.Unlock()

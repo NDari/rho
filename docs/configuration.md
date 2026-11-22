@@ -60,6 +60,27 @@ keep_recent = 20000  # roughly how many recent tokens to keep verbatim
 [extensions]
 timeout = 30         # seconds per hook/command call
 disabled = []        # extension names not to start
+
+[tools]
+enabled = ["read", "write", "edit", "bash"]   # built-in tools to offer (this is the default)
+disabled = []        # tools never to offer, built-in or from extensions
+```
+
+## Tools
+
+Rho has seven built-in tools: `read`, `write`, `edit` and `bash`, offered by default, and the read-only search tools `grep`, `find` and `ls`. `grep` and `find` skip `.git` and anything ignored by `.gitignore` or `.ignore`; hidden files are included.
+
+- `tools.enabled` chooses the built-in tools. `rho --tools read,grep` (also with `-p`, and `rho-gui -tools`) replaces it for one run.
+- `tools.disabled` removes tools by name, including extension tools, and wins over both. The extension itself keeps running, and `/extensions` marks the tool as disabled. A name that matches no tool gets a warning, so a typo like `bassh` does not leave `bash` on unnoticed.
+- Whenever `bash` is not offered, `grep`, `find` and `ls` are added unless disabled. A read-only assistant is `--tools read`. An extension tool with one of those names replaces the built-in one, unless you listed the built-in yourself.
+- Side conversations (`/aside`) always get the read-only built-ins that are not disabled.
+- A project's `.rho/config.toml` can add to `tools.disabled` but cannot set `tools.enabled`.
+
+For example, to also offer the search tools in normal sessions:
+
+```toml
+[tools]
+enabled = ["read", "write", "edit", "bash", "grep", "find", "ls"]
 ```
 
 ## Providers

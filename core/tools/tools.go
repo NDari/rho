@@ -1,4 +1,5 @@
-// Package tools implements Rho's built-in tools: read, write, edit and bash.
+// Package tools implements Rho's built-in tools: read, write, edit, bash,
+// grep, find and ls.
 package tools
 
 import (
@@ -7,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/NDari/rho/core/events"
@@ -44,9 +46,71 @@ type Tool interface {
 	Execute(ctx context.Context, env *Env, args json.RawMessage, progress func(string)) Result
 }
 
-// Builtins returns the four built-in tools.
+// Builtins returns every built-in tool.
 func Builtins() []Tool {
-	return []Tool{Read{}, Write{}, Edit{}, Bash{}}
+	return []Tool{Read{}, Write{}, Edit{}, Bash{}, Grep{}, Find{}, Ls{}}
+}
+
+// DefaultTools are the built-in tools offered when tools.enabled is not
+// set.
+var DefaultTools = []string{"read", "write", "edit", "bash"}
+
+// searchTools are offered whenever bash is not.
+var searchTools = []string{"grep", "find", "ls"}
+
+// Select returns the built-in tools named in enabled (DefaultTools when
+// enabled is nil), less those named in disabled, in Builtins order. When
+// bash is not offered, grep, find and ls are added unless disabled; auto
+// names the tools added that way.
+func Select(enabled, disabled []string) (ts []Tool, auto []string, err error) {
+	if enabled == nil {
+		enabled = DefaultTools
+	}
+	all := Builtins()
+	var names []string
+	for _, t := range all {
+		names = append(names, t.Spec().Name)
+	}
+	for _, n := range enabled {
+		if !slices.Contains(names, n) {
+			return nil, nil, fmt.Errorf("unknown built-in tool %q (built-in tools: %s)", n, strings.Join(names, ", "))
+		}
+	}
+	addSearch := !slices.Contains(enabled, "bash") || slices.Contains(disabled, "bash")
+	for _, t := range all {
+		n := t.Spec().Name
+		if slices.Contains(disabled, n) {
+			continue
+		}
+		switch {
+		case slices.Contains(enabled, n):
+			ts = append(ts, t)
+		case addSearch && slices.Contains(searchTools, n):
+			ts = append(ts, t)
+			auto = append(auto, n)
+		}
+	}
+	return ts, auto, nil
+}
+
+// Names returns the names of ts.
+func Names(ts []Tool) []string {
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		out[i] = t.Spec().Name
+	}
+	return out
+}
+
+// Without returns ts without the tools named in names.
+func Without(ts []Tool, names []string) []Tool {
+	var out []Tool
+	for _, t := range ts {
+		if !slices.Contains(names, t.Spec().Name) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // ReadOnlyTools filters ts to read-only tools.

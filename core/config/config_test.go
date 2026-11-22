@@ -66,6 +66,43 @@ provider = "openai"
 	}
 }
 
+func TestLoadToolsProjectCanOnlyDisable(t *testing.T) {
+	home := t.TempDir()
+	proj := t.TempDir()
+	write(t, filepath.Join(home, "config.toml"), `
+[tools]
+enabled = ["read", "grep"]
+disabled = ["ls"]
+`)
+	write(t, filepath.Join(proj, ".rho", "config.toml"), `
+[tools]
+enabled = ["read", "write", "edit", "bash"]
+disabled = ["find"]
+`)
+	cfg, warnings, err := Load(Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := strings.Join(cfg.Tools.Enabled, ","); got != "read,grep" {
+		t.Errorf("enabled = %s, want the global value", got)
+	}
+	if got := strings.Join(cfg.Tools.Disabled, ","); got != "ls,find" {
+		t.Errorf("disabled = %s, want both files' entries", got)
+	}
+	if !containsWarning(warnings, "tools.enabled") {
+		t.Errorf("expected warning about tools.enabled, got %v", warnings)
+	}
+
+	write(t, filepath.Join(home, "config.toml"), "[tools]\nenabled = []\n")
+	cfg, _, err = Load(Paths{Home: home, ProjectDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tools.Enabled == nil || len(cfg.Tools.Enabled) != 0 {
+		t.Errorf("enabled = [] must stay empty, not fall back to the default: %#v", cfg.Tools.Enabled)
+	}
+}
+
 func TestLoadRejectsUnknownProvider(t *testing.T) {
 	home := t.TempDir()
 	write(t, filepath.Join(home, "config.toml"), `

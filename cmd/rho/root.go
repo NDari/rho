@@ -26,10 +26,12 @@ type rootFlags struct {
 	model    string
 	noExt    bool
 	sessionF string
+	tools    []string
 }
 
 func newRootCmd() *cobra.Command {
 	var f rootFlags
+	var toolList string
 	cmd := &cobra.Command{
 		Use:           "rho [prompt]",
 		Short:         "A minimal-core coding agent",
@@ -38,6 +40,9 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("tools") {
+				f.tools = app.ParseToolList(toolList)
+			}
 			return run(cmd, f, args)
 		},
 	}
@@ -49,6 +54,7 @@ func newRootCmd() *cobra.Command {
 	fl.StringVarP(&f.model, "model", "m", "", "model id, or provider/name")
 	fl.BoolVar(&f.noExt, "no-extensions", false, "do not load extensions")
 	fl.StringVar(&f.sessionF, "session", "", "open a specific session file")
+	fl.StringVar(&toolList, "tools", "", "comma-separated built-in tools to offer, replacing tools.enabled (e.g. read,grep,find,ls)")
 	cmd.AddCommand(&cobra.Command{
 		Use:    "ext-host <path>",
 		Short:  "Run a Go source extension (used internally)",
@@ -98,6 +104,7 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 		Version:      version,
 		Sink:         headless.Sink(hopts),
 		NoExtensions: f.noExt,
+		Tools:        f.tools,
 	})
 	if err != nil {
 		return err
