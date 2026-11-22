@@ -26,6 +26,12 @@ type TurnEnd struct {
 	// Reason is "done", "cancelled", "blocked" (an extension blocked the
 	// message) or "error".
 	Reason string `json:"reason"`
+	// Unanswered is set when the turn was cancelled or failed before
+	// anything was saved after the prompt. The conversation was moved back
+	// to before the prompt, so the next message replaces it; it holds the
+	// prompt text for frontends to drop the prompt from the transcript and
+	// put it back in the editor.
+	Unanswered string `json:"unanswered,omitempty"`
 }
 
 // MessageStart begins a streamed assistant message.

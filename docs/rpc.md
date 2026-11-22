@@ -62,7 +62,7 @@ rho --mode rpc --tools read --no-project-context
 
 The `ui/` requests come from extensions. A client without a user interface can answer them with an error (for example "method not found"): Rho then treats a confirm as no and a select or input as cancelled, as in headless mode.
 
-Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
+Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`; `unanswered` holds the prompt text when the turn ended before anything was saved after it, in which case the conversation was moved back to before the prompt and the next `prompt` replaces it), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
 
 ## Embedding in Go
 

@@ -321,11 +321,26 @@ export class Store {
           }
         }
         if (e.reason === "cancelled") this.notice("warn", "Cancelled");
+        // A prompt that got no reply was taken off the conversation: drop
+        // it from the transcript and put it back in the composer, so
+        // sending again (edited or not) replaces it.
+        const unanswered = e.unanswered ? [e.unanswered.startsWith("/") ? "/" + e.unanswered : e.unanswered] : [];
+        if (unanswered.length > 0) this.dropLastUser();
         void Bridge.TakeQueue().then((left) => {
-          if (left && left.length > 0) this.draft = left.join("\n\n");
+          const parts = [...unanswered, ...(left ?? [])];
+          if (parts.length > 0) this.draft = parts.join("\n\n");
         });
         void this.refreshState();
         break;
+    }
+  }
+
+  private dropLastUser() {
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      if (this.items[i].kind === "user") {
+        this.items.splice(i, 1);
+        return;
+      }
     }
   }
 

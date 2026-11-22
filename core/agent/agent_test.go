@@ -570,3 +570,77 @@ func TestAutoCompactionOff(t *testing.T) {
 		t.Errorf("last answer = %q", got)
 	}
 }
+
+// TestUnansweredPromptIsWithdrawn checks that a prompt that got no reply
+// is taken off the conversation so the next message replaces it, while a
+// prompt with any saved reply stays.
+func TestUnansweredPromptIsWithdrawn(t *testing.T) {
+	authErr := &provider.Error{Kind: provider.ErrAuth, StatusCode: 401, Message: "bad key"}
+	tests := []struct {
+		name      string
+		steps     []fake.Step
+		cancel    bool
+		withdrawn bool
+	}{
+		{name: "error before reply", steps: []fake.Step{{Err: authErr}}, withdrawn: true},
+		{name: "cancel before reply", steps: []fake.Step{{Wait: true}}, cancel: true, withdrawn: true},
+		{name: "cancel after partial text", steps: []fake.Step{{Text: "partial", Wait: true}}, cancel: true},
+		{name: "error after a tool call", steps: []fake.Step{
+			{Calls: []fake.Call{{Name: "ls", Args: map[string]string{}}}},
+			{Err: authErr},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			steps := append(tt.steps, fake.Step{Text: "ok", Check: func(r provider.Request) {
+				var users []string
+				for _, m := range r.Messages {
+					if m.Role == provider.RoleUser {
+						users = append(users, m.TextContent())
+					}
+				}
+				want := []string{"first", "second"}
+				if tt.withdrawn {
+					want = []string{"second"}
+				}
+				if strings.Join(users, "|") != strings.Join(want, "|") {
+					t.Errorf("user messages = %q, want %q", users, want)
+				}
+			}})
+			a, rec, _ := newTestAgent(t, fake.New("fake", steps...))
+			if err := a.Prompt(provider.UserText("first")); err != nil {
+				t.Fatal(err)
+			}
+			if tt.cancel {
+				time.Sleep(50 * time.Millisecond)
+				a.Cancel()
+			}
+			a.Wait()
+			var end events.TurnEnd
+			for _, e := range rec.events {
+				if te, ok := e.(events.TurnEnd); ok {
+					end = te
+				}
+			}
+			want := ""
+			if tt.withdrawn {
+				want = "first"
+			}
+			if end.Unanswered != want {
+				t.Errorf("unanswered = %q, want %q", end.Unanswered, want)
+			}
+			if err := a.Run(context.Background(), provider.UserText("second")); err != nil {
+				t.Fatal(err)
+			}
+			n := 0
+			for _, e := range a.Session().Entries() {
+				if e.Message != nil && e.Message.TextContent() == "first" {
+					n++
+				}
+			}
+			if n != 1 {
+				t.Errorf("first prompt saved %d times, want 1 (the file keeps it)", n)
+			}
+		})
+	}
+}

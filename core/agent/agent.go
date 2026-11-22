@@ -448,6 +448,7 @@ func (a *Agent) popFollowUps() []string {
 
 func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 	var err error
+	promptID := "" // the saved prompt's entry
 	defer func() {
 		reason := "done"
 		switch {
@@ -458,6 +459,10 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		case err != nil:
 			reason = "error"
 			a.emit(events.Error{Message: err.Error()})
+		}
+		unanswered := ""
+		if reason == "cancelled" || reason == "error" {
+			unanswered = a.withdrawUnanswered(promptID)
 		}
 		if h := a.getHooks(); h != nil {
 			h.TurnEnd(context.Background())
@@ -472,7 +477,7 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		}
 		done := a.done
 		a.mu.Unlock()
-		a.emit(events.TurnEnd{Reason: reason})
+		a.emit(events.TurnEnd{Reason: reason, Unanswered: unanswered})
 		close(done)
 	}()
 	a.emit(events.TurnStart{})
@@ -484,7 +489,45 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 	if err = a.appendMessage(first); err != nil {
 		return
 	}
+	promptID = a.Session().Leaf()
 	err = a.loop(ctx)
+}
+
+// withdrawUnanswered moves the conversation back to before the prompt
+// with entry id when nothing was saved after it (the turn failed or was
+// cancelled before any reply), so sending it again, edited or not, does
+// not stack a second copy. The prompt stays in the file on its own
+// branch. It returns the prompt text for the editor, or "" if the prompt
+// was answered.
+func (a *Agent) withdrawUnanswered(id string) string {
+	s := a.Session()
+	if id == "" || s.Leaf() != id {
+		return ""
+	}
+	e, ok := s.Get(id)
+	if !ok || e.Message == nil {
+		return ""
+	}
+	text := promptText(*e.Message)
+	if text == "" {
+		return ""
+	}
+	if err := s.Checkout(e.Parent); err != nil {
+		return ""
+	}
+	a.emitUsage(s.BuildContext(), provider.Usage{})
+	return text
+}
+
+// promptText is the typed text of a user message: its first text block,
+// without the contents of attached files.
+func promptText(m provider.Message) string {
+	for _, b := range m.Content {
+		if b.Type == provider.BlockText {
+			return b.Text
+		}
+	}
+	return ""
 }
 
 func (a *Agent) getHooks() Hooks {

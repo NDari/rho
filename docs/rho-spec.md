@@ -96,6 +96,7 @@ Clean package seams keep personal patches small and easy to rebase.
 - **Steering message:** sent while the agent is working. Interrupts after the current tool finishes; remaining queued tool calls are skipped with a "skipped by user" result; the steering message is injected and the loop continues.
 - **Follow-up message:** queued; delivered when the agent finishes the turn.
 - **Cancel (Esc / Ctrl+C):** aborts the stream or kills the running tool (process tree), records a cancelled result, returns control to the user.
+- **Unanswered prompt:** if a turn is cancelled or fails before anything is saved after its prompt (e.g. the server is unreachable), the conversation moves back to before the prompt with a `checkout` (the prompt stays in the file on its own branch) and `turn_end` carries the prompt text in `unanswered`. The TUI and GUI drop it from the transcript and put it back in the editor, so sending it again, edited or not, replaces it instead of stacking a second copy. Once anything was saved (partial text, thinking, a tool result), the prompt stays and the next message follows it.
 - Errors from providers are surfaced as events; transient errors (429, 5xx, network) retry with backoff (configurable, default 3 attempts).
 - Context overflow error from provider → compact and retry once (see §8).
 

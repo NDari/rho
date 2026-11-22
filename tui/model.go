@@ -779,11 +779,39 @@ func (m *Model) handleEvent(e events.Event) {
 		if ev.Reason == "cancelled" {
 			m.addItem(&noticeItem{level: "warn", text: "cancelled"})
 		}
-		if left := m.agent.TakeQueue(); len(left) > 0 && m.input.Value() == "" {
+		left := m.agent.TakeQueue()
+		if ev.Unanswered != "" {
+			// The prompt got no reply and was taken off the conversation:
+			// drop it from the transcript and put it back in the editor, so
+			// sending again (edited or not) replaces it.
+			m.dropLastUserItem()
+			text := ev.Unanswered
+			if strings.HasPrefix(text, "/") {
+				text = "/" + text // sent as //..., not a command
+			}
+			left = append([]string{text}, left...)
+			if v := m.input.Value(); v != "" {
+				left = append(left, v)
+			}
+			m.input.SetValue(strings.Join(left, "\n\n"))
+			m.afterInputChange()
+		} else if len(left) > 0 && m.input.Value() == "" {
 			m.input.SetValue(strings.Join(left, "\n\n"))
 			m.afterInputChange()
 		}
 		m.gitBranch = app.GitBranch(m.app.Paths.ProjectRoot)
+	}
+}
+
+// dropLastUserItem removes the most recent user message from the
+// transcript.
+func (m *Model) dropLastUserItem() {
+	for i := len(m.items) - 1; i >= 0; i-- {
+		if _, ok := m.items[i].(*userItem); ok {
+			m.items = slices.Delete(m.items, i, i+1)
+			m.dirty = true
+			return
+		}
 	}
 }
 
