@@ -333,7 +333,8 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
   - `user_message` sees every user message: typed, queued (steering and follow-ups, joined into one) and appended by extensions. Its text may be replaced (attachments are kept). A blocked message is not saved or sent, and a notice gives the reason.
   - `before_request` runs before each request of a turn, including side conversations (`aside` is set), but not compaction requests. Messages use the session file's format, and tool calls and results are re-paired afterwards. What it adds counts toward the output limit (§8). Changing earlier messages defeats the provider's prompt cache, so adding to the system prompt or the end is cheaper.
   - Hooks run in extension order, each seeing the previous one's changes. A hook that fails or times out is skipped.
-- **Extension → Rho requests:** `ui/confirm`, `ui/select`, `ui/input`, `ui/notify`, `ui/status` (status-bar text), `session/append_message` (inject a message), `log`.
+  - **Notification hooks** `message_end` (every saved message, tool results included) and `tool_end` (every finished tool call, blocked and failed ones too, with the arguments it ran with) are sent as JSON-RPC notifications through a per-extension queue (256; overflow is dropped and logged), so a slow extension never stalls the agent. The Go host runs their handlers off its read loop, so they may call back into Rho.
+- **Extension → Rho requests:** `ui/confirm`, `ui/select`, `ui/input`, `ui/notify`, `ui/status` (status-bar text), `session/append_message` (inject a message), `session/info`, `session/messages` (the current branch), `agent/set_model`, `agent/cancel`, `agent/compact`, `log`.
 - No per-token or per-frame hooks (keeps out-of-process cheap).
 - UI requests are deliberately simple so any frontend (TUI, headless, GUI) can render them; headless mode answers them with defaults or fails them.
 

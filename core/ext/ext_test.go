@@ -3,6 +3,7 @@ package ext_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -341,5 +342,129 @@ func TestTaggedExampleRuns(t *testing.T) {
 	defer m.Stop()
 	if !strings.Contains(m.Describe(), "hooks: before_tool_call") {
 		t.Errorf("the tagged example did not register its hook:\n%s", m.Describe())
+	}
+}
+
+const agentControlExtension = `package main
+
+import (
+	"fmt"
+
+	"rho"
+)
+
+func main() {
+	rho.Info("ctl", "0.1.0")
+	rho.On("message_end", func(e rho.Event) rho.Response {
+		info, err := rho.Session.Info()
+		msgs, err2 := rho.Session.Messages()
+		if err != nil || err2 != nil {
+			rho.UI.Notify(fmt.Sprint("error ", err, err2))
+			return rho.Response{}
+		}
+		role := e.Message["role"]
+		rho.UI.Notify(fmt.Sprintf("%s %v %s %d %s", e.EntryID, role, info.Model, len(msgs), msgs[0]["id"]))
+		return rho.Response{}
+	})
+	rho.On("tool_end", func(e rho.Event) rho.Response {
+		rho.UI.Notify(fmt.Sprintf("tool %s %v %s %v", e.Tool, e.Args["path"], e.Result, e.IsError))
+		return rho.Response{}
+	})
+	rho.RegisterCommand("ctl", "drive the agent", func(args string) error {
+		switch args {
+		case "cancel":
+			return rho.Agent.Cancel()
+		case "compact":
+			return rho.Agent.Compact()
+		}
+		return rho.Agent.SetModel(args)
+	})
+}
+`
+
+type fakeAgent struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (a *fakeAgent) record(s string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = append(a.calls, s)
+}
+func (a *fakeAgent) Busy() bool                    { return false }
+func (a *fakeAgent) Prompt(provider.Message) error { return nil }
+func (a *fakeAgent) FollowUp(string) error         { return nil }
+func (a *fakeAgent) SetModel(id string) error {
+	a.record("set_model " + id)
+	if id == "missing" {
+		return errors.New("unknown model")
+	}
+	return nil
+}
+func (a *fakeAgent) Cancel()                       { a.record("cancel") }
+func (a *fakeAgent) Compact(context.Context) error { a.record("compact"); return nil }
+func (a *fakeAgent) Info() ext.SessionInfo         { return ext.SessionInfo{ID: "s1", Model: "m1"} }
+func (a *fakeAgent) Messages() []ext.SessionEntry {
+	return []ext.SessionEntry{{ID: "e1", Message: provider.UserText("q")}, {ID: "e2", Message: provider.UserText("a")}}
+}
+
+func TestNotificationsAndAgentControl(t *testing.T) {
+	home := t.TempDir()
+	extDir := filepath.Join(home, "extensions", "ctl")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "ctl.go"), []byte(agentControlExtension), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ui := &fakeUI{}
+	ag := &fakeAgent{}
+	m := ext.NewManager(ext.Options{
+		Paths:  config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config: config.Defaults(),
+		UI:     ui,
+		Agent:  ag,
+		Launch: inProcess,
+	})
+	ctx := context.Background()
+	m.Start(ctx)
+	defer m.Stop()
+	if exts := m.Extensions(); len(exts) != 1 || exts[0].Status != ext.StatusRunning {
+		t.Fatalf("extension not running: %s", m.Describe())
+	}
+
+	// The handlers call back into Rho, which must not deadlock.
+	m.MessageEnd("e7", provider.UserText("hello"))
+	m.ToolEnd("read", json.RawMessage(`{"path":"a.txt"}`), tools.Result{Content: []provider.Block{provider.Text("contents")}})
+	want := []string{"e7 user m1 2 e1", "tool read a.txt contents false"}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		ui.mu.Lock()
+		n := len(ui.notified)
+		ui.mu.Unlock()
+		if n >= len(want) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	ui.mu.Lock()
+	if strings.Join(ui.notified, "|") != strings.Join(want, "|") {
+		t.Errorf("notified = %q, want %q (in order)", ui.notified, want)
+	}
+	ui.mu.Unlock()
+
+	for _, args := range []string{"big", "cancel", "compact"} {
+		if err := m.RunCommand(ctx, "ctl", args); err != nil {
+			t.Fatalf("/ctl %s: %v", args, err)
+		}
+	}
+	if err := m.RunCommand(ctx, "ctl", "missing"); err == nil || !strings.Contains(err.Error(), "unknown model") {
+		t.Errorf("a failed agent call should reach the extension: %v", err)
+	}
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	if got := strings.Join(ag.calls, ","); got != "set_model big,cancel,compact,set_model missing" {
+		t.Errorf("agent calls = %s", got)
 	}
 }

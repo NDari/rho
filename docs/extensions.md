@@ -80,7 +80,7 @@ The `rho` package:
 |---|---|
 | `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
 | `RegisterCommand(name, description, func(args string) error)` | add a slash command |
-| `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError`, `Transcript`, `Text` (`user_message`), `System`, `Messages` and `Aside` (`before_request`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System` and `Messages` |
+| `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError` (tool hooks, `tool_end`), `Transcript`, `Text` (`user_message`), `System`, `Messages` and `Aside` (`before_request`), `EntryID` and `Message` (`message_end`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System` and `Messages` |
 | `Info(name, version)` | set the extension name and version |
 | `UI.Confirm(title, message) bool` | ask yes/no |
 | `UI.Select(title, options) (string, bool)` | pick one option |
@@ -89,6 +89,9 @@ The `rho` package:
 | `UI.Status(text)` | set this extension's status bar text |
 | `Log(format, args...)` | write to the extension log |
 | `AppendMessage(text, trigger)` | send a user message to the agent |
+| `Session.Info() (SessionInfo, error)` | the session id, file, working directory, model, whether a turn runs, context size and cost |
+| `Session.Messages() ([]map[string]any, error)` | the current branch, each `{"id": ..., "message": ...}` |
+| `Agent.SetModel(model) error`, `Agent.Cancel() error`, `Agent.Compact() error` | switch models, stop the turn, compact now |
 
 Interpreted code can use the Go standard library. Anything written to stdout is redirected to stderr (the log), so `fmt.Println` is safe.
 
@@ -149,6 +152,8 @@ If `protocol_version` differs from Rho's, the extension is refused with a clear 
 | `hook/turn_end` | | `{}` |
 | `hook/before_compaction` | `transcript` | `{"summary": "..."}` to supply the summary, or `{}` |
 | `hook/session_end` | | `{}` |
+| `hook/message_end` (notification) | `entry_id`, `message` | none: a message was saved (the user's, the model's or a tool result) |
+| `hook/tool_end` (notification) | `tool`, `args`, `result` | none: a tool call finished, with the arguments it ran with and its final result (blocked and failed calls too) |
 | `shutdown` | | `{}`; then stdin is closed |
 
 Content blocks may also be images: `{"type": "image", "mime": "image/png", "data": "<base64>"}`.
@@ -158,6 +163,8 @@ Content blocks may also be images: `{"type": "image", "mime": "image/png", "data
 `before_request` runs before every model request of a turn, side conversations included, but not before compaction. `messages` are in the session file's format (`{"role": "user", "content": [{"type": "text", "text": "..."}]}`, with roles `user`, `assistant` and `tool_result`). What it returns is sent once and never saved, so use it for retrieved context, reminders, redaction or a persona that should not become part of the history. Rho re-pairs tool calls with their results afterwards and counts what you add toward the output limit. Adding to the end of the system prompt or after the last message keeps the provider's prompt cache; changing earlier messages does not.
 
 With several extensions, hooks run in turn, each seeing the previous one's changes. A hook that fails or times out is skipped.
+
+**Following the conversation.** `message_end` and `tool_end` are notifications: Rho sends them in order without waiting, so an extension can log, count or react without slowing the agent, and a reply is ignored. Each extension has a queue of 256; if it falls that far behind, notifications are dropped and the log says so. In an executable extension, do not call Rho (for example `session/messages`) on the thread that reads stdin while handling a notification, or the reply can never be read; Go extensions need not care, since Rho runs their notification handlers separately. To act on the agent, an extension can read `session/info` and `session/messages`, and call `agent/set_model`, `agent/cancel` and `agent/compact`.
 
 ### Extension to Rho
 
@@ -170,6 +177,11 @@ With several extensions, hooks run in turn, each seeing the previous one's chang
 | `ui/notify` | `level`, `text` | `{}` |
 | `ui/status` | `key`, `text` (empty clears) | `{}` |
 | `session/append_message` | `text`, `trigger` | `{}`; queued as a follow-up while the agent works, or starts a turn when `trigger` is true and the agent is idle |
+| `session/info` | | `{"id", "file", "cwd", "model", "busy", "aside", "context_tokens", "context_window", "cost"}` |
+| `session/messages` | | `{"messages": [{"id": "<entry id>", "message": {...}}]}`: the current branch as the model sees it (after compaction, the summary first) |
+| `agent/set_model` | `model` (an id or `provider/name`) | `{}`; an error while a turn runs or for an unknown model |
+| `agent/cancel` | | `{}`; stops the current turn, if any |
+| `agent/compact` | | `{}` when done; an error while a turn runs |
 | `log` (notification) | `level`, `message` | |
 
 In headless mode, `ui/confirm` answers `false`, and `ui/select` and `ui/input` are cancelled.

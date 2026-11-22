@@ -78,6 +78,11 @@ type Event struct {
 	System   string
 	Messages []map[string]any
 	Aside    bool
+	// EntryID and Message are a message just saved (message_end), in the
+	// session file's JSON format. tool_end sets Tool, Args, Result and
+	// IsError.
+	EntryID string
+	Message map[string]any
 }
 
 // Response is returned by hook handlers. The zero value changes nothing.
@@ -171,6 +176,76 @@ func AppendMessage(text string, trigger bool) error {
 	return h.conn.Call(context.Background(), "session/append_message", ext.AppendMessageParams{Text: text, Trigger: trigger}, nil)
 }
 
+// SessionInfo describes the session (Session.Info).
+type SessionInfo = ext.SessionInfo
+
+// SessionAPI reads the current session.
+type SessionAPI struct{}
+
+// Session is the session entry point.
+var Session SessionAPI
+
+// Info returns the session's id, file, working directory, model, whether a
+// turn is running, the context size and the cost so far.
+func (SessionAPI) Info() (SessionInfo, error) {
+	var r SessionInfo
+	h := current()
+	if h == nil {
+		return r, fmt.Errorf("not connected")
+	}
+	err := h.conn.Call(context.Background(), "session/info", struct{}{}, &r)
+	return r, err
+}
+
+// Messages returns the messages of the current branch as the model sees
+// them, each as {"id": entry id, "message": message in the session file's
+// JSON format}.
+func (SessionAPI) Messages() ([]map[string]any, error) {
+	var r struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	h := current()
+	if h == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	err := h.conn.Call(context.Background(), "session/messages", struct{}{}, &r)
+	return r.Messages, err
+}
+
+// AgentAPI drives the agent.
+type AgentAPI struct{}
+
+// Agent is the agent entry point.
+var Agent AgentAPI
+
+// SetModel switches the model (an id or provider/name). It fails while a
+// turn runs.
+func (AgentAPI) SetModel(model string) error {
+	h := current()
+	if h == nil {
+		return fmt.Errorf("not connected")
+	}
+	return h.conn.Call(context.Background(), "agent/set_model", ext.SetModelParams{Model: model}, nil)
+}
+
+// Cancel stops the current turn, if any.
+func (AgentAPI) Cancel() error {
+	h := current()
+	if h == nil {
+		return fmt.Errorf("not connected")
+	}
+	return h.conn.Call(context.Background(), "agent/cancel", struct{}{}, nil)
+}
+
+// Compact compacts the conversation now. It fails while a turn runs.
+func (AgentAPI) Compact() error {
+	h := current()
+	if h == nil {
+		return fmt.Errorf("not connected")
+	}
+	return h.conn.Call(context.Background(), "agent/compact", struct{}{}, nil)
+}
+
 // UIAPI provides simple user interface requests.
 type UIAPI struct{}
 
@@ -237,5 +312,10 @@ var Symbols = interp.Exports{
 		"Log":             reflect.ValueOf(Log),
 		"AppendMessage":   reflect.ValueOf(AppendMessage),
 		"UI":              reflect.ValueOf(&UI).Elem(),
+		"SessionInfo":     reflect.ValueOf((*SessionInfo)(nil)),
+		"SessionAPI":      reflect.ValueOf((*SessionAPI)(nil)),
+		"Session":         reflect.ValueOf(&Session).Elem(),
+		"AgentAPI":        reflect.ValueOf((*AgentAPI)(nil)),
+		"Agent":           reflect.ValueOf(&Agent).Elem(),
 	},
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -17,10 +18,16 @@ import (
 type testHooks struct {
 	user    func(text string) (string, string)
 	request func(system string, msgs []provider.Message) (string, []provider.Message)
+	before  func(name string, args json.RawMessage) (json.RawMessage, string)
+	message func(id string, m provider.Message)
+	toolEnd func(name string, args json.RawMessage, res tools.Result)
 }
 
-func (testHooks) BeforeToolCall(_ context.Context, _ string, args json.RawMessage) (json.RawMessage, string) {
-	return args, ""
+func (h testHooks) BeforeToolCall(_ context.Context, name string, args json.RawMessage) (json.RawMessage, string) {
+	if h.before == nil {
+		return args, ""
+	}
+	return h.before(name, args)
 }
 func (testHooks) AfterToolCall(_ context.Context, _ string, _ json.RawMessage, res tools.Result) tools.Result {
 	return res
@@ -28,6 +35,16 @@ func (testHooks) AfterToolCall(_ context.Context, _ string, _ json.RawMessage, r
 func (testHooks) TurnEnd(context.Context) {}
 func (testHooks) BeforeCompaction(context.Context, []provider.Message) (string, bool) {
 	return "", false
+}
+func (h testHooks) MessageEnd(id string, m provider.Message) {
+	if h.message != nil {
+		h.message(id, m)
+	}
+}
+func (h testHooks) ToolEnd(name string, args json.RawMessage, res tools.Result) {
+	if h.toolEnd != nil {
+		h.toolEnd(name, args, res)
+	}
 }
 func (h testHooks) UserMessage(_ context.Context, text string) (string, string) {
 	if h.user == nil {
@@ -191,5 +208,45 @@ func TestMaxStepsAndTurnStats(t *testing.T) {
 	}
 	if st := a.LastTurn(); st.Steps != 1 || st.Usage.InputTokens != 7 {
 		t.Errorf("stats = %+v; a new turn must start from zero", st)
+	}
+}
+
+func TestMessageEndAndToolEndHooks(t *testing.T) {
+	fp := fake.New("fake",
+		fake.Step{Calls: []fake.Call{
+			{ID: "c1", Name: "bash", Args: map[string]string{"command": "rm -rf /"}},
+			{ID: "c2", Name: "read", Args: map[string]string{"path": "a.txt"}},
+		}},
+		fake.Step{Text: "done"},
+	)
+	a, _, _ := newTestAgent(t, fp)
+	var roles []string
+	var ends []string
+	a.SetHooks(testHooks{
+		before: func(name string, args json.RawMessage) (json.RawMessage, string) {
+			if name == "bash" {
+				return nil, "no"
+			}
+			return json.RawMessage(`{"path":"b.txt"}`), ""
+		},
+		message: func(id string, m provider.Message) {
+			if id == "" {
+				t.Errorf("message_end without an entry id: %+v", m)
+			}
+			roles = append(roles, string(m.Role))
+		},
+		toolEnd: func(name string, args json.RawMessage, res tools.Result) {
+			ends = append(ends, fmt.Sprintf("%s %s error=%v", name, args, res.IsError))
+		},
+	})
+	if err := a.Run(context.Background(), provider.UserText("go")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(roles, ","); got != "user,assistant,tool_result,tool_result,assistant" {
+		t.Errorf("message_end roles = %s", got)
+	}
+	want := []string{`bash {"command":"rm -rf /"} error=true`, `read {"path":"b.txt"} error=true`}
+	if strings.Join(ends, "|") != strings.Join(want, "|") {
+		t.Errorf("tool_end = %q, want %q (the blocked call too, and the rewritten arguments)", ends, want)
 	}
 }

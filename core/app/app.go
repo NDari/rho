@@ -143,7 +143,7 @@ func New(o Options) (*App, error) {
 			Paths:   paths,
 			Config:  cfg,
 			Version: o.Version,
-			Agent:   a.Agent,
+			Agent:   agentControl{Agent: a.Agent, cwd: paths.Cwd},
 			Builtin: names,
 			ExtHost: o.ExtHost,
 			Sink:    func(e events.Event) { a.emit(e) },
@@ -189,6 +189,36 @@ func promptFiles(system string, appends []string) (string, []string, error) {
 		out = append(out, abs)
 	}
 	return system, out, nil
+}
+
+// agentControl is what extensions may see and do with the agent.
+type agentControl struct {
+	*agent.Agent
+	cwd string
+}
+
+// Info implements ext.AgentControl.
+func (c agentControl) Info() ext.SessionInfo {
+	sess := c.Session()
+	cv := sess.BuildContext()
+	m := c.Model()
+	return ext.SessionInfo{
+		ID: sess.ID(), File: sess.Path(), Cwd: c.cwd, Model: m.ID, Busy: c.Busy(), Aside: cv.Aside,
+		ContextTokens: c.EstimateContext(cv), ContextWindow: m.ContextWindow, Cost: c.Cost(),
+	}
+}
+
+// Messages implements ext.AgentControl.
+func (c agentControl) Messages() []ext.SessionEntry {
+	cv := c.Session().BuildContext()
+	out := make([]ext.SessionEntry, len(cv.Messages))
+	for i, m := range cv.Messages {
+		out[i] = ext.SessionEntry{Message: m}
+		if i < len(cv.EntryIDs) {
+			out[i].ID = cv.EntryIDs[i]
+		}
+	}
+	return out
 }
 
 // ParseToolList splits a comma-separated list of tool names, as given to

@@ -77,6 +77,45 @@ type Extension struct {
 	conn   *rpc.Conn
 	kill   func()
 	logs   []string
+	// notes queues notification hooks for notesConn, so a slow extension
+	// cannot stall the agent.
+	notes     chan note
+	notesConn *rpc.Conn
+}
+
+type note struct {
+	method string
+	params any
+}
+
+// enqueue sends a notification without waiting. A full queue drops it.
+func (e *Extension) enqueue(method string, params any) {
+	e.mu.Lock()
+	conn := e.conn
+	if conn == nil {
+		e.mu.Unlock()
+		return
+	}
+	if e.notesConn != conn {
+		e.notes, e.notesConn = make(chan note, 256), conn
+		go func(ch chan note, c *rpc.Conn) {
+			for {
+				select {
+				case n := <-ch:
+					_ = c.Notify(n.method, n.params)
+				case <-c.Done():
+					return
+				}
+			}
+		}(e.notes, conn)
+	}
+	ch := e.notes
+	e.mu.Unlock()
+	select {
+	case ch <- note{method, params}:
+	default:
+		e.log(method + ": dropped, the extension is not keeping up")
+	}
 }
 
 // Lock and Unlock guard Status, Err and Info, which change as the
@@ -113,6 +152,16 @@ type AgentControl interface {
 	Busy() bool
 	Prompt(provider.Message) error
 	FollowUp(string) error
+	// SetModel switches models; it fails while a turn runs.
+	SetModel(id string) error
+	// Cancel stops the current turn, if any.
+	Cancel()
+	// Compact compacts the conversation now; it fails while a turn runs.
+	Compact(ctx context.Context) error
+	Info() SessionInfo
+	// Messages are the messages of the current branch, as the model
+	// would see them.
+	Messages() []SessionEntry
 }
 
 // Launcher starts an extension process and returns its stdio.
@@ -614,6 +663,14 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			}
 			v, err := ui.Input(ctx, p.Title, p.Placeholder)
 			return ValueResult{Value: v, Cancelled: err != nil}, nil
+		case "session/info", "session/messages", "agent/set_model", "agent/cancel", "agent/compact":
+			m.mu.Lock()
+			ag := m.o.Agent
+			m.mu.Unlock()
+			if ag == nil {
+				return nil, errors.New("no agent")
+			}
+			return agentMethod(ctx, ag, method, params)
 		case "session/append_message":
 			var p AppendMessageParams
 			if err := json.Unmarshal(params, &p); err != nil || p.Text == "" {
@@ -634,6 +691,28 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			return struct{}{}, ag.FollowUp(p.Text)
 		}
 		return nil, &rpc.Error{Code: rpc.CodeMethodNotFound, Message: "unknown method " + method}
+	}
+}
+
+// agentMethod serves the session/ and agent/ requests other than
+// session/append_message.
+func agentMethod(ctx context.Context, ag AgentControl, method string, params json.RawMessage) (any, error) {
+	switch method {
+	case "session/info":
+		return ag.Info(), nil
+	case "session/messages":
+		return SessionMessagesResult{Messages: ag.Messages()}, nil
+	case "agent/set_model":
+		var p SetModelParams
+		if err := json.Unmarshal(params, &p); err != nil || p.Model == "" {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "model is required"}
+		}
+		return struct{}{}, ag.SetModel(p.Model)
+	case "agent/cancel":
+		ag.Cancel()
+		return struct{}{}, nil
+	default: // agent/compact
+		return struct{}{}, ag.Compact(ctx)
 	}
 }
 
@@ -837,6 +916,27 @@ func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provi
 		}
 	}
 	return system, msgs
+}
+
+// MessageEnd implements agent.Hooks: it notifies extensions of a saved
+// message without waiting for them.
+func (m *Manager) MessageEnd(entryID string, msg provider.Message) {
+	m.notifyHook(HookMessageEnd, HookParams{EntryID: entryID, Message: &msg})
+}
+
+// ToolEnd implements agent.Hooks: it notifies extensions of a finished
+// tool call, with its final result, without waiting for them.
+func (m *Manager) ToolEnd(name string, args json.RawMessage, res tools.Result) {
+	r := toWire(res.Content, res.IsError)
+	m.notifyHook(HookToolEnd, HookParams{Tool: name, Args: args, Result: &r})
+}
+
+func (m *Manager) notifyHook(hook string, p HookParams) {
+	for _, e := range m.running() {
+		if e.hasHook(hook) {
+			e.enqueue("hook/"+hook, p)
+		}
+	}
 }
 
 // TurnEnd implements agent.Hooks.

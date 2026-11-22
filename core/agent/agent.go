@@ -40,6 +40,10 @@ type Hooks interface {
 	// BeforeRequest may replace the system prompt and messages of one
 	// model request. The session is not changed.
 	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, aside bool) (string, []provider.Message)
+	// MessageEnd and ToolEnd report a saved message and a finished tool
+	// call. They must not block.
+	MessageEnd(entryID string, m provider.Message)
+	ToolEnd(name string, args json.RawMessage, res tools.Result)
 }
 
 // ProviderSource returns providers by name.
@@ -490,6 +494,9 @@ func (a *Agent) appendMessage(m provider.Message) error {
 		return fmt.Errorf("save session: %w", err)
 	}
 	a.emit(events.MessageEnd{EntryID: e.ID, Message: m})
+	if h := a.getHooks(); h != nil {
+		h.MessageEnd(e.ID, m)
+	}
 	return nil
 }
 
@@ -849,9 +856,11 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 		BashMaxTimeout: bash.MaxTimeout,
 		Shell:          bash.Shell,
 	}
+	hooks := a.getHooks()
 	for _, call := range calls {
 		var res tools.Result
 		var dur time.Duration
+		args := call.Args
 		a.emit(events.ToolStart{ID: call.ID, Name: call.Name, Args: call.Args})
 		switch {
 		case ctx.Err() != nil:
@@ -860,8 +869,11 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 			res = tools.Result{Content: []provider.Block{provider.Text("Skipped: the user interrupted with a new message.")}, IsError: true}
 		default:
 			start := time.Now()
-			res = a.execute(ctx, byName, call, env, cv.Aside)
+			res, args = a.execute(ctx, byName, call, env, cv.Aside)
 			dur = time.Since(start)
+		}
+		if hooks != nil {
+			hooks.ToolEnd(call.Name, args, res)
 		}
 		block := provider.Block{Type: provider.BlockToolResult, CallID: call.ID, Content: res.Content, IsError: res.IsError}
 		a.emit(events.ToolEnd{ID: call.ID, Name: call.Name, Result: block, Display: res.Display, Duration: dur})
@@ -875,27 +887,32 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 			return fmt.Errorf("save session: %w", err)
 		}
 		a.emit(events.MessageEnd{EntryID: e.ID, Message: msg})
+		if hooks != nil {
+			hooks.MessageEnd(e.ID, msg)
+		}
 	}
 	return nil
 }
 
-func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call provider.Block, env *tools.Env, aside bool) tools.Result {
+// execute runs one tool call and returns its result and the arguments it
+// ran with (a before_tool_call hook may have rewritten them).
+func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call provider.Block, env *tools.Env, aside bool) (tools.Result, json.RawMessage) {
+	args := call.Args
 	if call.ArgsError != "" {
-		return tools.Result{Content: []provider.Block{provider.Text(call.ArgsError)}, IsError: true}
+		return tools.Result{Content: []provider.Block{provider.Text(call.ArgsError)}, IsError: true}, args
 	}
 	t, ok := byName[call.Name]
 	if !ok {
 		if aside {
-			return tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("Tool %q is not available in a side conversation (read-only).", call.Name))}, IsError: true}
+			return tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("Tool %q is not available in a side conversation (read-only).", call.Name))}, IsError: true}, args
 		}
-		return tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("Unknown tool %q.", call.Name))}, IsError: true}
+		return tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("Unknown tool %q.", call.Name))}, IsError: true}, args
 	}
-	args := call.Args
 	hooks := a.getHooks()
 	if hooks != nil {
 		newArgs, reason := hooks.BeforeToolCall(ctx, call.Name, args)
 		if reason != "" {
-			return tools.Result{Content: []provider.Block{provider.Text("Blocked: " + reason)}, IsError: true}
+			return tools.Result{Content: []provider.Block{provider.Text("Blocked: " + reason)}, IsError: true}, args
 		}
 		if len(newArgs) > 0 {
 			args = newArgs
@@ -907,7 +924,7 @@ func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call 
 	if hooks != nil {
 		res = hooks.AfterToolCall(ctx, call.Name, args, res)
 	}
-	return res
+	return res, args
 }
 
 // Compact compacts the conversation now.

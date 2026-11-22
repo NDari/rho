@@ -24,6 +24,9 @@ type host struct {
 	ready   chan struct{}
 	loadErr error
 	calls   sync.Map // call id -> context.CancelFunc
+	// notes runs notification hooks in order, off the connection's read
+	// loop, so a handler may call back into Rho.
+	notes chan func()
 }
 
 var (
@@ -53,7 +56,18 @@ func Serve(path string, in io.Reader, out io.Writer, logw io.Writer) error {
 	curHost = h
 	curMu.Unlock()
 	reg.reset()
+	h.notes = make(chan func(), 1024)
 	h.conn = rpc.NewConn(in, out, h.handle)
+	go func() {
+		for {
+			select {
+			case f := <-h.notes:
+				f()
+			case <-h.conn.Done():
+				return
+			}
+		}
+	}()
 
 	func() {
 		defer func() {
@@ -139,6 +153,13 @@ func (h *host) handle(ctx context.Context, method string, params json.RawMessage
 		var p ext.HookParams
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, err
+		}
+		if hook == ext.HookMessageEnd || hook == ext.HookToolEnd {
+			select {
+			case h.notes <- func() { h.hook(hook, p) }:
+			default: // the extension is not keeping up; drop it
+			}
+			return nil, nil
 		}
 		return h.hook(hook, p), nil
 	}
@@ -245,7 +266,12 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 	reg.mu.Lock()
 	fns := append([]func(Event) Response(nil), reg.hooks[name]...)
 	reg.mu.Unlock()
-	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript, Text: p.Text, System: p.System, Aside: p.Aside}
+	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript, Text: p.Text, System: p.System, Aside: p.Aside, EntryID: p.EntryID}
+	if p.Message != nil {
+		if b, err := json.Marshal(p.Message); err == nil {
+			_ = json.Unmarshal(b, &ev.Message)
+		}
+	}
 	if len(p.Args) > 0 {
 		_ = json.Unmarshal(p.Args, &ev.Args)
 	}

@@ -22,6 +22,10 @@ const (
 	HookSessionEnd       = "session_end"
 	HookUserMessage      = "user_message"
 	HookBeforeRequest    = "before_request"
+	// HookMessageEnd and HookToolEnd are notifications: Rho does not wait
+	// for the extension, and ignores any reply.
+	HookMessageEnd = "message_end"
+	HookToolEnd    = "tool_end"
 )
 
 // InitializeParams is sent by Rho first.
@@ -106,6 +110,10 @@ type HookParams struct {
 	System   string             `json:"system,omitempty"`
 	Messages []provider.Message `json:"messages,omitempty"`
 	Aside    bool               `json:"aside,omitempty"`
+	// EntryID and Message (message_end) are a message just saved to the
+	// session: the user's, the model's, or a tool result.
+	EntryID string            `json:"entry_id,omitempty"`
+	Message *provider.Message `json:"message,omitempty"`
 }
 
 // HookResult is an extension's reply to a hook.
@@ -174,6 +182,32 @@ type (
 	LogParams struct {
 		Level   string `json:"level"`
 		Message string `json:"message"`
+	}
+	// SessionInfo is the result of session/info.
+	SessionInfo struct {
+		ID            string  `json:"id"`
+		File          string  `json:"file,omitempty"`
+		Cwd           string  `json:"cwd"`
+		Model         string  `json:"model"`
+		Busy          bool    `json:"busy"`
+		Aside         bool    `json:"aside,omitempty"`
+		ContextTokens int     `json:"context_tokens"`
+		ContextWindow int     `json:"context_window"`
+		Cost          float64 `json:"cost"`
+	}
+	// SessionEntry is one message of session/messages.
+	SessionEntry struct {
+		// ID is the session entry ("" for synthetic messages).
+		ID      string           `json:"id"`
+		Message provider.Message `json:"message"`
+	}
+	// SessionMessagesResult is the result of session/messages.
+	SessionMessagesResult struct {
+		Messages []SessionEntry `json:"messages"`
+	}
+	// SetModelParams for agent/set_model.
+	SetModelParams struct {
+		Model string `json:"model"`
 	}
 )
 
