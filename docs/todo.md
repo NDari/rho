@@ -36,7 +36,7 @@ Extension tools and commands; the `before_tool_call` and `after_tool_call` hooks
 |---|---|---|---|
 | 1 | **Done.** Tool selection: `tools.enabled`, `tools.disabled` and `--tools`, plus the read-only search tools from gap 2 | Small | Read-only reviewers and document assistants, safer CI runs |
 | 2 | **Done.** Context control: `--no-project-context` (ignore the project's `.rho/` directory and `AGENTS.md` files) and `--system-file` / `--append-system-file` | Small | Running on untrusted checkouts. With `RHO_HOME`, this works as a profile. |
-| 3 | Behavior hooks: `before_request` (change the system prompt and messages for that one request, never the session file) and `user_message` (transform or block input) | Small to medium, in `core/agent/agent.go` | Retrieval, memory, personas, policies |
+| 3 | **Done.** Behavior hooks: `before_request` (change the system prompt and messages for that one request, never the session file) and `user_message` (transform or block input) | Small to medium, in `core/agent/agent.go` | Retrieval, memory, personas, policies |
 | 4 | Following and driving the agent: notifications when a message or tool call ends, plus `session/info`, `session/messages`, `agent/set_model`, `agent/cancel` and `agent/compact` | Small | Logging, auto-continue, reviewers that post their results |
 | 5 | Self-extension kit: embed `docs/` and `examples/` in the binary, add `rho docs [topic]`, and a built-in skill that tells the model how to write extensions | Small | "Write me an extension that..." working inside Rho |
 | 6 | Headless results: a final JSON object (answer, usage, cost, stop reason), a non-zero exit code on failure, `--max-turns` | Small | CI and bots |
@@ -70,7 +70,7 @@ A profile is a named bundle of system prompt, allowed tools, context rules, skil
 ## Suggested order
 
 1. Changes 1 and 2 (both done): small, and they make reviewers and document assistants safe.
-2. Changes 3 and 4: the behavior hooks.
+2. Changes 3 (done) and 4: the behavior hooks.
 3. Change 5: the self-extension kit.
 4. RPC mode.
 5. The Anthropic provider and the approval extension, in whichever order users need.

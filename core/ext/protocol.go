@@ -5,6 +5,8 @@ package ext
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/NDari/rho/core/provider"
 )
 
 // ProtocolVersion is the extension protocol version.
@@ -18,6 +20,8 @@ const (
 	HookTurnEnd          = "turn_end"
 	HookBeforeCompaction = "before_compaction"
 	HookSessionEnd       = "session_end"
+	HookUserMessage      = "user_message"
+	HookBeforeRequest    = "before_request"
 )
 
 // InitializeParams is sent by Rho first.
@@ -94,12 +98,27 @@ type HookParams struct {
 	Result    *ToolResult     `json:"result,omitempty"`
 	// Transcript is a plain-text rendering of the messages to compact.
 	Transcript string `json:"transcript,omitempty"`
+	// Text (user_message) is the text of the user's message.
+	Text string `json:"text,omitempty"`
+	// System and Messages (before_request) are the request about to be
+	// sent, messages in the session file's format; Aside marks a side
+	// conversation.
+	System   string             `json:"system,omitempty"`
+	Messages []provider.Message `json:"messages,omitempty"`
+	Aside    bool               `json:"aside,omitempty"`
 }
 
 // HookResult is an extension's reply to a hook.
 type HookResult struct {
-	// Block (before_tool_call) stops the call with this reason.
+	// Block (before_tool_call, user_message) stops the call or message
+	// with this reason.
 	Block string `json:"block,omitempty"`
+	// Text (user_message) replaces the message's text.
+	Text string `json:"text,omitempty"`
+	// System and Messages (before_request) replace the request's system
+	// prompt and messages, for this request only.
+	System   string             `json:"system,omitempty"`
+	Messages []provider.Message `json:"messages,omitempty"`
 	// Args (before_tool_call) replaces the arguments.
 	Args json.RawMessage `json:"args,omitempty"`
 	// Result (after_tool_call) replaces the result.

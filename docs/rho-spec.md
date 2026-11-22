@@ -325,7 +325,10 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - **Registrations:**
   - **Tools:** name, description, JSON Schema params. Rho calls `tool/execute`; extension may stream progress.
   - **Commands:** slash commands with description; Rho calls `command/run`.
-  - **Hooks** (events): `session_start`, `before_tool_call` (may block or modify args), `after_tool_call` (may modify result), `turn_end`, `before_compaction` (may supply its own summary), `session_end`.
+  - **Hooks** (events): `session_start`, `user_message` (may rewrite or block a user message before it is saved), `before_request` (may replace the system prompt and messages of one model request; the session is not changed), `before_tool_call` (may block or modify args), `after_tool_call` (may modify result), `turn_end`, `before_compaction` (may supply its own summary), `session_end`.
+  - `user_message` sees every user message: typed, queued (steering and follow-ups, joined into one) and appended by extensions. Its text may be replaced (attachments are kept). A blocked message is not saved or sent, and a notice gives the reason.
+  - `before_request` runs before each request of a turn, including side conversations (`aside` is set), but not compaction requests. Messages use the session file's format, and tool calls and results are re-paired afterwards. What it adds counts toward the output limit (§8). Changing earlier messages defeats the provider's prompt cache, so adding to the system prompt or the end is cheaper.
+  - Hooks run in extension order, each seeing the previous one's changes. A hook that fails or times out is skipped.
 - **Extension → Rho requests:** `ui/confirm`, `ui/select`, `ui/input`, `ui/notify`, `ui/status` (status-bar text), `session/append_message` (inject a message), `log`.
 - No per-token or per-frame hooks (keeps out-of-process cheap).
 - UI requests are deliberately simple so any frontend (TUI, headless, GUI) can render them; headless mode answers them with defaults or fails them.

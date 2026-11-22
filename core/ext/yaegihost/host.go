@@ -16,6 +16,7 @@ import (
 
 	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/ext/rpc"
+	"github.com/NDari/rho/core/provider"
 )
 
 type host struct {
@@ -237,9 +238,14 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 	reg.mu.Lock()
 	fns := append([]func(Event) Response(nil), reg.hooks[name]...)
 	reg.mu.Unlock()
-	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript}
+	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript, Text: p.Text, System: p.System, Aside: p.Aside}
 	if len(p.Args) > 0 {
 		_ = json.Unmarshal(p.Args, &ev.Args)
+	}
+	if len(p.Messages) > 0 {
+		if b, err := json.Marshal(p.Messages); err == nil {
+			_ = json.Unmarshal(b, &ev.Messages)
+		}
 	}
 	if p.Result != nil {
 		ev.IsError = p.Result.IsError
@@ -271,6 +277,18 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 		}
 		if r.Summary != "" {
 			out.Summary = r.Summary
+		}
+		if r.Text != "" {
+			out.Text, ev.Text = r.Text, r.Text
+		}
+		if r.System != "" {
+			out.System, ev.System = r.System, r.System
+		}
+		if r.Messages != nil {
+			var msgs []provider.Message
+			if b, err := json.Marshal(r.Messages); err == nil && json.Unmarshal(b, &msgs) == nil {
+				out.Messages, ev.Messages = msgs, r.Messages
+			}
 		}
 	}
 	return out

@@ -76,7 +76,7 @@ The `rho` package:
 |---|---|
 | `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
 | `RegisterCommand(name, description, func(args string) error)` | add a slash command |
-| `On(event, func(Event) Response)` | handle a hook (see below) |
+| `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError`, `Transcript`, `Text` (`user_message`), `System`, `Messages` and `Aside` (`before_request`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System` and `Messages` |
 | `Info(name, version)` | set the extension name and version |
 | `UI.Confirm(title, message) bool` | ask yes/no |
 | `UI.Select(title, options) (string, bool)` | pick one option |
@@ -138,6 +138,8 @@ If `protocol_version` differs from Rho's, the extension is refused with a clear 
 | `tool/cancel` (notification) | `call_id` | |
 | `command/run` | `name`, `args` (string) | `{}` |
 | `hook/session_start` | | `{}` |
+| `hook/user_message` | `text` | `{"block": "reason"}` to stop the message, `{"text": "..."}` to replace its text, or `{}` |
+| `hook/before_request` | `system`, `messages`, `aside` | `{"system": "..."}` and/or `{"messages": [...]}` to replace them for this request only, or `{}` |
 | `hook/before_tool_call` | `tool`, `args` | `{"block": "reason"}` to stop the call, `{"args": {...}}` to replace arguments, or `{}` |
 | `hook/after_tool_call` | `tool`, `args`, `result` | `{"result": {...}}` to replace the result, or `{}` |
 | `hook/turn_end` | | `{}` |
@@ -146,6 +148,12 @@ If `protocol_version` differs from Rho's, the extension is refused with a clear 
 | `shutdown` | | `{}`; then stdin is closed |
 
 Content blocks may also be images: `{"type": "image", "mime": "image/png", "data": "<base64>"}`.
+
+**Changing what the model sees.** `user_message` runs on every user message before it is saved: typed, queued (steering and follow-ups, joined into one) and appended by extensions. The text it returns is what is saved and shown; attachments are kept. A blocked message is not saved or sent, and Rho shows a notice with the reason.
+
+`before_request` runs before every model request of a turn, side conversations included, but not before compaction. `messages` are in the session file's format (`{"role": "user", "content": [{"type": "text", "text": "..."}]}`, with roles `user`, `assistant` and `tool_result`). What it returns is sent once and never saved, so use it for retrieved context, reminders, redaction or a persona that should not become part of the history. Rho re-pairs tool calls with their results afterwards and counts what you add toward the output limit. Adding to the end of the system prompt or after the last message keeps the provider's prompt cache; changing earlier messages does not.
+
+With several extensions, hooks run in turn, each seeing the previous one's changes. A hook that fails or times out is skipped.
 
 ### Extension to Rho
 

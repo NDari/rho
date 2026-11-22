@@ -70,11 +70,20 @@ type Event struct {
 	IsError bool
 	// Transcript is set for before_compaction.
 	Transcript string
+	// Text is the user's message (user_message).
+	Text string
+	// System and Messages are the request about to be sent
+	// (before_request); messages are in the session file's JSON format.
+	// Aside marks a side conversation.
+	System   string
+	Messages []map[string]any
+	Aside    bool
 }
 
 // Response is returned by hook handlers. The zero value changes nothing.
 type Response struct {
-	// Block stops a tool call (before_tool_call) with this reason.
+	// Block stops a tool call (before_tool_call) or a user message
+	// (user_message) with this reason.
 	Block string
 	// Args replaces the tool arguments (before_tool_call).
 	Args map[string]any
@@ -84,6 +93,12 @@ type Response struct {
 	ReplaceResult bool
 	// Summary replaces the compaction summary (before_compaction).
 	Summary string
+	// Text replaces the user's message (user_message); Block stops it.
+	Text string
+	// System and Messages replace the request's system prompt and
+	// messages (before_request), for this request only.
+	System   string
+	Messages []map[string]any
 }
 
 type command struct {

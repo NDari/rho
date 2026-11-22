@@ -14,6 +14,7 @@ import (
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/ext"
 	"github.com/NDari/rho/core/ext/yaegihost"
+	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/tools"
 )
 
@@ -249,5 +250,66 @@ func TestSetEnabled(t *testing.T) {
 	}
 	if err := m.SetEnabled(ctx, "nope", true); err == nil {
 		t.Error("expected an error for an unknown extension")
+	}
+}
+
+const messageHooksExtension = `package main
+
+import (
+	"strings"
+
+	"rho"
+)
+
+func main() {
+	rho.Info("msg", "0.1.0")
+	rho.On("user_message", func(e rho.Event) rho.Response {
+		if strings.Contains(e.Text, "password") {
+			return rho.Response{Block: "looks like a secret"}
+		}
+		return rho.Response{Text: strings.ReplaceAll(e.Text, "TBD", "the parser")}
+	})
+	rho.On("before_request", func(e rho.Event) rho.Response {
+		note := map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "context: the docs say 42"}}}
+		return rho.Response{System: e.System + "\nBe brief.", Messages: append([]map[string]any{note}, e.Messages...)}
+	})
+}
+`
+
+func TestMessageHooksEndToEnd(t *testing.T) {
+	home := t.TempDir()
+	extDir := filepath.Join(home, "extensions", "msg")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "msg.go"), []byte(messageHooksExtension), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := ext.NewManager(ext.Options{
+		Paths:  config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config: config.Defaults(),
+		UI:     &fakeUI{},
+		Launch: inProcess,
+	})
+	ctx := context.Background()
+	m.Start(ctx)
+	defer m.Stop()
+	if exts := m.Extensions(); len(exts) != 1 || exts[0].Status != ext.StatusRunning {
+		t.Fatalf("extension not running: %s", m.Describe())
+	}
+
+	if text, reason := m.UserMessage(ctx, "fix TBD"); text != "fix the parser" || reason != "" {
+		t.Errorf("user_message rewrite = %q, %q", text, reason)
+	}
+	if _, reason := m.UserMessage(ctx, "my password is hunter2"); reason != "looks like a secret (blocked by extension msg)" {
+		t.Errorf("user_message block = %q", reason)
+	}
+
+	sys, msgs := m.BeforeRequest(ctx, "system", []provider.Message{provider.UserText("question")}, false)
+	if sys != "system\nBe brief." {
+		t.Errorf("system = %q", sys)
+	}
+	if len(msgs) != 2 || msgs[0].TextContent() != "context: the docs say 42" || msgs[1].TextContent() != "question" || msgs[0].Role != provider.RoleUser {
+		t.Errorf("messages = %+v", msgs)
 	}
 }

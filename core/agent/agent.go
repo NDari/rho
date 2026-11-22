@@ -34,6 +34,12 @@ type Hooks interface {
 	TurnEnd(ctx context.Context)
 	// BeforeCompaction may supply its own summary.
 	BeforeCompaction(ctx context.Context, msgs []provider.Message) (string, bool)
+	// UserMessage may rewrite the text of a user message before it is
+	// saved, or block it by returning a non-empty reason.
+	UserMessage(ctx context.Context, text string) (string, string)
+	// BeforeRequest may replace the system prompt and messages of one
+	// model request. The session is not changed.
+	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, aside bool) (string, []provider.Message)
 }
 
 // ProviderSource returns providers by name.
@@ -436,6 +442,10 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		close(done)
 	}()
 	a.emit(events.TurnStart{})
+	first, ok := a.filterUser(ctx, first)
+	if !ok {
+		return
+	}
 	if err = a.appendMessage(first); err != nil {
 		return
 	}
@@ -466,7 +476,7 @@ func (a *Agent) loop(ctx context.Context) error {
 			}
 			a.emit(events.Notice{Level: "warn", Text: "automatic compaction failed: " + err.Error()})
 		}
-		req, prov, err := a.buildRequest()
+		req, prov, err := a.buildRequest(ctx)
 		if err != nil {
 			return err
 		}
@@ -515,16 +525,18 @@ func (a *Agent) loop(ctx context.Context) error {
 				a.emit(events.Notice{Level: "warn", Text: "the model returned no answer and no tool calls"})
 			}
 			if steer := a.popSteering(); len(steer) > 0 {
-				if err := a.appendUserTexts(steer); err != nil {
+				if sent, err := a.appendUserTexts(ctx, steer); err != nil {
 					return err
+				} else if sent {
+					continue
 				}
-				continue
 			}
 			if fu := a.popFollowUps(); len(fu) > 0 {
-				if err := a.appendUserTexts(fu); err != nil {
+				if sent, err := a.appendUserTexts(ctx, fu); err != nil {
 					return err
+				} else if sent {
+					continue
 				}
-				continue
 			}
 			return nil
 		}
@@ -535,15 +547,55 @@ func (a *Agent) loop(ctx context.Context) error {
 			return ctx.Err()
 		}
 		if steer := a.popSteering(); len(steer) > 0 {
-			if err := a.appendUserTexts(steer); err != nil {
+			if _, err := a.appendUserTexts(ctx, steer); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (a *Agent) appendUserTexts(texts []string) error {
-	return a.appendMessage(provider.UserText(strings.Join(texts, "\n\n")))
+// appendUserTexts saves queued messages as one user message. sent is
+// false when an extension blocked it.
+func (a *Agent) appendUserTexts(ctx context.Context, texts []string) (sent bool, err error) {
+	m, ok := a.filterUser(ctx, provider.UserText(strings.Join(texts, "\n\n")))
+	if !ok {
+		return false, nil
+	}
+	return true, a.appendMessage(m)
+}
+
+// filterUser runs the user_message hook on a user message before it is
+// saved. Its text may be replaced (attachments are kept); ok is false when
+// an extension blocked it, and a notice says why.
+func (a *Agent) filterUser(ctx context.Context, m provider.Message) (provider.Message, bool) {
+	h := a.getHooks()
+	if h == nil || m.Role != provider.RoleUser {
+		return m, true
+	}
+	text := m.TextContent()
+	repl, reason := h.UserMessage(ctx, text)
+	if reason != "" {
+		a.emit(events.Notice{Level: "warn", Text: "message not sent: " + reason})
+		return m, false
+	}
+	if repl == text {
+		return m, true
+	}
+	out := m
+	out.Content = nil
+	replaced := false
+	for _, b := range m.Content {
+		if b.Type != provider.BlockText {
+			out.Content = append(out.Content, b)
+		} else if !replaced {
+			out.Content = append(out.Content, provider.Text(repl))
+			replaced = true
+		}
+	}
+	if !replaced {
+		out.Content = append([]provider.Block{provider.Text(repl)}, out.Content...)
+	}
+	return out, true
 }
 
 // recordPartial saves the text streamed before a cancel, without tool calls.
@@ -585,7 +637,7 @@ func (a *Agent) activeTools(aside bool) []tools.Tool {
 }
 
 // buildRequest assembles the next model request.
-func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
+func (a *Agent) buildRequest(ctx context.Context) (provider.Request, provider.Provider, error) {
 	model := a.Model()
 	prov, err := a.providerFor(model)
 	if err != nil {
@@ -597,8 +649,28 @@ func (a *Agent) buildRequest() (provider.Request, provider.Provider, error) {
 		return req, prov, err
 	}
 	tokens, estimated := a.estimateContext(cv)
+	if h := a.getHooks(); h != nil {
+		// Count what the hook added (or removed) toward the output limit.
+		before := requestTokens(req.System, req.Messages)
+		req.System, req.Messages = h.BeforeRequest(ctx, req.System, req.Messages, cv.Aside)
+		req.Messages = RepairToolPairs(req.Messages)
+		delta := requestTokens(req.System, req.Messages) - before
+		tokens += delta
+		if delta > 0 {
+			estimated += delta
+		}
+	}
 	req.MaxTokens = compact.OutputLimit(model.MaxOutput, model.ContextWindow, tokens, estimated)
 	return req, prov, nil
+}
+
+// requestTokens estimates the tokens of a system prompt and messages.
+func requestTokens(system string, msgs []provider.Message) int {
+	n := prompt.EstimateTokens(system)
+	for _, m := range msgs {
+		n += m.EstimateTokens()
+	}
+	return n
 }
 
 // providerFor returns the model's provider, with XML tool calling when the

@@ -789,6 +789,56 @@ func (m *Manager) AfterToolCall(ctx context.Context, name string, args json.RawM
 	return res
 }
 
+// UserMessage implements agent.Hooks: each extension in turn may rewrite
+// the text or block the message.
+func (m *Manager) UserMessage(ctx context.Context, text string) (string, string) {
+	for _, e := range m.running() {
+		if !e.hasHook(HookUserMessage) {
+			continue
+		}
+		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
+		var res HookResult
+		err := e.conn.Call(hctx, "hook/"+HookUserMessage, HookParams{Text: text}, &res)
+		cancel()
+		if err != nil {
+			e.log("user_message: " + err.Error())
+			continue
+		}
+		if res.Block != "" {
+			return text, res.Block + " (blocked by extension " + e.Name + ")"
+		}
+		if res.Text != "" {
+			text = res.Text
+		}
+	}
+	return text, ""
+}
+
+// BeforeRequest implements agent.Hooks: each extension in turn may replace
+// the system prompt and messages of one request.
+func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provider.Message, aside bool) (string, []provider.Message) {
+	for _, e := range m.running() {
+		if !e.hasHook(HookBeforeRequest) {
+			continue
+		}
+		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
+		var res HookResult
+		err := e.conn.Call(hctx, "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Aside: aside}, &res)
+		cancel()
+		if err != nil {
+			e.log("before_request: " + err.Error())
+			continue
+		}
+		if res.System != "" {
+			system = res.System
+		}
+		if len(res.Messages) > 0 {
+			msgs = res.Messages
+		}
+	}
+	return system, msgs
+}
+
 // TurnEnd implements agent.Hooks.
 func (m *Manager) TurnEnd(ctx context.Context) {
 	m.callHooks(ctx, HookTurnEnd, HookParams{})
