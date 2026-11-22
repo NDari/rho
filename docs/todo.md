@@ -8,7 +8,7 @@ The short version: much of this already works through headless mode, `RHO_HOME`,
 
 In order of how much they matter for adoption:
 
-1. **Approval before commands or edits.** Rho never asks before running `bash` or writing files. Many users ask about this first. Keeping core minimal, it can ship as a bundled, opt-in extension with a simple policy (for example, ask before `bash`, or before writes outside the project) that works in both the TUI and GUI. Today it exists only as the `guard.go` example.
+1. **Approval before commands or edits.** Rho never asks before running `bash` or writing files. Many users ask about this first. Keeping core minimal, it can ship as a bundled, opt-in extension with a simple policy (for example, ask before `bash`, or before writes outside the project) that works in both the TUI and GUI. Today it exists only as the `guard.go` example. Two open questions come first if it is built as an extension: [guards that fail closed](#guards-that-fail-closed-to-discuss) and [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss).
 2. **Read-only search tools.** **Done:** built-in `grep`, `find` and `ls` (spec §5), offered in side conversations and whenever `bash` is not.
 3. **Native Anthropic provider.** Deferred in the spec. Going through an OpenAI-compatible endpoint loses prompt-caching control and thinking.
 4. **File checkpoints and a changes view.** Item 1 in [feature-requests.md](feature-requests.md).
@@ -44,6 +44,28 @@ Compared with what pi offers extensions:
 - **Smaller:** no hooks for model changes, session switches (new, resume, fork), turn start or compaction end; no per-extension settings in `config.toml`; no provider registration; no key bindings or CLI flags.
 
 Replacing a built-in tool already works: disable it in `tools.disabled` and an extension can register a tool with its name (a sandboxed `bash`, for example).
+
+### Guards that fail closed (to discuss)
+
+Hooks are advisory: when a `before_tool_call` hook fails, Rho logs it and runs the tool, so one broken extension cannot stop every tool. That is the wrong default for an extension whose job is to block, such as an approval prompt:
+
+- **Crash:** a crashed extension is no longer running, so its hook is skipped and every later call is allowed until `/reload`. Rho shows a notice, but nothing stops the next call.
+- **Errors and bad replies:** a hook that returns an error, or a reply that does not parse, is skipped the same way.
+- **Not loaded:** an extension that is disabled, not approved (project extensions) or turned off with all the others never gets to block anything.
+
+The idea: an extension declares itself a gate in its `initialize` reply (for example `"gate": true`). For a gate, a failed, timed-out or missing reply blocks the call with a reason instead of allowing it, and a crashed gate keeps blocking ("the guard extension X is not running; /reload to restart it") until it is reloaded or disabled. Open questions:
+
+- Is a crashed gate that blocks every call too strict, or is that the point?
+- Should disabling a gate (in `/extensions` or `extensions.disabled`) ask for confirmation?
+- Do gates also apply to `user_message` and `after_tool_call`, which can block or replace too?
+
+### Prompts that show what is asked (to discuss)
+
+`ui/confirm` has a title and a message but only answers yes or no; `ui/select` has more answers but only a title, no message. An approval prompt needs both: the command, or the path and the diff, to show, and more than two answers (yes, yes for the rest of the session, no). A write outside the project should also look different from one inside it. Options:
+
+- add an optional `message` to `ui/select`, shown above the options in the TUI and GUI;
+- add a `level` (for example `warning`) to `ui/confirm` and `ui/select`, so a risky prompt stands out;
+- or add a dedicated `ui/approve` request with structured fields (kind, command, path, inside or outside the project, diff) that the frontends render as an approval card.
 
 ### Changes, highest value and lowest impact first
 
