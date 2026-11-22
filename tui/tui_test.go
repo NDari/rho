@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/NDari/rho/core/tools"
@@ -187,5 +188,25 @@ func TestThinkingTimes(t *testing.T) {
 	rc.showThinking = false
 	if got := text(&assistantItem{thinking: "hmm"}); !strings.Contains(got, "∴ Thought · 1 line") {
 		t.Errorf("loaded: %q", got)
+	}
+}
+
+// TestInputKeepsFirstLineWhenWrapping types past the width of the input box
+// and checks that the first line stays visible as the box grows.
+func TestInputKeepsFirstLineWhenWrapping(t *testing.T) {
+	ta := newInput()
+	ta.SetWidth(28)
+	ta.Focus()
+	for _, r := range "the quick brown fox jumps over the lazy dog" {
+		ta, _ = ta.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if ta.Height() != 2 {
+		t.Errorf("height = %d, want 2", ta.Height())
+	}
+	if ta.ScrollYOffset() != 0 {
+		t.Errorf("scroll offset = %d, want 0", ta.ScrollYOffset())
+	}
+	if v := ansi.Strip(ta.View()); !strings.HasPrefix(v, "the quick") {
+		t.Errorf("first line not visible:\n%s", v)
 	}
 }

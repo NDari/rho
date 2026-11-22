@@ -142,15 +142,7 @@ func New(a *app.App) *Model {
 	}
 	m.setTheme(t)
 
-	ta := textarea.New()
-	ta.ShowLineNumbers = false
-	ta.Prompt = ""
-	ta.Placeholder = "Message Rho · / for commands · @ for files"
-	ta.CharLimit = 0
-	ta.MaxHeight = 0
-	ta.KeyMap.InsertNewline.SetEnabled(false)
-	ta.SetHeight(1)
-	m.input = ta
+	m.input = newInput()
 	m.applyInputStyles()
 	m.input.Focus()
 
@@ -494,20 +486,28 @@ func (m *Model) quit() tea.Cmd {
 	return tea.Quit
 }
 
+// newInput creates the chat input box.
+func newInput() textarea.Model {
+	ta := textarea.New()
+	ta.ShowLineNumbers = false
+	ta.Prompt = ""
+	ta.Placeholder = "Message Rho · / for commands · @ for files"
+	ta.CharLimit = 0
+	// The textarea sizes itself from its own soft-wrapped line count, so
+	// the box never lags behind the wrap and scrolls the first line away.
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
+	ta.MaxHeight = 10
+	ta.KeyMap.InsertNewline.SetEnabled(false)
+	ta.SetHeight(1)
+	return ta
+}
+
 func (m *Model) afterInputChange() {
-	h := m.inputContentHeight()
-	m.input.SetHeight(h)
 	m.updateCompletion()
 }
 
-func (m *Model) inputContentHeight() int {
-	w := max(10, m.width-2)
-	n := 0
-	for _, l := range strings.Split(m.input.Value(), "\n") {
-		n += max(1, (ansi.StringWidth(l)+w-1)/w)
-	}
-	return min(max(1, n), 10)
-}
+func (m *Model) inputContentHeight() int { return m.input.Height() }
 
 // inputHeight counts the input box, its borders and the blank line above
 // and below it.
