@@ -595,6 +595,10 @@ func (b *Bridge) Copy(all bool) (bool, error) {
 	return true, nil
 }
 
+// Export saves the conversation as an HTML page at path (relative to the
+// project folder; empty: rho-<session>.html there) and returns the file.
+func (b *Bridge) Export(path string) (string, error) { return b.core().ExportHTML(path) }
+
 // SettingInfo describes a setting that can change while Rho runs.
 type SettingInfo struct {
 	Key         string   `json:"key"`

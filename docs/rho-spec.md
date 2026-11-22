@@ -295,7 +295,9 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · Ctrl+G edit the input in `$VISUAL` or `$EDITOR` (else `vi`, or `notepad` on Windows; editors with arguments such as `code --wait` work; the text comes back unsent, and an empty file or a failed editor leaves the input as it was) · while busy: Enter steers, Alt+Enter queues a follow-up.
 
 ### Commands
-`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.
+`/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/label` · `/copy` · `/export` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.
+
+**Export:** `/export [file]` (TUI and GUI) and `rho export [session file] [-o file]` save the conversation on the current path as one self-contained HTML page (default `rho-<session>.html` in the working directory): messages rendered from Markdown with goldmark, thinking and tool calls collapsed, edits as diffs, tool results cut at 20,000 characters, compaction summaries. Raw HTML in messages is escaped, so the page runs nothing a model wrote. It follows the system's light or dark scheme.
 
 `/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.mouse_select`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
 

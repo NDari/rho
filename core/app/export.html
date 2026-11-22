@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Rho {{.Version}}">
+<title>{{.Title}}</title>
+<style>
+:root { --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --soft: #f6f8fa; --border: #d0d7de; --accent: #0969da; --add: #dafbe1; --del: #ffebe9; --err: #cf222e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --soft: #161b22; --border: #30363d; --accent: #4493f8; --add: #12261e; --del: #2d1517; --err: #f85149; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+header { border-bottom: 1px solid var(--border); margin-bottom: 20px; padding-bottom: 12px; }
+header h1 { font-size: 20px; margin: 0 0 6px; }
+header p { color: var(--muted); margin: 0; font-size: 13px; }
+.item { margin: 14px 0; }
+.user { background: var(--soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+.role { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+.attached { color: var(--muted); font-size: 13px; }
+details { border: 1px solid var(--border); border-radius: 8px; background: var(--soft); }
+details > summary { cursor: pointer; padding: 6px 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+details > div { padding: 0 12px 10px; }
+.tool.error > summary .name { color: var(--err); }
+.name { color: var(--accent); font-weight: 600; }
+.thinking > summary, .note { color: var(--muted); }
+pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+.diff { padding: 0; }
+.diff span { display: block; padding: 0 10px; white-space: pre-wrap; }
+.diff .add { background: var(--add); }
+.diff .del { background: var(--del); }
+.markdown table { border-collapse: collapse; }
+.markdown th, .markdown td { border: 1px solid var(--border); padding: 4px 8px; }
+.markdown img { max-width: 100%; }
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>{{.Title}}</h1>
+<p>{{with .Date}}{{.}} · {{end}}{{with .Model}}{{.}} · {{end}}{{.Cwd}}</p>
+<p>Session {{.Session}}{{with .Version}} · Rho {{.}}{{end}}</p>
+</header>
+{{range .Items}}
+{{- if eq .Kind "user"}}
+<section class="item user"><div class="role">User</div><div class="markdown">{{md .Text}}</div>{{with .Attached}}<div class="attached">Attached: {{range $i, $p := .}}{{if $i}}, {{end}}{{$p}}{{end}}</div>{{end}}</section>
+{{- else if eq .Kind "assistant"}}
+<section class="item assistant">
+{{- with .Thinking}}<details class="thinking"><summary>Thinking</summary><div class="markdown">{{md .}}</div></details>{{end}}
+{{- with .Text}}<div class="markdown">{{md .}}</div>{{end}}
+{{- if .Cancelled}}<p class="note">Cancelled.</p>{{end}}
+</section>
+{{- else if eq .Kind "tool"}}
+{{- with .Tool}}
+<details class="item tool{{if .IsError}} error{{end}}"><summary><span class="name">{{.Name}}</span> {{summary .}}</summary><div>
+{{- with .Args}}<pre>{{args .}}</pre>{{end}}
+{{- if and .Display .Display.Diff}}<pre class="diff">{{range .Display.Diff.Hunks}}{{range .Lines}}<span class="{{kind .}}">{{line .}}</span>{{end}}{{end}}</pre>
+{{- else if .Done}}<pre>{{result .Result}}</pre>{{end}}
+</div></details>
+{{- end}}
+{{- else if eq .Kind "compaction"}}
+<details class="item"><summary>Earlier conversation compacted{{if .TokensBefore}} ({{.TokensBefore}} tokens){{end}}</summary><div class="markdown">{{md .Summary}}</div></details>
+{{- else if eq .Kind "note"}}
+<p class="item note">{{.Text}}</p>
+{{- end}}
+{{end}}
+</main>
+</body>
+</html>

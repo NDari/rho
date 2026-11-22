@@ -97,6 +97,7 @@ rho -p --json "list the TODOs" > events.jsonl  # stream events as JSON lines, en
 rho -p --max-steps 20 "fix the lint errors"     # stop with exit status 1 after 20 model responses
 rho docs                  # list the built-in docs and examples; rho docs extensions prints the extension guide
 rho --mode rpc            # let another program drive Rho with JSON-RPC on stdin/stdout (docs/rpc.md)
+rho export                # save the latest session here as an HTML page (also /export in the TUI and GUI)
 ```
 
 In `--json` mode the last line is `{"type":"result","status":"done","answer":"...","steps":3,"usage":{...},"cost":0.01,...}`, so `tail -n 1` gives a script everything it needs. `rho -p` exits with status 1 when the turn does not finish (an error, a cancel, a blocked prompt or the step limit).

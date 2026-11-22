@@ -47,6 +47,7 @@
     { name: "context", description: "show what is sent to the model" },
     { name: "label", description: "label the current position" },
     { name: "copy", description: "copy the last answer to the clipboard [all]" },
+    { name: "export", description: "save the conversation as an HTML page [file]" },
     { name: "theme", description: "choose light, dark or system colors" },
     { name: "config", description: "change and save settings [key value]" },
     { name: "extensions", description: "list extensions and turn them on or off" },
@@ -257,6 +258,11 @@
         const ok = await call(Bridge.Copy(args === "all"));
         if (ok === false) store.notice("warn", "Nothing to copy");
         else if (ok) store.notice("info", "Copied to the clipboard");
+        return;
+      }
+      case "export": {
+        const path = await call(Bridge.Export(args));
+        if (path) store.notice("info", "Exported to " + path);
         return;
       }
       case "theme":

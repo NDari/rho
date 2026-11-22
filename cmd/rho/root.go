@@ -75,7 +75,7 @@ func newRootCmd() *cobra.Command {
 			return yaegihost.Main(args[0])
 		},
 	})
-	cmd.AddCommand(newUpdateCmd(), newInitCmd(), newDocsCmd())
+	cmd.AddCommand(newUpdateCmd(), newInitCmd(), newDocsCmd(), newExportCmd())
 	return cmd
 }
 

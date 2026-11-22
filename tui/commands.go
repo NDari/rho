@@ -27,6 +27,7 @@ var builtinCommands = []commandInfo{
 	{"context", "show what is sent to the model"},
 	{"label", "label the current position"},
 	{"copy", "copy the last answer to the clipboard [all]"},
+	{"export", "save the conversation as an HTML page [file]"},
 	{"theme", "change the color theme"},
 	{"config", "change and save settings [key value]"},
 	{"extensions", "list extensions and turn them on or off"},
@@ -212,6 +213,12 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		}
 	case "copy":
 		return m.copyCmd(args == "all")
+	case "export":
+		if path, err := m.app.ExportHTML(args); err != nil {
+			m.notice("error", "export failed: "+err.Error())
+		} else {
+			m.notice("info", "exported to "+path)
+		}
 	case "theme":
 		if args != "" {
 			return m.applyThemeName(args)

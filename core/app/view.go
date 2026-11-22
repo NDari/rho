@@ -67,8 +67,10 @@ type Transcript struct {
 
 // Transcript rebuilds the visible conversation from the session's current
 // path, pairing tool calls with their results and display data.
-func (a *App) Transcript() Transcript {
-	sess := a.Agent.Session()
+func (a *App) Transcript() Transcript { return SessionTranscript(a.Agent.Session()) }
+
+// SessionTranscript is Transcript for any session.
+func SessionTranscript(sess *session.Session) Transcript {
 	cv := sess.BuildContext()
 	t := Transcript{Aside: cv.Aside}
 	tools := map[string]*ToolCall{}
