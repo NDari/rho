@@ -1,6 +1,6 @@
 # Feature requests
 
-Ideas for the TUI and GUI that are not built yet, with the notes from discussing them. Nothing here is decided until it moves into the spec ([rho-spec.md](rho-spec.md)).
+Ideas for Rho, mostly the TUI and GUI, that are not built yet, with the notes from discussing them. Nothing here is decided until it moves into the spec ([rho-spec.md](rho-spec.md)).
 
 | # | Feature | TUI | GUI | Status |
 |---|---|---|---|---|
@@ -10,6 +10,7 @@ Ideas for the TUI and GUI that are not built yet, with the notes from discussing
 | 4 | Sessions sidebar | no | yes | GUI only |
 | 5 | Open another project (`/open`) | no | done | GUI only |
 | 6 | Terminal in the GUI | no | yes | needs dependencies |
+| 7 | Built-in source code for the model | core | core | to discuss |
 
 ## 1. File restore and a changes view
 
@@ -94,6 +95,22 @@ Possible GUI additions: a list of recent project folders (the folders that have 
 - Needs a pseudo terminal on the Go side (for example `creack/pty` on Linux and macOS, ConPTY on Windows) and a terminal widget in the frontend (for example xterm.js). Both are new dependencies to approve.
 - A smaller first step: an **Open in terminal** action that starts the system terminal in the project folder.
 - Later, the agent's `bash` output could be opened in the panel.
+
+## 7. Built-in source code for the model
+
+**To discuss.** The built-in docs (`rho docs`, installed in `~/.rho/docs/<hash>/`) let a model learn the extension API. Embedding the source code as well would let it check the details the docs leave out: the order hooks run in, timeouts, which fields are set when, and what happens on failure.
+
+### The idea
+
+- Embed the non-test `.go` files of `core/`, `cmd/`, `tui/` and `headless/`, plus `go.mod`, next to the docs, in a `source/` directory of the installed copy. Leave out tests, `gui/`, `Taskfile.yml`, CI and the docs about developing Rho.
+- Cost: about 490 KB (roughly 0.5% of the `rho` binary), no tokens unless the model reads a file, and half a megabyte more per installed copy.
+- It always matches the binary and works offline, which matters on locked-down machines that cannot reach the repository.
+- The `rho-extensions` skill would give the exact version (`rho --version`) and the repository URL, so a model that is online can clone the matching tag to change Rho itself. The embedded source is a reference, not a build kit.
+
+### Why not yet
+
+- **Internals are not the API.** A model reading the source may build an extension on behavior that is not promised and changes between versions. If this is done, the skill must say that `extensions.md` defines the API and the source is only for checking details, and it may be worth embedding only the API's own definitions first (`core/ext/protocol.go` and `core/ext/yaegihost/api.go`, about 13 KB).
+- Better docs may cover the same need: answering in `extensions.md` the questions a model would otherwise answer from the code.
 
 ## Other ideas from the same review
 
