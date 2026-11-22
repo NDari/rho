@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/NDari/rho/core/config"
+	"github.com/NDari/rho/core/theme"
 )
 
 // configPicker lists the changeable settings. Enter moves the selected
@@ -18,6 +19,10 @@ func (m *Model) configPicker() {
 	p.keys = map[string]func(pickerItem) tea.Cmd{
 		"enter": func(it pickerItem) tea.Cmd {
 			key := it.value.(string)
+			if themeKeys[key] {
+				m.themePicker(key, m.configPicker)
+				return nil
+			}
 			s, _ := config.LookupSetting(key)
 			next := config.Next(m.settingChoices(s), m.settingValue(s), s.Kind == config.KindInt)
 			cmd := m.setSetting(key, next)
@@ -63,7 +68,9 @@ func shownValue(v string) string {
 func (m *Model) settingChoices(s config.Setting) []string {
 	switch s.Key {
 	case "theme":
-		return ThemeNames(m.themes)
+		return append([]string{theme.System}, m.themes.Names()...)
+	case "theme_dark", "theme_light":
+		return m.themes.Names()
 	case "default_model":
 		var ids []string
 		for _, md := range m.app.Config.Models {
@@ -77,15 +84,6 @@ func (m *Model) settingChoices(s config.Setting) []string {
 // setSetting applies a setting for this run and saves it to the global
 // config.
 func (m *Model) setSetting(key, value string) tea.Cmd {
-	var theme Theme
-	if key == "theme" {
-		t, ok := m.themes[value]
-		if !ok {
-			m.settingError("unknown theme " + value)
-			return nil
-		}
-		theme = t
-	}
 	saved, note, err := m.app.SetSetting(key, value)
 	if err != nil {
 		m.settingError(err.Error())
@@ -93,9 +91,8 @@ func (m *Model) setSetting(key, value string) tea.Cmd {
 	}
 	s, _ := config.LookupSetting(key)
 	switch key {
-	case "theme":
-		m.setTheme(theme)
-		m.applyInputStyles()
+	case "theme", "theme_dark", "theme_light":
+		m.applyConfiguredTheme()
 	case "tui.show_thinking":
 		m.showThinking = m.app.Config.TUI.ShowThinking
 	}

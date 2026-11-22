@@ -1,106 +1,15 @@
 package tui
 
 import (
-	"fmt"
 	"image/color"
-	"path/filepath"
-	"sort"
-	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/BurntSushi/toml"
+
+	"github.com/NDari/rho/core/theme"
 )
 
-// Theme holds the colors used by the TUI. Colors are hex strings ("#rrggbb")
-// or ANSI 256 numbers ("39").
-type Theme struct {
-	Name string `toml:"name"`
-	// Base is "dark" or "light"; user themes inherit unset colors from it.
-	Base string `toml:"base"`
-
-	Accent      string `toml:"accent"`
-	Text        string `toml:"text"`
-	Muted       string `toml:"muted"`
-	Subtle      string `toml:"subtle"`
-	Border      string `toml:"border"`
-	UserBg      string `toml:"user_bg"`
-	Error       string `toml:"error"`
-	Warning     string `toml:"warning"`
-	Success     string `toml:"success"`
-	ToolName    string `toml:"tool_name"`
-	Thinking    string `toml:"thinking"`
-	LineNumber  string `toml:"line_number"`
-	DiffAddBg   string `toml:"diff_add_bg"`
-	DiffDelBg   string `toml:"diff_del_bg"`
-	DiffAddEmph string `toml:"diff_add_emph"`
-	DiffDelEmph string `toml:"diff_del_emph"`
-	DiffAddSign string `toml:"diff_add_sign"`
-	DiffDelSign string `toml:"diff_del_sign"`
-	StatusBg    string `toml:"status_bg"`
-	StatusFg    string `toml:"status_fg"`
-	SearchBg    string `toml:"search_bg"`
-	// Chroma is the syntax highlighting style name.
-	Chroma string `toml:"chroma"`
-}
-
-// DarkTheme is the default dark theme, based on the Gruvbox palette.
-var DarkTheme = Theme{
-	Name:        "dark",
-	Base:        "dark",
-	Accent:      "#83a598",
-	Text:        "#ebdbb2",
-	Muted:       "#a89984",
-	Subtle:      "#665c54",
-	Border:      "#504945",
-	UserBg:      "#3c3836",
-	Error:       "#fb4934",
-	Warning:     "#fabd2f",
-	Success:     "#b8bb26",
-	ToolName:    "#d3869b",
-	Thinking:    "#928374",
-	LineNumber:  "#7c6f64",
-	DiffAddBg:   "#32361a",
-	DiffDelBg:   "#3c1f1e",
-	DiffAddEmph: "#4a5224",
-	DiffDelEmph: "#5c2a27",
-	DiffAddSign: "#b8bb26",
-	DiffDelSign: "#fb4934",
-	StatusBg:    "#3c3836",
-	StatusFg:    "#d5c4a1",
-	SearchBg:    "#fabd2f",
-	Chroma:      "gruvbox",
-}
-
-// LightTheme is the default light theme.
-var LightTheme = Theme{
-	Name:        "light",
-	Base:        "light",
-	Accent:      "#2e59c7",
-	Text:        "#24292f",
-	Muted:       "#6e7781",
-	Subtle:      "#d0d7de",
-	Border:      "#d0d7de",
-	UserBg:      "#eef1f6",
-	Error:       "#cf222e",
-	Warning:     "#9a6700",
-	Success:     "#1a7f37",
-	ToolName:    "#8250df",
-	Thinking:    "#8c959f",
-	LineNumber:  "#8c959f",
-	DiffAddBg:   "#e6ffec",
-	DiffDelBg:   "#ffebe9",
-	DiffAddEmph: "#abf2bc",
-	DiffDelEmph: "#ffc1bc",
-	DiffAddSign: "#1a7f37",
-	DiffDelSign: "#cf222e",
-	StatusBg:    "#eaeef2",
-	StatusFg:    "#424a53",
-	SearchBg:    "#fff8c5",
-	Chroma:      "catppuccin-latte",
-}
-
-// IsDark reports whether the theme has a dark background.
-func (t Theme) IsDark() bool { return t.Base != "light" }
+// Theme is a color theme; see core/theme.
+type Theme = theme.Theme
 
 // c converts a theme color string to a color.
 func c(s string) color.Color {
@@ -108,74 +17,6 @@ func c(s string) color.Color {
 		return nil
 	}
 	return lipgloss.Color(s)
-}
-
-// LoadThemes returns the built-in themes plus user themes from
-// ~/.rho/themes/*.toml, keyed by name.
-func LoadThemes(home string) (map[string]Theme, []string) {
-	themes := map[string]Theme{"dark": DarkTheme, "light": LightTheme}
-	var warnings []string
-	files, _ := filepath.Glob(filepath.Join(home, "themes", "*.toml"))
-	for _, f := range files {
-		var t Theme
-		if _, err := toml.DecodeFile(f, &t); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", f, err))
-			continue
-		}
-		if t.Name == "" {
-			t.Name = strings.TrimSuffix(filepath.Base(f), ".toml")
-		}
-		base := DarkTheme
-		if t.Base == "light" {
-			base = LightTheme
-		}
-		themes[t.Name] = mergeTheme(base, t)
-	}
-	return themes, warnings
-}
-
-// ThemeNames returns sorted theme names.
-func ThemeNames(themes map[string]Theme) []string {
-	names := make([]string, 0, len(themes))
-	for n := range themes {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
-}
-
-func mergeTheme(base, over Theme) Theme {
-	out := base
-	set := func(dst *string, v string) {
-		if v != "" {
-			*dst = v
-		}
-	}
-	out.Name = over.Name
-	set(&out.Base, over.Base)
-	set(&out.Accent, over.Accent)
-	set(&out.Text, over.Text)
-	set(&out.Muted, over.Muted)
-	set(&out.Subtle, over.Subtle)
-	set(&out.Border, over.Border)
-	set(&out.UserBg, over.UserBg)
-	set(&out.Error, over.Error)
-	set(&out.Warning, over.Warning)
-	set(&out.Success, over.Success)
-	set(&out.ToolName, over.ToolName)
-	set(&out.Thinking, over.Thinking)
-	set(&out.LineNumber, over.LineNumber)
-	set(&out.DiffAddBg, over.DiffAddBg)
-	set(&out.DiffDelBg, over.DiffDelBg)
-	set(&out.DiffAddEmph, over.DiffAddEmph)
-	set(&out.DiffDelEmph, over.DiffDelEmph)
-	set(&out.DiffAddSign, over.DiffAddSign)
-	set(&out.DiffDelSign, over.DiffDelSign)
-	set(&out.StatusBg, over.StatusBg)
-	set(&out.StatusFg, over.StatusFg)
-	set(&out.SearchBg, over.SearchBg)
-	set(&out.Chroma, over.Chroma)
-	return out
 }
 
 // styles are lipgloss styles derived from a theme.
@@ -204,17 +45,6 @@ func newStyles(t Theme) styles {
 		statusKey: s().Background(c(t.StatusBg)).Foreground(c(t.Accent)).Bold(true),
 		title:     s().Foreground(c(t.Accent)).Bold(true),
 		selected:  s().Background(c(t.UserBg)).Foreground(c(t.Accent)).Bold(true),
-		search:    s().Background(c(t.SearchBg)).Foreground(lipgloss.Color("#000000")),
+		search:    s().Background(c(t.SearchBg)).Foreground(c(t.SearchFg)),
 	}
-}
-
-// pickTheme picks the configured theme, falling back to dark.
-func pickTheme(themes map[string]Theme, name string) (Theme, string) {
-	if t, ok := themes[name]; ok {
-		return t, ""
-	}
-	if name != "" {
-		return DarkTheme, fmt.Sprintf("unknown theme %q; using dark", name)
-	}
-	return DarkTheme, ""
 }

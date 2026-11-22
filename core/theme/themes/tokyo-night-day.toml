@@ -1,0 +1,15 @@
+# Tokyo Night Day.
+# Palette: https://github.com/folke/tokyonight.nvim computes the day palette from night; these values come from Chroma's tokyonight-day style, which carries it
+# License of the palette: Apache-2.0. Roles not set here are derived (docs/configuration.md).
+
+background = "#e1e2e7"
+surface    = "#e9e9ed"
+subtle     = "#a1a6c5"
+muted      = "#6172b0"
+text       = "#3760bf"
+accent     = "#2e7de9"
+tool_name  = "#9854f1"
+error      = "#c64343"
+warning    = "#8c6c3e"
+success    = "#587539"
+chroma     = "tokyonight-day"

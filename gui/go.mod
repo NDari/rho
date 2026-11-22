@@ -133,6 +133,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.17 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
+	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc // indirect
 	github.com/zalando/go-keyring v0.2.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	gitlab.com/digitalxero/go-conventional-commit v1.0.7 // indirect

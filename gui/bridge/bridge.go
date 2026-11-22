@@ -25,6 +25,7 @@ import (
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/session"
+	"github.com/NDari/rho/core/theme"
 )
 
 // Event names sent to the frontend.
@@ -616,7 +617,7 @@ type SettingInfo struct {
 
 // guiSettings leaves out settings that only affect the TUI.
 func guiSetting(key string) bool {
-	return key != "theme" && (!strings.HasPrefix(key, "tui.") || key == "tui.show_thinking")
+	return !strings.HasPrefix(key, "tui.") || key == "tui.show_thinking"
 }
 
 // Settings lists the settings the GUI can change.
@@ -628,11 +629,18 @@ func (b *Bridge) Settings() []SettingInfo {
 			continue
 		}
 		choices := s.Choices
-		if s.Key == "default_model" {
+		switch s.Key {
+		case "default_model":
 			choices = nil
 			for _, m := range cfg.Models {
 				choices = append(choices, m.ID)
 			}
+		case "theme":
+			set, _ := theme.Load(b.core().Paths.Home)
+			choices = append([]string{theme.System}, set.Names()...)
+		case "theme_dark", "theme_light":
+			set, _ := theme.Load(b.core().Paths.Home)
+			choices = set.Names()
 		}
 		kind := "string"
 		switch s.Kind {
@@ -645,6 +653,55 @@ func (b *Bridge) Settings() []SettingInfo {
 			Key: s.Key, Description: s.Description, Value: s.Value(cfg, model),
 			Choices: choices, Kind: kind, PerModel: s.PerModel, Optional: s.Optional,
 		})
+	}
+	return out
+}
+
+// ThemeInfo is a theme the GUI can show.
+type ThemeInfo struct {
+	Name string `json:"name"`
+	Dark bool   `json:"dark"`
+	// Vars are CSS custom properties, without the leading "--".
+	Vars map[string]string `json:"vars"`
+}
+
+// Themes describes the theme settings and every theme they can name.
+type Themes struct {
+	// Theme is the theme setting: a theme name or "system".
+	Theme string `json:"theme"`
+	// Dark and Light are the themes for "system".
+	Dark     string      `json:"dark"`
+	Light    string      `json:"light"`
+	Themes   []ThemeInfo `json:"themes"`
+	Warnings []string    `json:"warnings,omitempty"`
+}
+
+// Themes returns the theme settings and the built-in and user themes. A
+// setting naming no theme comes back as its default, with a warning.
+func (b *Bridge) Themes() Themes {
+	set, warnings := theme.Load(b.core().Paths.Home)
+	cfg := b.core().Agent.Config()
+	name := func(n, def string) string {
+		if t, ok := set.Get(n); ok {
+			return t.Name
+		}
+		if n != "" && n != theme.System {
+			warnings = append(warnings, fmt.Sprintf("unknown theme %q; using %s", n, def))
+		}
+		return def
+	}
+	out := Themes{
+		Theme:    theme.System,
+		Dark:     name(cfg.ThemeDark, theme.DefaultDark),
+		Light:    name(cfg.ThemeLight, theme.DefaultLight),
+		Warnings: warnings,
+	}
+	if cfg.Theme != "" && cfg.Theme != theme.System {
+		out.Theme = name(cfg.Theme, theme.System)
+	}
+	for _, n := range set.Names() {
+		t, _ := set.Get(n)
+		out.Themes = append(out.Themes, ThemeInfo{Name: n, Dark: t.IsDark(), Vars: t.CSSVars()})
 	}
 	return out
 }

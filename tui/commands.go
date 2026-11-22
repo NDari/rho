@@ -221,17 +221,9 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		}
 	case "theme":
 		if args != "" {
-			return m.applyThemeName(args)
+			return m.setSetting("theme", args)
 		}
-		var items []pickerItem
-		for _, n := range ThemeNames(m.themes) {
-			detail := ""
-			if n == m.theme.Name {
-				detail = "current"
-			}
-			items = append(items, pickerItem{title: n, detail: detail, value: n})
-		}
-		m.picker = newPicker("Theme", items, func(it pickerItem) tea.Cmd { return m.applyThemeName(it.value.(string)) })
+		m.themePicker("theme", nil)
 	case "config":
 		if !idle() {
 			return nil
@@ -266,18 +258,6 @@ func (m *Model) runCommand(line string) tea.Cmd {
 		}
 		m.notice("error", "unknown command /"+name+" (see /help)")
 	}
-	return nil
-}
-
-func (m *Model) applyThemeName(name string) tea.Cmd {
-	t, ok := m.themes[name]
-	if !ok {
-		m.notice("error", "unknown theme "+name)
-		return nil
-	}
-	m.setTheme(t)
-	m.applyInputStyles()
-	m.notice("info", fmt.Sprintf("theme: %s (/config theme %s keeps it)", name, name))
 	return nil
 }
 

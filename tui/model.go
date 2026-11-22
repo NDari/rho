@@ -22,6 +22,7 @@ import (
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/theme"
 )
 
 const frameInterval = 33 * time.Millisecond
@@ -70,12 +71,19 @@ type Model struct {
 	app   *app.App
 	agent *agent.Agent
 
-	themes map[string]Theme
+	themes theme.Set
 	theme  Theme
 	st     styles
 	md     *markdown
 	hl     *highlighter
 	diffR  *diffRenderer
+
+	// systemDark is whether the terminal's background is dark, for
+	// theme = "system". bgKnown is set once the terminal answered (or did
+	// not in time); until then Rho leaves the terminal's background alone.
+	systemDark bool
+	bgKnown    bool
+	started    time.Time
 
 	width, height int
 
@@ -139,9 +147,11 @@ func New(a *app.App) *Model {
 		uiReqs:   make(chan tea.Msg, 16),
 		prompts:  map[int64]openPrompt{},
 	}
-	themes, warnings := LoadThemes(a.Paths.Home)
+	themes, warnings := theme.Load(a.Paths.Home)
 	m.themes = themes
-	t, w := pickTheme(themes, a.Config.Theme)
+	m.systemDark = true
+	m.started = time.Now()
+	t, w := m.configuredTheme()
 	if w != "" {
 		warnings = append(warnings, w)
 	}
@@ -184,7 +194,7 @@ func (m *Model) applyInputStyles() {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.tick(), m.waitUIRequest())
+	return tea.Batch(m.tick(), m.waitUIRequest(), tea.RequestBackgroundColor)
 }
 
 func (m *Model) tick() tea.Cmd {
@@ -250,8 +260,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dirty = true
 		return m, nil
 
+	case tea.BackgroundColorMsg:
+		// Only the first answer is the terminal's own color; later ones
+		// would report the background Rho set.
+		if !m.bgKnown {
+			m.bgKnown = true
+			m.systemDark = msg.IsDark()
+			m.applyConfiguredTheme()
+		}
+		return m, nil
+
 	case tickMsg:
 		m.frame++
+		if !m.bgKnown && time.Since(m.started) > bgQueryWait {
+			m.bgKnown = true // the terminal did not answer; keep the dark default
+		}
 		for _, e := range m.events.drain() {
 			m.handleEvent(e)
 		}
@@ -842,6 +865,13 @@ func (m *Model) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "rho · " + filepath.Base(m.app.Paths.Cwd)
+	if m.bgKnown {
+		// Paint the terminal in the theme's colors, as Vim does, so a
+		// light theme looks right in a dark terminal. Bubble Tea puts the
+		// terminal's own colors back on exit.
+		v.BackgroundColor = c(m.theme.Background)
+		v.ForegroundColor = c(m.theme.Text)
+	}
 	if m.width == 0 {
 		return v
 	}
@@ -851,7 +881,22 @@ func (m *Model) View() tea.View {
 	th := m.transcriptHeight()
 
 	var body []string
-	if m.picker != nil {
+	if m.picker != nil && m.picker.preview && th >= 12 {
+		// The list takes the bottom; the transcript (or a sample) stays
+		// visible above it so the preview shows on real content.
+		listH := min(th/2, len(m.picker.items)+5)
+		top := th - listH - 1
+		lines, sample := m.previewLines()
+		if sample {
+			lines = lines[:min(len(lines), top)]
+		}
+		body = append(body, lines[max(0, len(lines)-top):]...)
+		for len(body) < top {
+			body = append(body, "")
+		}
+		body = append(body, m.st.border.Render(strings.Repeat("─", max(0, m.width))))
+		body = append(body, m.picker.render(m.renderCtx(), listH)...)
+	} else if m.picker != nil {
 		body = m.picker.render(m.renderCtx(), th)
 	} else {
 		maxOff := max(0, len(m.lines)-th)

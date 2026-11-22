@@ -14,7 +14,7 @@ Rho asks GitHub for the latest release at most once a day, when the TUI or the G
 
 ```toml
 default_model = "local"
-theme = "dark"          # "dark" (Gruvbox), "light", or a theme in ~/.rho/themes/
+theme = "system"        # a theme name, or "system" (see Themes)
 max_retries = 3         # retries for 429/5xx/network errors
 update_check = true     # look for a new Rho release once a day
 
@@ -138,6 +138,55 @@ The tool descriptions are part of every request. They sit at the start of the pr
 - Tool-calling quality varies a lot between models; small models often struggle with the `edit` tool's exact matching.
 - Smaller context windows mean more frequent compaction. Set `context_window` to the server's actual context size (for llama.cpp, the `-c` value).
 
+## Themes
+
+One theme colors everything: the TUI, the GUI, syntax highlighting, Markdown, diffs and the HTML export. The built-in themes use their projects' published palettes, each with the matching [Chroma](https://github.com/alecthomas/chroma) style for code:
+
+| Dark | Light |
+|---|---|
+| `gruvbox-dark` | `gruvbox-light` |
+| `github-dark` | `github-light` |
+| `catppuccin-mocha` | `catppuccin-latte` |
+| `tokyo-night` | `tokyo-night-day` |
+| `rose-pine` | `rose-pine-dawn` |
+| `solarized-dark` | `solarized-light` |
+| `kanagawa-wave` | `kanagawa-lotus` |
+| `dracula`, `nord`, `one-dark` | |
+
+`theme` names one of them (or one of yours), or is `system` (the default): then `theme_dark` (default `gruvbox-dark`) or `theme_light` (default `github-light`) is used, whichever matches the system. The TUI asks the terminal for its background color when it starts; the GUI follows the system's light or dark mode, also while it runs; an export holds both and follows the reader's system.
+
+`/theme` lists the themes and shows each one as the cursor reaches it; Enter saves it, Esc puts back the theme you had. The TUI paints the terminal's background in the theme's color (and puts the terminal's own back on exit), so a light theme works in a dark terminal. In `/config`, Enter on `theme`, `theme_dark` or `theme_light` opens the same list.
+
+### Your own themes
+
+A theme is a TOML file in `~/.rho/themes/`, named after the file (`~/.rho/themes/mine.toml` is `mine`). It starts from `base` (any theme; `gruvbox-dark` when not set) and changes only what it sets:
+
+```toml
+base = "nord"
+accent = "#ebcb8b"
+chroma = "nord"
+```
+
+Colors are `#rrggbb`, or ANSI 256 numbers such as `"39"` (but a color worked out from others needs hex ones). The roles:
+
+| Role | Used for |
+|---|---|
+| `background`, `text` | the page and its text (in the TUI, the terminal's background and text) |
+| `surface` | code blocks and cards |
+| `muted`, `subtle` | secondary text, and fainter text and rules |
+| `border`, `accent` | borders, and headings, links and the cursor |
+| `user_bg` | your messages and the selected row |
+| `error`, `warning`, `success` | errors, warnings and inline code, success marks |
+| `tool_name`, `thinking`, `line_number` | tool names, thinking text, diff line numbers |
+| `diff_add_bg`, `diff_del_bg` | backgrounds of added and removed lines |
+| `diff_add_emph`, `diff_del_emph` | the changed words within them |
+| `diff_add_sign`, `diff_del_sign` | the `+` and `-` signs |
+| `status_bg`, `status_fg` | the status bar |
+| `search_bg`, `search_fg` | search matches |
+| `chroma` | the [Chroma style](https://github.com/alecthomas/chroma/tree/master/styles) for code (the file name without `.xml`) |
+
+A role that neither the theme nor its base sets is worked out from the others: `surface`, `user_bg`, `border`, `subtle` and `muted` mix `text` into `background`, the diff colors mix `success` and `error` into it, and `search_fg` is black or white, whichever reads better. The built-in themes set most roles themselves, so a theme that changes `background` over one of them should set its surfaces too. Rho warns about an unknown key, base theme or Chroma style.
+
 ## Files Rho reads
 
 | File | Purpose |
@@ -148,7 +197,7 @@ The tool descriptions are part of every request. They sit at the start of the pr
 | `~/.rho/skills/*/SKILL.md`, `.rho/skills/*/SKILL.md` | skills (name and description are listed in the prompt; the model reads the file on demand) |
 | `~/.rho/prompts/*.md`, `.rho/prompts/*.md` | prompt templates, available as `/name args`, with `$ARGS` and `$1`, `$2`... |
 | `.rho/COMPACT.md` or `~/.rho/COMPACT.md` | replaces the compaction instructions |
-| `~/.rho/themes/*.toml` | color themes (any field of the built-in theme; `base = "light"` to start from the light theme) |
+| `~/.rho/themes/*.toml` | color themes, see [Themes](#themes) |
 | `~/.rho/extensions/`, `.rho/extensions/` | extensions, see [extensions.md](extensions.md) |
 
 Use `/context` to see exactly what is sent to the model and what each part costs.

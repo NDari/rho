@@ -23,6 +23,7 @@
     actions = [],
     onpick,
     onclose,
+    onmove,
   }: {
     title: string;
     items: PickItem[];
@@ -30,6 +31,9 @@
     actions?: PickAction[];
     onpick: (it: PickItem) => void;
     onclose: () => void;
+    // onmove is called with the item under the cursor whenever it changes
+    // (a theme picker previews it).
+    onmove?: (it: PickItem) => void;
   } = $props();
 
   let query = $state("");
@@ -47,6 +51,15 @@
   $effect(() => {
     void query;
     cursor = Math.min(cursor, Math.max(0, filtered.length - 1));
+  });
+
+  let moved: string | undefined;
+  $effect(() => {
+    const it = filtered[cursor];
+    if (it && onmove && it.value !== moved) {
+      moved = it.value;
+      onmove(it);
+    }
   });
 
   async function scrollToCursor() {

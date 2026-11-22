@@ -25,15 +25,19 @@ const (
 
 // Config is the merged configuration.
 type Config struct {
-	DefaultModel string              `toml:"default_model"`
-	Theme        string              `toml:"theme"`
-	Providers    map[string]Provider `toml:"providers"`
-	Models       []Model             `toml:"models"`
-	Bash         Bash                `toml:"bash"`
-	TUI          TUI                 `toml:"tui"`
-	Compaction   Compaction          `toml:"compaction"`
-	Extensions   Extensions          `toml:"extensions"`
-	Tools        Tools               `toml:"tools"`
+	DefaultModel string `toml:"default_model"`
+	// Theme is a theme name, or "system" to use ThemeDark or ThemeLight
+	// to match the system (the terminal's background in the TUI).
+	Theme      string              `toml:"theme"`
+	ThemeDark  string              `toml:"theme_dark"`
+	ThemeLight string              `toml:"theme_light"`
+	Providers  map[string]Provider `toml:"providers"`
+	Models     []Model             `toml:"models"`
+	Bash       Bash                `toml:"bash"`
+	TUI        TUI                 `toml:"tui"`
+	Compaction Compaction          `toml:"compaction"`
+	Extensions Extensions          `toml:"extensions"`
+	Tools      Tools               `toml:"tools"`
 	// MaxRetries is the number of retries for transient provider errors.
 	MaxRetries int `toml:"max_retries"`
 	// UpdateCheck lets Rho look for new releases once a day (default true).
@@ -197,7 +201,9 @@ type Tools struct {
 // Defaults returns the built-in configuration.
 func Defaults() Config {
 	return Config{
-		Theme: "dark",
+		Theme:      "system",
+		ThemeDark:  "gruvbox-dark",
+		ThemeLight: "github-light",
 		Providers: map[string]Provider{
 			"openai": {
 				Type:      ProviderOpenAICompat,
@@ -350,6 +356,12 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 	}
 	if defined("theme") {
 		cfg.Theme = file.Theme
+	}
+	if defined("theme_dark") {
+		cfg.ThemeDark = file.ThemeDark
+	}
+	if defined("theme_light") {
+		cfg.ThemeLight = file.ThemeLight
 	}
 	if defined("max_retries") {
 		cfg.MaxRetries = file.MaxRetries

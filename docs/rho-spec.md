@@ -80,6 +80,7 @@ core/ext/           extension manager, protocol, trust store; rpc/ (JSON-RPC)
 core/ext/yaegihost/ Yaegi-based extension host + `rho` symbol package
 core/config/        config loading, merging, validation
 core/events/        event types shared by frontends
+core/theme/         color themes (built-in and user), shared by the frontends and the export
 core/update/        release checks and self-update (§19)
 tui/                Bubble Tea app, components, themes, diff renderer
 headless/           print and JSON modes
@@ -286,7 +287,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - **Tool calls:** compact cards (tool, args summary, status, duration). Collapsed by default with a one-line preview; expand to see full output. Bash output streams live.
 - **Thinking:** shown dimmed and collapsible; toggle to hide.
 - **Errors and banners:** clearly styled (e.g., rewind "files not reverted" notice).
-- **Themes:** built-in dark (Gruvbox palette, `gruvbox` syntax style) and light (`catppuccin-latte` syntax style); markdown headings, links and inline code take the theme's colors; user themes as files; respect terminal color capabilities.
+- **Themes:** one theme set shared by the TUI, the GUI and the HTML export (`core/theme`): 17 built-in themes from public, documented palettes (Gruvbox, GitHub, Catppuccin, Tokyo Night, Rosé Pine, Solarized and Kanagawa in dark and light, plus Dracula, Nord and One Dark), each paired with its Chroma style. `theme = "system"` (the default) picks `theme_dark` or `theme_light` to match the terminal's background (the TUI asks once at start) or the system (GUI, export). The TUI paints the terminal's background in the theme's color, as Vim does, and restores it on exit. `/theme` previews each theme as the cursor moves; Enter saves, Esc restores. Markdown headings, links and inline code take the theme's colors; user themes are TOML files over a `base` theme, with unset roles derived from the main colors; respect terminal color capabilities.
 - Images: later, via Kitty/iTerm2 graphics protocols where supported.
 
 ### Input
@@ -402,7 +403,7 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 
 ## 17. Decisions on former open questions
 
-- Default theme palette: Gruvbox for dark; the light theme keeps `catppuccin-latte` highlighting.
+- Default themes: `gruvbox-dark` and `github-light` for `system`. Rho's own two themes (`dark` and `light`) were replaced by the public set, with no aliases: an old name gets the unknown-theme warning.
 - `/fork` stays in the current working directory.
 - Side-conversation summaries stay opt-in (`/back --summarize`).
 
@@ -423,7 +424,7 @@ A desktop frontend built with [Wails](https://wails.io) v3. It is a frontend lik
 ### Behavior
 - Same capabilities as the TUI (§10): streaming markdown and thinking, tool cards with live output, diffs from the structured display data, status bar (model, context, cost, position), steering and follow-ups, the slash commands, prompt templates and extension commands.
 - Keys follow the TUI where it makes sense: Enter sends, Shift+Enter adds a line, while working Enter steers and Alt+Enter queues a follow-up, Esc cancels.
-- Light and dark themes; the GUI follows the system setting unless the user picks one.
+- The same themes and `theme` setting as the TUI (§10); with `system` the GUI follows the system's light or dark mode. Highlight.js colors come from the theme's Chroma style.
 - Ctrl+F searches the rendered transcript (what is on screen; collapsed tool output is not searched).
 - The window can switch to another project directory (`/open`, a native folder dialog) with a new session, without restarting.
 - When the project cannot be opened (no model configured, a broken config file), the window still opens and shows the error, an example configuration and a way to try again, since a GUI started from a desktop launcher has no terminal for the message. Without a config file it offers to create one from the example.

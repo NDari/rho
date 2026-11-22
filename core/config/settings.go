@@ -41,9 +41,9 @@ type Setting struct {
 	set      func(c *Config, model, v string)
 }
 
-// Settings lists the changeable settings. default_model and theme take
-// their choices from the configured models and themes, so they have none
-// here.
+// Settings lists the changeable settings. default_model and the theme
+// settings take their choices from the configured models and themes, so
+// they have none here.
 var Settings = []Setting{
 	{Key: "default_model", Description: "model for new sessions",
 		get: func(c Config, _ string) string { return c.DefaultModel },
@@ -55,9 +55,15 @@ var Settings = []Setting{
 			return m.ReasoningEffort
 		},
 		set: func(c *Config, model, v string) { c.modelEntry(model).ReasoningEffort = v }},
-	{Key: "theme", Description: "color theme",
+	{Key: "theme", Description: "color theme (system: theme_dark or theme_light, to match the system)",
 		get: func(c Config, _ string) string { return c.Theme },
 		set: func(c *Config, _, v string) { c.Theme = v }},
+	{Key: "theme_dark", Description: "theme for theme = system when the system is dark",
+		get: func(c Config, _ string) string { return c.ThemeDark },
+		set: func(c *Config, _, v string) { c.ThemeDark = v }},
+	{Key: "theme_light", Description: "theme for theme = system when the system is light",
+		get: func(c Config, _ string) string { return c.ThemeLight },
+		set: func(c *Config, _, v string) { c.ThemeLight = v }},
 	boolSetting("tui.show_thinking", "show thinking expanded (ctrl+t toggles)",
 		func(c *Config) bool { return c.TUI.ShowThinking }, func(c *Config, b bool) { c.TUI.ShowThinking = b }),
 	boolSetting("tui.mouse_select", "drag to select text and copy it (off: the terminal's own selection)",

@@ -18,6 +18,7 @@ import (
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider/registry"
 	"github.com/NDari/rho/core/session"
+	"github.com/NDari/rho/core/theme"
 	"github.com/NDari/rho/core/tools"
 )
 
@@ -326,6 +327,20 @@ func (a *App) unknownDisabled() []string {
 // SetSetting changes a setting for this run and saves it to the global
 // config. Per-model settings apply to the current model. saved is false
 // when the value could only be changed for this session; the note says
+// checkTheme rejects a theme setting that names no theme. Only theme
+// accepts "system".
+func (a *App) checkTheme(key, value string) error {
+	if key != "theme" && key != "theme_dark" && key != "theme_light" {
+		return nil
+	}
+	set, _ := theme.Load(a.Paths.Home)
+	value = strings.TrimSpace(value)
+	if _, ok := set.Get(value); ok || key == "theme" && value == theme.System {
+		return nil
+	}
+	return fmt.Errorf("unknown theme %q (one of: %s)", value, strings.Join(set.Names(), ", "))
+}
+
 // why, or that the project config overrides the saved value.
 func (a *App) SetSetting(key, value string) (saved bool, note string, err error) {
 	s, ok := config.LookupSetting(key)
@@ -334,6 +349,9 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	}
 	if a.Agent.Busy() {
 		return false, "", agent.ErrBusy
+	}
+	if err := a.checkTheme(key, value); err != nil {
+		return false, "", err
 	}
 	model := a.Agent.Model().ID
 	cfg, err := s.Apply(a.Agent.Config(), model, value)

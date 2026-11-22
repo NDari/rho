@@ -71,7 +71,7 @@ The window works like the TUI:
 - `@path` attaches a file, as in the TUI; typing `@` completes file names. **Esc** hides a completion.
 - **Ctrl+F** finds text in the conversation (**Enter** and **Shift+Enter** move between matches). Collapsed tool output is not searched; **Ctrl+O** expands it.
 - Click a tool card's header to expand or collapse it. **Ctrl+O** expands all of them, **Ctrl+T** shows the model's thinking.
-- `/theme` picks light, dark or the system setting. The GUI keeps this choice itself; the `theme` setting in the config file is for the TUI.
+- `/theme` lists the themes and shows each one as you move through the list (or hover it); Enter saves it, Esc puts back the one you had. The `theme` setting is shared with the TUI; `system` follows the system's light or dark mode with `theme_light` and `theme_dark`. See [Themes](configuration.md#themes).
 - Links in answers open in your browser.
 
 ## Building from source

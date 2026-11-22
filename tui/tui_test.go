@@ -10,8 +10,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/NDari/rho/core/theme"
 	"github.com/NDari/rho/core/tools"
 )
+
+// testTheme is the default dark theme.
+var testTheme, _ = theme.Builtin().Get(theme.DefaultDark)
 
 func TestStableSplit(t *testing.T) {
 	tests := []struct {
@@ -45,7 +49,7 @@ func TestWordDiff(t *testing.T) {
 
 func TestDiffRenderFitsWidth(t *testing.T) {
 	d := tools.MakeDiff("package main\n\nfunc add(a, b int) int { return a - b }\n", "package main\n\nfunc add(a, b int) int { return a + b }\n", 3)
-	r := &diffRenderer{theme: DarkTheme, hl: newHighlighter(DarkTheme.Chroma), st: newStyles(DarkTheme)}
+	r := &diffRenderer{theme: testTheme, hl: newHighlighter(testTheme.Chroma), st: newStyles(testTheme)}
 	for _, side := range []bool{false, true} {
 		width := 80
 		if side {
@@ -90,7 +94,7 @@ func TestCompletion(t *testing.T) {
 }
 
 func TestMarkdownRendersCode(t *testing.T) {
-	md := newMarkdown(DarkTheme)
+	md := newMarkdown(testTheme)
 	lines := md.Render("# Title\n\nSome `code` here.\n\n```go\nfunc main() {}\n```", 60)
 	joined := ansi.Strip(strings.Join(lines, "\n"))
 	if !strings.Contains(joined, "Title") || !strings.Contains(joined, "func main()") {
@@ -117,7 +121,7 @@ func TestHistory(t *testing.T) {
 }
 
 func TestPickerKeepsDetailForLongTitles(t *testing.T) {
-	rc := &renderCtx{width: 60, theme: DarkTheme, st: newStyles(DarkTheme)}
+	rc := &renderCtx{width: 60, theme: testTheme, st: newStyles(testTheme)}
 	long := strings.Repeat("a very long message title ", 10)
 	items := []pickerItem{{title: long, detail: "● current · Nov 19 12:00", value: "a"}, {title: long, detail: "│ Nov 19 11:00", value: "b"}}
 	p := newPicker("Session tree", items, nil)
@@ -156,7 +160,7 @@ func TestKeyBindingsText(t *testing.T) {
 }
 
 func TestThinkingTimes(t *testing.T) {
-	rc := &renderCtx{width: 80, theme: DarkTheme, st: newStyles(DarkTheme), spinner: "*"}
+	rc := &renderCtx{width: 80, theme: testTheme, st: newStyles(testTheme), spinner: "*"}
 	text := func(a *assistantItem) string {
 		a.touch()
 		return stripANSI(strings.Join(a.render(rc), "\n"))

@@ -1,0 +1,21 @@
+# Catppuccin Latte.
+# Palette: https://github.com/catppuccin/palette (palette.json)
+# License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+
+background  = "#eff1f5"
+surface     = "#e6e9ef"
+user_bg     = "#ccd0da"
+border      = "#bcc0cc"
+subtle      = "#acb0be"
+muted       = "#6c6f85"
+text        = "#4c4f69"
+accent      = "#1e66f5"
+tool_name   = "#8839ef"
+thinking    = "#7c7f93"
+line_number = "#8c8fa1"
+error       = "#d20f39"
+warning     = "#df8e1d"
+success     = "#40a02b"
+status_bg   = "#e6e9ef"
+status_fg   = "#5c5f77"
+chroma      = "catppuccin-latte"

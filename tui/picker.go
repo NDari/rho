@@ -27,6 +27,12 @@ type picker struct {
 	onSelect func(pickerItem) tea.Cmd
 	// keys maps extra keys (e.g. "ctrl+l") to actions on the current item.
 	keys map[string]func(pickerItem) tea.Cmd
+	// preview pickers take only the bottom of the screen, leaving the
+	// transcript visible above, and call onMove when the cursor reaches
+	// another item. onCancel runs when the picker closes without a choice.
+	preview  bool
+	onMove   func(pickerItem)
+	onCancel func()
 }
 
 func newPicker(title string, items []pickerItem, onSelect func(pickerItem) tea.Cmd) *picker {
@@ -57,6 +63,21 @@ func (p *picker) current() (pickerItem, bool) {
 
 // update handles a key. It returns done=true when the picker should close.
 func (p *picker) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	before, had := p.current()
+	cmd, done := p.handleKey(msg)
+	if done {
+		if chose := msg.String() == "enter" && had; !chose && p.onCancel != nil {
+			p.onCancel()
+		}
+		return cmd, done
+	}
+	if after, ok := p.current(); ok && p.onMove != nil && after.value != before.value {
+		p.onMove(after)
+	}
+	return cmd, done
+}
+
+func (p *picker) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	key := msg.String()
 	if f, ok := p.keys[key]; ok {
 		if it, ok := p.current(); ok {

@@ -2,7 +2,7 @@
   import { onMount, tick } from "svelte";
   import { Application, Browser, Events } from "@wailsio/runtime";
   import { Bridge } from "../bindings/github.com/NDari/rho/gui/bridge";
-  import type { Command, StartupInfo } from "../bindings/github.com/NDari/rho/gui/bridge";
+  import type { Command, StartupInfo, Themes } from "../bindings/github.com/NDari/rho/gui/bridge";
   import { store } from "./lib/store.svelte";
   import type { CoreEvent } from "./lib/types";
   import { humanBytes, humanTokens, oneLine, setHome, shortenHome, time } from "./lib/format";
@@ -31,6 +31,7 @@
     actions?: PickAction[];
     onpick: (it: PickItem) => void;
     onclose?: () => void;
+    onmove?: (it: PickItem) => void;
   }
 
   const builtin: CommandInfo[] = [
@@ -48,7 +49,7 @@
     { name: "label", description: "label the current position" },
     { name: "copy", description: "copy the last answer to the clipboard [all]" },
     { name: "export", description: "save the conversation as an HTML page [file]" },
-    { name: "theme", description: "choose light, dark or system colors" },
+    { name: "theme", description: "choose the color theme, previewed as you move [name]" },
     { name: "config", description: "change and save settings [key value]" },
     { name: "extensions", description: "list extensions and turn them on or off" },
     { name: "reload", description: "restart extensions and reload context files" },
@@ -79,15 +80,26 @@
   let update = $state("");
   let searchBar: ReturnType<typeof SearchBar> | undefined = $state();
 
-  // Theme: "system", "light" or "dark", kept in local storage.
-  let themePref = $state(localStorage.getItem("rho.theme") ?? "system");
+  // Themes and the theme settings come from Rho and are shared with the
+  // TUI; "system" follows the system between theme_dark and theme_light.
+  // Until they load, app.css has the default light and dark themes.
+  let themes: Themes | null = null;
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
-  function applyTheme() {
-    const t = themePref === "system" ? (dark.matches ? "dark" : "light") : themePref;
-    document.documentElement.dataset.theme = t;
+  function showTheme(name: string) {
+    if (!themes) return;
+    if (name === "system") name = dark.matches ? themes.dark : themes.light;
+    const t = (themes.themes ?? []).find((x) => x.name === name);
+    if (!t) return;
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(t.vars ?? {})) if (v) root.style.setProperty("--" + k, v);
+    root.style.colorScheme = t.dark ? "dark" : "light";
   }
-  applyTheme();
-  dark.addEventListener("change", applyTheme);
+  async function loadThemes() {
+    themes = (await call(Bridge.Themes())) ?? null;
+    for (const w of themes?.warnings ?? []) store.notice("warn", w);
+    if (themes) showTheme(themes.theme);
+  }
+  dark.addEventListener("change", () => themes && showTheme(themes.theme));
 
   function errText(err: unknown): string {
     if (err && typeof err === "object" && "message" in err) return String((err as Error).message);
@@ -103,11 +115,19 @@
     }
   }
 
+  // refocus returns focus to the composer unless the last action opened
+  // another list or dialog (such as a setting's choices from /config).
+  function refocus() {
+    void tick().then(() => {
+      if (!picker && !dialog) composer?.focus();
+    });
+  }
+
   function closePicker() {
     const p = picker;
     picker = null;
     p?.onclose?.();
-    void tick().then(() => composer?.focus());
+    refocus();
   }
 
   function pick(spec: PickerSpec) {
@@ -116,7 +136,7 @@
       onpick: (it) => {
         picker = null;
         spec.onpick(it);
-        void tick().then(() => composer?.focus());
+        refocus();
       },
     };
   }
@@ -270,8 +290,8 @@
         return;
       }
       case "theme":
-        if (args) setTheme(args);
-        else themePicker();
+        if (args) await setTheme("theme", args);
+        else themePicker("theme");
         return;
       case "config":
         if (!idle(name)) return;
@@ -521,21 +541,34 @@
     store.add({ kind: "text", title: "Context", body: b });
   }
 
-  function setTheme(t: string) {
-    if (!["system", "light", "dark"].includes(t)) {
-      store.notice("error", "Unknown theme " + t + " (use light, dark or system)");
-      return;
-    }
-    themePref = t;
-    localStorage.setItem("rho.theme", t);
-    applyTheme();
+  async function setTheme(key: string, name: string) {
+    if (await setSetting(key, name)) await loadThemes();
   }
 
-  function themePicker() {
+  // themePicker lists the themes for key (theme, theme_dark or
+  // theme_light) and shows each one as the cursor reaches it. Enter saves
+  // it; Esc puts back the theme in use. then runs after either.
+  function themePicker(key: string, then?: () => void) {
+    if (!themes) return;
+    const t = themes;
+    const cur = key === "theme" ? t.theme : key === "theme_dark" ? t.dark : t.light;
+    const names = (t.themes ?? []).map((x) => x.name);
+    if (key === "theme") names.unshift("system");
     pick({
-      title: "Theme",
-      items: ["system", "light", "dark"].map((t) => ({ title: t, value: t, detail: t === themePref ? "current" : "", current: t === themePref })),
-      onpick: (it) => setTheme(it.value),
+      title: key === "theme" ? "Theme" : key,
+      hint: "↑/↓ preview · Enter save · Esc put back",
+      items: names.map((n) => ({
+        title: n,
+        value: n,
+        detail: n === cur ? "current" : n === "system" ? `${t.dark} or ${t.light}, to match the system` : "",
+        current: n === cur,
+      })),
+      onmove: (it) => showTheme(it.value),
+      onclose: () => {
+        showTheme(t.theme);
+        then?.();
+      },
+      onpick: (it) => void setTheme(key, it.value).then(() => then?.()),
     });
   }
 
@@ -574,6 +607,10 @@
       })),
       onpick: async (it) => {
         const s = settings.find((x) => x.key === it.value)!;
+        if (["theme", "theme_dark", "theme_light"].includes(s.key)) {
+          themePicker(s.key, () => void configCommand(""));
+          return;
+        }
         const choices = s.kind === "bool" ? ["true", "false"] : (s.choices ?? []);
         if (choices.length === 0) {
           prompt(s.key, s.description, s.value, (v) => void setSetting(s.key, v).then(() => configCommand("")));
@@ -684,6 +721,7 @@
         return;
       }
       await store.refreshState();
+      await loadThemes();
       store.showThinking = !!store.state?.show_thinking;
       for (const w of store.state?.warnings ?? []) store.notice("warn", w);
       await store.loadTranscript();
@@ -765,14 +803,19 @@
 {/if}
 
 {#if picker}
-  <Picker
-    title={picker.title}
-    items={picker.items}
-    hint={picker.hint}
-    actions={picker.actions}
-    onpick={picker.onpick}
-    onclose={closePicker}
-  />
+  <!-- A new list (such as a setting's choices opened from /config) gets a
+       fresh Picker, so it does not keep the previous list's filter. -->
+  {#key picker}
+    <Picker
+      title={picker.title}
+      items={picker.items}
+      hint={picker.hint}
+      actions={picker.actions}
+      onpick={picker.onpick}
+      onclose={closePicker}
+      onmove={picker.onmove}
+    />
+  {/key}
 {/if}
 {#if dialog}
   <Dialog spec={dialog} />

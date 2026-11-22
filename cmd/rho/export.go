@@ -10,6 +10,7 @@ import (
 	"github.com/NDari/rho/core/app"
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/session"
+	"github.com/NDari/rho/core/theme"
 )
 
 func newExportCmd() *cobra.Command {
@@ -45,13 +46,17 @@ func newExportCmd() *cobra.Command {
 				return err
 			}
 			defer sess.Close()
+			themes, err := exportThemes()
+			if err != nil {
+				return err
+			}
 			if out == "-" {
-				return app.ExportHTML(cmd.OutOrStdout(), sess)
+				return app.ExportHTML(cmd.OutOrStdout(), sess, themes...)
 			}
 			if out == "" {
 				out = app.DefaultExportName(sess)
 			}
-			if err := app.WriteExport(out, sess); err != nil {
+			if err := app.WriteExport(out, sess, themes...); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.ErrOrStderr(), "exported to", out)
@@ -60,4 +65,21 @@ func newExportCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "file to write (- for stdout)")
 	return cmd
+}
+
+// exportThemes are the themes the config in the current directory names.
+func exportThemes() ([]theme.Theme, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	p, err := config.ResolvePaths(cwd)
+	if err != nil {
+		return nil, err
+	}
+	cfg, _, err := config.Load(p)
+	if err != nil {
+		return nil, err
+	}
+	return app.ExportThemes(cfg.Theme, cfg.ThemeDark, cfg.ThemeLight, p.Home), nil
 }

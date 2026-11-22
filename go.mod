@@ -19,6 +19,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/traefik/yaegi v0.16.3
 	github.com/yuin/goldmark v1.7.8
+	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0

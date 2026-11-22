@@ -1,0 +1,17 @@
+# GitHub Light (Primer).
+# Palette: https://github.com/primer/primitives (src/tokens); diff backgrounds from Chroma's github style
+# License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+
+background  = "#ffffff"
+surface     = "#f6f8fa"
+border      = "#d1d9e0"
+muted       = "#59636e"
+text        = "#1f2328"
+accent      = "#0969da"
+tool_name   = "#8250df"
+error       = "#d1242f"
+warning     = "#9a6700"
+success     = "#1a7f37"
+diff_add_bg = "#dafbe1"
+diff_del_bg = "#ffebe9"
+chroma      = "github"

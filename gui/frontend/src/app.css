@@ -1,74 +1,86 @@
-/* Themes: dark uses the Gruvbox palette like the TUI; light is a calm
-   paper palette. The root gets data-theme="dark" or "light". */
+/* Themes come from Rho (core/theme) and are set on the root element at
+   runtime. These are the default light and dark themes (github-light and
+   gruvbox-dark), used until then and on the setup screen. */
 
 :root {
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --radius: 8px;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #1d2021;
-  --bg-soft: #282828;
-  --bg-raised: #32302f;
-  --border: #3c3836;
-  --fg: #ebdbb2;
-  --fg-muted: #a89984;
-  --fg-faint: #7c6f64;
-  --accent: #fabd2f;
-  --accent-fg: #1d2021;
-  --user-bg: #32302f;
-  --link: #83a598;
-  --ok: #b8bb26;
-  --warn: #fabd2f;
-  --err: #fb4934;
-  --info: #83a598;
-  --add-bg: rgba(184, 187, 38, 0.14);
-  --add-fg: #b8bb26;
-  --del-bg: rgba(251, 73, 52, 0.14);
-  --del-fg: #fb4934;
-  --code-bg: #282828;
-  --hl-keyword: #fb4934;
-  --hl-string: #b8bb26;
-  --hl-number: #d3869b;
-  --hl-comment: #928374;
-  --hl-title: #fabd2f;
-  --hl-type: #83a598;
-  --hl-attr: #8ec07c;
-  --hl-meta: #fe8019;
-}
-
-:root[data-theme="light"] {
   color-scheme: light;
-  --bg: #fbf8f1;
-  --bg-soft: #f2eee5;
-  --bg-raised: #ffffff;
-  --border: #e0dacd;
-  --fg: #2c2a26;
-  --fg-muted: #6b665c;
-  --fg-faint: #9a9488;
-  --accent: #b5651d;
+  --accent: #0969da;
   --accent-fg: #ffffff;
-  --user-bg: #efe9dc;
-  --link: #1e66f5;
-  --ok: #40a02b;
-  --warn: #b5651d;
-  --err: #d20f39;
-  --info: #1e66f5;
-  --add-bg: rgba(64, 160, 43, 0.12);
-  --add-fg: #2f7a1f;
-  --del-bg: rgba(210, 15, 57, 0.1);
-  --del-fg: #b40d31;
-  --code-bg: #f2eee5;
-  --hl-keyword: #8839ef;
-  --hl-string: #40a02b;
-  --hl-number: #fe640b;
-  --hl-comment: #9ca0b0;
-  --hl-title: #1e66f5;
-  --hl-type: #df8e1d;
-  --hl-attr: #179299;
-  --hl-meta: #e64553;
+  --add-bg: #dafbe1;
+  --add-emph: #b6d6bf;
+  --add-fg: #1a7f37;
+  --bg: #ffffff;
+  --bg-raised: #e9e9ea;
+  --bg-soft: #f6f8fa;
+  --border: #d1d9e0;
+  --code-bg: #f6f8fa;
+  --del-bg: #ffebe9;
+  --del-emph: #f2c2c5;
+  --del-fg: #d1242f;
+  --err: #d1242f;
+  --fg: #1f2328;
+  --fg-faint: #b1b2b4;
+  --fg-muted: #59636e;
+  --hl-attr: #1f2328;
+  --hl-comment: #57606a;
+  --hl-keyword: #cf222e;
+  --hl-meta: #57606a;
+  --hl-number: #0550ae;
+  --hl-string: #0a3069;
+  --hl-title: #6639ba;
+  --hl-type: #cf222e;
+  --info: #0969da;
+  --link: #0969da;
+  --ok: #1a7f37;
+  --search-bg: #9a6700;
+  --search-fg: #ffffff;
+  --thinking: #59636e;
+  --tool: #8250df;
+  --user-bg: #e9e9ea;
+  --warn: #9a6700;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --accent: #83a598;
+    --accent-fg: #000000;
+    --add-bg: #3c3d28;
+    --add-emph: #505127;
+    --add-fg: #b8bb26;
+    --bg: #282828;
+    --bg-raised: #3c3836;
+    --bg-soft: #32302f;
+    --border: #504945;
+    --code-bg: #32302f;
+    --del-bg: #462d2a;
+    --del-emph: #63312b;
+    --del-fg: #fb4934;
+    --err: #fb4934;
+    --fg: #ebdbb2;
+    --fg-faint: #7c6f64;
+    --fg-muted: #a89984;
+    --hl-attr: #b8bb26;
+    --hl-comment: #928374;
+    --hl-keyword: #fe8019;
+    --hl-meta: #8ec07c;
+    --hl-number: #d3869b;
+    --hl-string: #b8bb26;
+    --hl-title: #fabd2f;
+    --hl-type: #fabd2f;
+    --info: #83a598;
+    --link: #83a598;
+    --ok: #b8bb26;
+    --search-bg: #fabd2f;
+    --search-fg: #000000;
+    --thinking: #928374;
+    --tool: #d3869b;
+    --user-bg: #3c3836;
+    --warn: #fabd2f;
+  }
 }
 
 * {
@@ -261,7 +273,8 @@ pre.code {
 
 /* Transcript search (Ctrl+F). */
 ::highlight(rho-search) {
-  background-color: rgba(250, 189, 47, 0.3);
+  background-color: var(--search-bg);
+  color: var(--search-fg);
 }
 ::highlight(rho-search-current) {
   background-color: var(--accent);
