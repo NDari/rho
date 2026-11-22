@@ -28,11 +28,30 @@ const (
 	HookToolEnd    = "tool_end"
 )
 
+// SupportedHooks are the hooks this Rho calls, and SupportedMethods the
+// methods extensions may call. They are sent in initialize, so an
+// extension can check for a feature instead of guessing from the version.
+var (
+	SupportedHooks = []string{
+		HookSessionStart, HookUserMessage, HookBeforeRequest, HookBeforeToolCall, HookAfterToolCall,
+		HookToolEnd, HookMessageEnd, HookTurnEnd, HookBeforeCompaction, HookSessionEnd,
+	}
+	SupportedMethods = []string{
+		"log", "tool/progress", "ui/confirm", "ui/select", "ui/input", "ui/notify", "ui/status",
+		"session/append_message", "session/info", "session/messages",
+		"agent/set_model", "agent/set_tools", "agent/cancel", "agent/compact",
+	}
+)
+
 // InitializeParams is sent by Rho first.
 type InitializeParams struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	RhoVersion      string `json:"rho_version"`
 	Cwd             string `json:"cwd"`
+	// Hooks and Methods are SupportedHooks and SupportedMethods. Versions
+	// of Rho before they were added send neither.
+	Hooks   []string `json:"hooks,omitempty"`
+	Methods []string `json:"methods,omitempty"`
 }
 
 // InitializeResult is the extension's reply.
@@ -110,6 +129,8 @@ type HookParams struct {
 	System   string             `json:"system,omitempty"`
 	Messages []provider.Message `json:"messages,omitempty"`
 	Aside    bool               `json:"aside,omitempty"`
+	// Tools (before_request) names the tools the request offers.
+	Tools []string `json:"tools,omitempty"`
 	// EntryID and Message (message_end) are a message just saved to the
 	// session: the user's, the model's, or a tool result.
 	EntryID string            `json:"entry_id,omitempty"`
@@ -127,6 +148,9 @@ type HookResult struct {
 	// prompt and messages, for this request only.
 	System   string             `json:"system,omitempty"`
 	Messages []provider.Message `json:"messages,omitempty"`
+	// Tools (before_request), when not empty, narrows the tools offered
+	// to those named, for this request only.
+	Tools []string `json:"tools,omitempty"`
 	// Args (before_tool_call) replaces the arguments.
 	Args json.RawMessage `json:"args,omitempty"`
 	// Result (after_tool_call) replaces the result.
@@ -194,6 +218,8 @@ type (
 		ContextTokens int     `json:"context_tokens"`
 		ContextWindow int     `json:"context_window"`
 		Cost          float64 `json:"cost"`
+		// Tools names the tools the next request offers.
+		Tools []string `json:"tools"`
 	}
 	// SessionEntry is one message of session/messages.
 	SessionEntry struct {
@@ -208,6 +234,11 @@ type (
 	// SetModelParams for agent/set_model.
 	SetModelParams struct {
 		Model string `json:"model"`
+	}
+	// SetToolsParams for agent/set_tools. A missing or null tools goes
+	// back to the configured set.
+	SetToolsParams struct {
+		Tools []string `json:"tools"`
 	}
 )
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -72,8 +73,21 @@ func TestRPCMode(t *testing.T) {
 	if err := client.Call(ctx, "initialize", struct{}{}, &init); err != nil {
 		t.Fatal(err)
 	}
-	if init.ProtocolVersion != ProtocolVersion || init.RhoVersion != "test" || init.Session.Model != "m" {
+	if init.ProtocolVersion != ProtocolVersion || init.RhoVersion != "test" || init.Session.Model != "m" || len(init.Methods) == 0 {
 		t.Errorf("initialize = %+v", init)
+	}
+	if err := client.Call(ctx, "set_tools", ToolsParams{Tools: []string{"read", "grep"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var info struct{ Tools []string }
+	if err := client.Call(ctx, "session/info", struct{}{}, &info); err != nil || strings.Join(info.Tools, ",") != "read,grep" {
+		t.Errorf("tools after set_tools = %v, %v", info.Tools, err)
+	}
+	if err := client.Call(ctx, "set_tools", ToolsParams{Tools: []string{"nope"}}, nil); err == nil {
+		t.Error("an unknown tool should be refused")
+	}
+	if err := client.Call(ctx, "set_tools", struct{}{}, nil); err != nil {
+		t.Fatal(err)
 	}
 	if err := client.Call(ctx, "prompt", TextParams{Text: "hi"}, nil); err != nil {
 		t.Fatal(err)

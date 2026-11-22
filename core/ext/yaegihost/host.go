@@ -27,6 +27,8 @@ type host struct {
 	// notes runs notification hooks in order, off the connection's read
 	// loop, so a handler may call back into Rho.
 	notes chan func()
+	mu    sync.Mutex
+	init  ext.InitializeParams // what Rho sent in initialize
 }
 
 var (
@@ -124,6 +126,11 @@ func (h *host) handle(ctx context.Context, method string, params json.RawMessage
 		if h.loadErr != nil {
 			return nil, h.loadErr
 		}
+		var p ext.InitializeParams
+		_ = json.Unmarshal(params, &p)
+		h.mu.Lock()
+		h.init = p
+		h.mu.Unlock()
 		return h.initialize(), nil
 	case "shutdown":
 		return struct{}{}, nil
@@ -266,7 +273,7 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 	reg.mu.Lock()
 	fns := append([]func(Event) Response(nil), reg.hooks[name]...)
 	reg.mu.Unlock()
-	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript, Text: p.Text, System: p.System, Aside: p.Aside, EntryID: p.EntryID}
+	ev := Event{Name: name, Tool: p.Tool, Transcript: p.Transcript, Text: p.Text, System: p.System, Aside: p.Aside, EntryID: p.EntryID, Tools: p.Tools}
 	if p.Message != nil {
 		if b, err := json.Marshal(p.Message); err == nil {
 			_ = json.Unmarshal(b, &ev.Message)
@@ -316,6 +323,9 @@ func (h *host) hook(name string, p ext.HookParams) ext.HookResult {
 		}
 		if r.System != "" {
 			out.System, ev.System = r.System, r.System
+		}
+		if len(r.Tools) > 0 {
+			out.Tools, ev.Tools = r.Tools, r.Tools
 		}
 		if r.Messages != nil {
 			var msgs []provider.Message

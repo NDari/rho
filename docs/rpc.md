@@ -32,16 +32,17 @@ rho --mode rpc --tools read --no-project-context
 
 | Method | Params | Result |
 |---|---|---|
-| `initialize` | | `{"protocol_version": 1, "rho_version", "session": {...}}`; optional |
+| `initialize` | | `{"protocol_version": 1, "rho_version", "session": {...}, "methods": [...]}`; optional. `methods` lists the requests this Rho serves |
 | `prompt` | `text` | `{}` once the turn starts; an error while a turn runs. `@file` references are attached as in the TUI |
 | `steer` | `text` | `{}`; interrupts the running turn after the current tool |
 | `follow_up` | `text` | `{}`; sent when the running turn finishes |
 | `cancel` | | `{}`; stops the running turn, if any |
 | `wait` | | when no turn runs: `{"status", "error", "answer", "model", "steps", "usage", "cost", "session"}` for the last turn, as in the last line of `rho -p --json` |
-| `session/info` | | `{"id", "file", "cwd", "model", "busy", "aside", "context_tokens", "context_window", "cost"}` |
+| `session/info` | | `{"id", "file", "cwd", "model", "busy", "aside", "context_tokens", "context_window", "cost", "tools"}` |
 | `session/messages` | | `{"messages": [{"id": "<entry id>", "message": {...}}]}`: the current branch as the model sees it |
 | `session/new` | | the new session's info; an error while a turn runs |
 | `set_model` | `model` (an id or `provider/name`) | `{}`; an error while a turn runs |
+| `set_tools` | `tools` (names), or none for the configured set | `{}`; the tools offered from the next request on (never one in `tools.disabled`) |
 | `compact` | | `{}` when done; an error while a turn runs |
 | `shutdown` | | `{}` after stopping the turn and the extensions |
 | `exit` (notification) | | Rho exits. Closing stdin does the same |

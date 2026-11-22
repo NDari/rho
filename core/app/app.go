@@ -217,6 +217,7 @@ func sessionInfo(ag *agent.Agent, cwd string) ext.SessionInfo {
 	return ext.SessionInfo{
 		ID: sess.ID(), File: sess.Path(), Cwd: cwd, Model: m.ID, Busy: ag.Busy(), Aside: cv.Aside,
 		ContextTokens: ag.EstimateContext(cv), ContextWindow: m.ContextWindow, Cost: ag.Cost(),
+		Tools: ag.ActiveTools(),
 	}
 }
 

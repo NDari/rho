@@ -39,7 +39,9 @@ type Hooks interface {
 	UserMessage(ctx context.Context, text string) (string, string)
 	// BeforeRequest may replace the system prompt and messages of one
 	// model request. The session is not changed.
-	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, aside bool) (string, []provider.Message)
+	// tools names the tools offered; returning a subset narrows them for
+	// this request (nil keeps them).
+	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string)
 	// MessageEnd and ToolEnd report a saved message and a finished tool
 	// call. They must not block.
 	MessageEnd(entryID string, m provider.Message)
@@ -111,6 +113,9 @@ type Agent struct {
 	appendFiles []string
 	maxSteps    int
 	turn        TurnStats
+	// toolOverride, when not nil, replaces the configured tool set (see
+	// SetActiveTools).
+	toolOverride []string
 
 	busy      bool
 	cancel    context.CancelFunc
@@ -583,7 +588,7 @@ func (a *Agent) loop(ctx context.Context) error {
 			}
 			return nil
 		}
-		if err := a.runTools(ctx, calls); err != nil {
+		if err := a.runTools(ctx, calls, req.Tools); err != nil {
 			return err
 		}
 		if ctx.Err() != nil {
@@ -665,6 +670,12 @@ func (a *Agent) recordPartial(resp provider.Response) {
 // conversation does not offer them.
 func (a *Agent) activeTools(aside bool) []tools.Tool {
 	ts := a.Tools()
+	a.mu.Lock()
+	override := a.toolOverride
+	a.mu.Unlock()
+	if override != nil {
+		ts = filterTools(a.toolPool(), override)
+	}
 	if !aside {
 		return ts
 	}
@@ -687,7 +698,8 @@ func (a *Agent) buildRequest(ctx context.Context) (provider.Request, provider.Pr
 		return provider.Request{}, nil, err
 	}
 	cv := a.Session().BuildContext()
-	req, err := a.requestFor(cv.Messages, cv.Aside)
+	ts := a.activeTools(cv.Aside)
+	req, err := a.requestWith(cv.Messages, cv.Aside, ts)
 	if err != nil {
 		return req, prov, err
 	}
@@ -695,8 +707,20 @@ func (a *Agent) buildRequest(ctx context.Context) (provider.Request, provider.Pr
 	if h := a.getHooks(); h != nil {
 		// Count what the hook added (or removed) toward the output limit.
 		before := requestTokens(req.System, req.Messages)
-		req.System, req.Messages = h.BeforeRequest(ctx, req.System, req.Messages, cv.Aside)
-		req.Messages = RepairToolPairs(req.Messages)
+		sent := req.System
+		sys, msgs, keep := h.BeforeRequest(ctx, req.System, req.Messages, tools.Names(ts), cv.Aside)
+		if narrowed := filterTools(ts, keep); keep != nil && len(narrowed) < len(ts) {
+			if sys == sent {
+				// Rebuild the prompt so its tool list and guidance match.
+				rebuilt, err := a.requestWith(cv.Messages, cv.Aside, narrowed)
+				if err != nil {
+					return req, prov, err
+				}
+				sys = rebuilt.System
+			}
+			req.Tools = toolSpecs(narrowed)
+		}
+		req.System, req.Messages = sys, RepairToolPairs(msgs)
 		delta := requestTokens(req.System, req.Messages) - before
 		tokens += delta
 		if delta > 0 {
@@ -733,12 +757,13 @@ func (a *Agent) providerFor(model config.Model) (provider.Provider, error) {
 // requestFor builds a request with the current system prompt and tools for
 // the given messages.
 func (a *Agent) requestFor(msgs []provider.Message, aside bool) (provider.Request, error) {
+	return a.requestWith(msgs, aside, a.activeTools(aside))
+}
+
+// requestWith builds a request offering the tools ts.
+func (a *Agent) requestWith(msgs []provider.Message, aside bool, ts []tools.Tool) (provider.Request, error) {
 	model := a.Model()
-	ts := a.activeTools(aside)
-	specs := make([]provider.ToolSpec, len(ts))
-	for i, t := range ts {
-		specs[i] = t.Spec()
-	}
+	specs := toolSpecs(ts)
 	a.mu.Lock()
 	skills := a.skills
 	a.mu.Unlock()
@@ -840,12 +865,16 @@ func (a *Agent) streamWithRetry(ctx context.Context, prov provider.Provider, req
 	}
 }
 
-func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
+func (a *Agent) runTools(ctx context.Context, calls []provider.Block, offered []provider.ToolSpec) error {
 	cv := a.Session().BuildContext()
 	ts := a.activeTools(cv.Aside)
+	// Only the tools this request offered may run.
 	byName := map[string]tools.Tool{}
 	for _, t := range ts {
-		byName[t.Spec().Name] = t
+		name := t.Spec().Name
+		if slices.ContainsFunc(offered, func(s provider.ToolSpec) bool { return s.Name == name }) {
+			byName[name] = t
+		}
 	}
 	model := a.Model()
 	bash := a.Config().Bash
@@ -912,6 +941,67 @@ func (a *Agent) runTools(ctx context.Context, calls []provider.Block) error {
 		}
 	}
 	return nil
+}
+
+// SetActiveTools replaces the tools offered from the next request on with
+// names, which may be any configured tool or any built-in tool that is not
+// disabled. nil goes back to the configured set. It is not saved.
+func (a *Agent) SetActiveTools(names []string) error {
+	if names != nil {
+		pool := tools.Names(a.toolPool())
+		for _, n := range names {
+			if !slices.Contains(pool, n) {
+				return fmt.Errorf("unknown or disabled tool %q (available: %s)", n, strings.Join(pool, ", "))
+			}
+		}
+		names = slices.Clone(names)
+	}
+	a.mu.Lock()
+	a.toolOverride = names
+	a.mu.Unlock()
+	return nil
+}
+
+// ActiveTools names the tools the next request offers.
+func (a *Agent) ActiveTools() []string {
+	return tools.Names(a.activeTools(a.Session().BuildContext().Aside))
+}
+
+// toolPool is every tool that may be offered: the configured tools, then
+// the built-in tools not taken by name, never one in tools.disabled.
+func (a *Agent) toolPool() []tools.Tool {
+	disabled := a.Config().Tools.Disabled
+	out := tools.Without(a.Tools(), disabled)
+	for _, t := range tools.Builtins() {
+		name := t.Spec().Name
+		if !slices.Contains(disabled, name) && !slices.Contains(tools.Names(out), name) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// filterTools keeps the tools of ts named in names, in ts's order (all of
+// them when names is nil).
+func filterTools(ts []tools.Tool, names []string) []tools.Tool {
+	if names == nil {
+		return ts
+	}
+	var out []tools.Tool
+	for _, t := range ts {
+		if slices.Contains(names, t.Spec().Name) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func toolSpecs(ts []tools.Tool) []provider.ToolSpec {
+	specs := make([]provider.ToolSpec, len(ts))
+	for i, t := range ts {
+		specs[i] = t.Spec()
+	}
+	return specs
 }
 
 // maxParallelTools caps how many concurrent tool calls run at once.

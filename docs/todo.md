@@ -30,13 +30,20 @@ Smaller: an optional `powershell` tool so Windows works without Git Bash (as in 
 - **Context control:** `--no-project-context`, `--system-file` and `--append-system-file`, which with `RHO_HOME` work as a profile.
 - **UI requests and `session/append_message`.** An extension can run sub-agents by calling `rho -p`.
 - **Self-extension:** the docs, examples and a `rho-extensions` skill are built in (`rho docs`, `~/.rho/docs/`).
-- **Following and driving the agent:** `message_end` and `tool_end` notifications, `session/info`, `session/messages`, `agent/set_model`, `agent/cancel` and `agent/compact`.
+- **Following and driving the agent:** `message_end` and `tool_end` notifications, `session/info`, `session/messages`, `agent/set_model`, `agent/set_tools`, `agent/cancel` and `agent/compact`; `before_request` can also narrow the tools of one request.
+- **Capabilities:** `initialize` lists the hooks and methods this Rho supports.
 
 That covers guards, retrieval, personas, input policies and custom tools.
 
 ### What is missing
 
-- Nothing major: other programs drive Rho with RPC mode (section 3).
+Compared with what pi offers extensions:
+
+- **No model calls.** An extension that needs the model (to classify, summarize or run a small sub-agent) has to start `rho -p`.
+- **Plain results.** Extension tools return text, while built-in tools get diff and code cards.
+- **Smaller:** no hooks for model changes, session switches (new, resume, fork), turn start or compaction end; no per-extension settings in `config.toml`; no provider registration; no key bindings or CLI flags.
+
+Replacing a built-in tool already works: disable it in `tools.disabled` and an extension can register a tool with its name (a sandboxed `bash`, for example).
 
 ### Changes, highest value and lowest impact first
 
@@ -48,8 +55,13 @@ That covers guards, retrieval, personas, input policies and custom tools.
 | 4 | **Done.** Following and driving the agent: notifications when a message or tool call ends, plus `session/info`, `session/messages`, `agent/set_model`, `agent/cancel` and `agent/compact` | Small | Logging, auto-continue, reviewers that post their results |
 | 5 | **Done.** Self-extension kit: embed `docs/` and `examples/` in the binary, add `rho docs [topic]`, and a built-in skill that tells the model how to write extensions | Small | "Write me an extension that..." working inside Rho |
 | 6 | **Done.** Headless results: a final JSON object (answer, usage, cost, stop reason), a non-zero exit code on failure, `--max-steps` | Small | CI and bots |
+| 7 | **Done.** Tool control at runtime: `tools` in `before_request` (narrow one request) and `agent/set_tools` (change the set for the session) | Small | Plan mode and other modes as extensions |
+| 8 | **Done.** Capabilities: the hooks and methods this Rho supports, in `initialize` | Tiny | Extensions that work across Rho versions |
+| 9 | Model calls from extensions: `model/complete` | Small to medium | Classifiers, summarizers and small sub-agents without `rho -p` |
+| 10 | Rich results: display data (diff, code, markdown) for extension tools | Medium | Cards for extension tools like the built-ins get |
+| 11 | Smaller: hooks for model changes, session switches, turn start and compaction end; per-extension settings in `config.toml`; provider registration; key bindings and CLI flags | Small each | Finer control, company gateways |
 
-On looks: extension tools could return display data (markdown, diffs) so they get rich cards in the TUI and GUI. Worthwhile, and the next extension change.
+Change 9 is next.
 
 ## 3. Rho outside the coding workflow
 
@@ -88,6 +100,6 @@ A profile is a named bundle of system prompt, allowed tools, context rules, skil
 
 ## Suggested order
 
-1. Changes 1 to 6 and RPC mode are done.
+1. Changes 1 to 8 and RPC mode are done.
 2. Parallel tool calls (done: consecutive `read`, `grep`, `find` and `ls` calls run together) and HTML export (done: `/export` and `rho export`).
 3. The Anthropic provider and the approval extension, in whichever order users need.

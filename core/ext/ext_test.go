@@ -306,7 +306,10 @@ func TestMessageHooksEndToEnd(t *testing.T) {
 		t.Errorf("user_message block = %q", reason)
 	}
 
-	sys, msgs := m.BeforeRequest(ctx, "system", []provider.Message{provider.UserText("question")}, false)
+	sys, msgs, keep := m.BeforeRequest(ctx, "system", []provider.Message{provider.UserText("question")}, []string{"read", "bash"}, false)
+	if keep != nil {
+		t.Errorf("tools changed without being asked: %v", keep)
+	}
 	if sys != "system\nBe brief." {
 		t.Errorf("system = %q", sys)
 	}
@@ -402,6 +405,10 @@ func (a *fakeAgent) SetModel(id string) error {
 	}
 	return nil
 }
+func (a *fakeAgent) SetActiveTools(names []string) error {
+	a.record("set_tools " + strings.Join(names, "+"))
+	return nil
+}
 func (a *fakeAgent) Cancel()                       { a.record("cancel") }
 func (a *fakeAgent) Compact(context.Context) error { a.record("compact"); return nil }
 func (a *fakeAgent) Info() ext.SessionInfo         { return ext.SessionInfo{ID: "s1", Model: "m1"} }
@@ -466,5 +473,68 @@ func TestNotificationsAndAgentControl(t *testing.T) {
 	defer ag.mu.Unlock()
 	if got := strings.Join(ag.calls, ","); got != "set_model big,cancel,compact,set_model missing" {
 		t.Errorf("agent calls = %s", got)
+	}
+}
+
+const toolControlExtension = `//go:build rho
+
+package main
+
+import (
+	"fmt"
+
+	"rho"
+)
+
+func main() {
+	rho.Info("plan", "0.1.0")
+	rho.On("before_request", func(e rho.Event) rho.Response {
+		return rho.Response{Tools: []string{"read"}}
+	})
+	rho.RegisterCommand("plan", "plan mode", func(args string) error {
+		rho.UI.Notify(fmt.Sprint(rho.Supports("agent/set_tools"), rho.Supports("before_request"), rho.Supports("no/such")))
+		return rho.Agent.SetTools([]string{"read", "grep"})
+	})
+}
+`
+
+func TestToolControlAndCapabilities(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "extensions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "extensions", "plan.go"), []byte(toolControlExtension), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ui := &fakeUI{}
+	ag := &fakeAgent{}
+	m := ext.NewManager(ext.Options{
+		Paths:  config.Paths{Home: home, Cwd: home, ProjectRoot: home, ProjectDir: filepath.Join(t.TempDir(), ".rho")},
+		Config: config.Defaults(),
+		UI:     ui,
+		Agent:  ag,
+		Launch: inProcess,
+	})
+	ctx := context.Background()
+	m.Start(ctx)
+	defer m.Stop()
+
+	_, _, keep := m.BeforeRequest(ctx, "s", []provider.Message{provider.UserText("q")}, []string{"read", "write", "bash"}, false)
+	if strings.Join(keep, ",") != "read" {
+		t.Errorf("narrowed tools = %v", keep)
+	}
+	if err := m.RunCommand(ctx, "plan", ""); err != nil {
+		t.Fatal(err)
+	}
+	ag.mu.Lock()
+	calls := strings.Join(ag.calls, ",")
+	ag.mu.Unlock()
+	if calls != "set_tools read+grep" {
+		t.Errorf("agent calls = %s", calls)
+	}
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	if strings.Join(ui.notified, "|") != "true true false" {
+		t.Errorf("Supports answers = %q", ui.notified)
 	}
 }

@@ -80,7 +80,7 @@ The `rho` package:
 |---|---|
 | `RegisterTool(Tool)` | add a tool; `Tool.ReadOnly` tools are also offered in side conversations. Calls to extension tools run one at a time, never in parallel. A tool may not use the name of a built-in tool that is offered, except a search tool (`grep`, `find`, `ls`) added only because `bash` is off, which it replaces. `tools.disabled` can turn it off |
 | `RegisterCommand(name, description, func(args string) error)` | add a slash command |
-| `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError` (tool hooks, `tool_end`), `Transcript`, `Text` (`user_message`), `System`, `Messages` and `Aside` (`before_request`), `EntryID` and `Message` (`message_end`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System` and `Messages` |
+| `On(event, func(Event) Response)` | handle a hook (see [the hooks](#rho-to-extension)). `Event` has `Tool`, `Args`, `Result`, `IsError` (tool hooks, `tool_end`), `Transcript`, `Text` (`user_message`), `System`, `Messages`, `Tools` and `Aside` (`before_request`), `EntryID` and `Message` (`message_end`); `Response` has the matching `Block`, `Args`, `Result`, `Summary`, `Text`, `System`, `Messages` and `Tools` |
 | `Info(name, version)` | set the extension name and version |
 | `UI.Confirm(title, message) bool` | ask yes/no |
 | `UI.Select(title, options) (string, bool)` | pick one option |
@@ -92,6 +92,8 @@ The `rho` package:
 | `Session.Info() (SessionInfo, error)` | the session id, file, working directory, model, whether a turn runs, context size and cost |
 | `Session.Messages() ([]map[string]any, error)` | the current branch, each `{"id": ..., "message": ...}` |
 | `Agent.SetModel(model) error`, `Agent.Cancel() error`, `Agent.Compact() error` | switch models, stop the turn, compact now |
+| `Agent.SetTools(names) error` | change the tools offered (nil: the configured set) |
+| `Supports(name) bool` | whether this Rho has a hook or method, such as `"before_request"` or `"agent/set_tools"` (answers once Rho has connected: in hooks, tools and commands, not in `main`) |
 
 Interpreted code can use the Go standard library. Anything written to stdout is redirected to stderr (the log), so `fmt.Println` is safe.
 
@@ -119,8 +121,11 @@ Messages are JSON-RPC 2.0 objects, one per line (newline-delimited). Both sides 
 Rho sends `initialize`:
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":1,"rho_version":"0.1.0","cwd":"/path/to/project"}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":1,"rho_version":"0.1.0","cwd":"/path/to/project",
+  "hooks":["session_start","user_message","before_request",...],"methods":["log","ui/confirm","agent/set_tools",...]}}
 ```
+
+`hooks` and `methods` list the hooks this Rho can call and the methods it serves, so an extension can check for a feature instead of guessing from the version (older versions of Rho send neither). Go extensions use `rho.Supports(name)`.
 
 The extension replies with its registrations:
 
@@ -146,7 +151,7 @@ If `protocol_version` differs from Rho's, the extension is refused with a clear 
 | `command/run` | `name`, `args` (string) | `{}` |
 | `hook/session_start` | | `{}` |
 | `hook/user_message` | `text` | `{"block": "reason"}` to stop the message, `{"text": "..."}` to replace its text, or `{}` |
-| `hook/before_request` | `system`, `messages`, `aside` | `{"system": "..."}` and/or `{"messages": [...]}` to replace them for this request only, or `{}` |
+| `hook/before_request` | `system`, `messages`, `tools` (names offered), `aside` | `{"system": "..."}`, `{"messages": [...]}` and/or `{"tools": [...]}` to change them for this request only, or `{}`. `tools` can only narrow the set |
 | `hook/before_tool_call` | `tool`, `args` | `{"block": "reason"}` to stop the call, `{"args": {...}}` to replace arguments, or `{}` |
 | `hook/after_tool_call` | `tool`, `args`, `result` | `{"result": {...}}` to replace the result, or `{}` |
 | `hook/turn_end` | | `{}` |
@@ -164,6 +169,8 @@ Content blocks may also be images: `{"type": "image", "mime": "image/png", "data
 
 With several extensions, hooks run in turn, each seeing the previous one's changes. A hook that fails or times out is skipped.
 
+**Changing the tools.** `agent/set_tools` changes the tools for the rest of the session, which is how a "plan mode" extension works: a `/plan` command sets `["read", "grep", "find", "ls"]`, and `/act` sends no `tools` to go back. `tools` in `before_request` narrows one request instead. Either way the system prompt's tool list is rebuilt to match (unless `before_request` also replaced the system prompt), and a call to a tool that was not offered is refused. `session/info` reports the tools currently offered.
+
 **Following the conversation.** `message_end` and `tool_end` are notifications: Rho sends them in order without waiting, so an extension can log, count or react without slowing the agent, and a reply is ignored. Each extension has a queue of 256; if it falls that far behind, notifications are dropped and the log says so. In an executable extension, do not call Rho (for example `session/messages`) on the thread that reads stdin while handling a notification, or the reply can never be read; Go extensions need not care, since Rho runs their notification handlers separately. To act on the agent, an extension can read `session/info` and `session/messages`, and call `agent/set_model`, `agent/cancel` and `agent/compact`.
 
 ### Extension to Rho
@@ -180,6 +187,7 @@ With several extensions, hooks run in turn, each seeing the previous one's chang
 | `session/info` | | `{"id", "file", "cwd", "model", "busy", "aside", "context_tokens", "context_window", "cost"}` |
 | `session/messages` | | `{"messages": [{"id": "<entry id>", "message": {...}}]}`: the current branch as the model sees it (after compaction, the summary first) |
 | `agent/set_model` | `model` (an id or `provider/name`) | `{}`; an error while a turn runs or for an unknown model |
+| `agent/set_tools` | `tools` (names), or none to go back to the configured set | `{}`; the tools offered from the next request on, until changed or Rho exits. Any configured tool or built-in tool may be named, but never one in `tools.disabled`. Rho shows a notice with the new set |
 | `agent/cancel` | | `{}`; stops the current turn, if any |
 | `agent/compact` | | `{}` when done; an error while a turn runs |
 | `log` (notification) | `level`, `message` | |

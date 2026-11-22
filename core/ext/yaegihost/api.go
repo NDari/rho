@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/traefik/yaegi/interp"
@@ -83,6 +84,8 @@ type Event struct {
 	// IsError.
 	EntryID string
 	Message map[string]any
+	// Tools names the tools the request offers (before_request).
+	Tools []string
 }
 
 // Response is returned by hook handlers. The zero value changes nothing.
@@ -104,6 +107,9 @@ type Response struct {
 	// messages (before_request), for this request only.
 	System   string
 	Messages []map[string]any
+	// Tools narrows the tools offered to those named (before_request), for
+	// this request only.
+	Tools []string
 }
 
 type command struct {
@@ -228,6 +234,31 @@ func (AgentAPI) SetModel(model string) error {
 	return h.conn.Call(context.Background(), "agent/set_model", ext.SetModelParams{Model: model}, nil)
 }
 
+// SetTools changes the tools offered from the next request on to names
+// (any configured tool, or a built-in tool that is not disabled); nil goes
+// back to the configured set. It lasts until changed or Rho exits.
+func (AgentAPI) SetTools(names []string) error {
+	h := current()
+	if h == nil {
+		return fmt.Errorf("not connected")
+	}
+	return h.conn.Call(context.Background(), "agent/set_tools", ext.SetToolsParams{Tools: names}, nil)
+}
+
+// Supports reports whether the Rho this extension runs under supports a
+// hook or method (such as "before_request" or "agent/set_tools"). It
+// answers once Rho has connected: in hooks, tools and commands, not in
+// main.
+func Supports(name string) bool {
+	h := current()
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Contains(h.init.Hooks, name) || slices.Contains(h.init.Methods, name)
+}
+
 // Cancel stops the current turn, if any.
 func (AgentAPI) Cancel() error {
 	h := current()
@@ -317,5 +348,6 @@ var Symbols = interp.Exports{
 		"Session":         reflect.ValueOf(&Session).Elem(),
 		"AgentAPI":        reflect.ValueOf((*AgentAPI)(nil)),
 		"Agent":           reflect.ValueOf(&Agent).Elem(),
+		"Supports":        reflect.ValueOf(Supports),
 	},
 }

@@ -20,6 +20,12 @@ import (
 // ProtocolVersion is the RPC mode protocol version.
 const ProtocolVersion = 1
 
+// Methods are the requests RPC mode serves, sent in initialize.
+var Methods = []string{
+	"initialize", "prompt", "steer", "follow_up", "cancel", "wait",
+	"session/info", "session/messages", "session/new", "set_model", "set_tools", "compact", "shutdown", "exit",
+}
+
 // Params and results of the client's requests.
 type (
 	// InitializeResult is the reply to initialize.
@@ -27,6 +33,8 @@ type (
 		ProtocolVersion int             `json:"protocol_version"`
 		RhoVersion      string          `json:"rho_version"`
 		Session         ext.SessionInfo `json:"session"`
+		// Methods are the requests this Rho serves.
+		Methods []string `json:"methods"`
 	}
 	// TextParams carries a message for prompt, steer and follow_up.
 	TextParams struct {
@@ -35,6 +43,11 @@ type (
 	// ModelParams for set_model.
 	ModelParams struct {
 		Model string `json:"model"`
+	}
+	// ToolsParams for set_tools; a missing or null tools goes back to
+	// the configured set.
+	ToolsParams struct {
+		Tools []string `json:"tools"`
 	}
 	// MessagesResult is the reply to session/messages.
 	MessagesResult struct {
@@ -114,7 +127,7 @@ func (s *server) handle(ctx context.Context, method string, params json.RawMessa
 	}
 	switch method {
 	case "initialize":
-		return InitializeResult{ProtocolVersion: ProtocolVersion, RhoVersion: a.Version, Session: a.SessionInfo()}, nil
+		return InitializeResult{ProtocolVersion: ProtocolVersion, RhoVersion: a.Version, Session: a.SessionInfo(), Methods: Methods}, nil
 	case "prompt":
 		t, err := text()
 		if err != nil {
@@ -154,6 +167,14 @@ func (s *server) handle(ctx context.Context, method string, params json.RawMessa
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "model is required"}
 		}
 		return struct{}{}, a.Agent.SetModel(p.Model)
+	case "set_tools":
+		var p ToolsParams
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "tools must be a list of names"}
+			}
+		}
+		return struct{}{}, a.Agent.SetActiveTools(p.Tools)
 	case "compact":
 		return struct{}{}, a.Agent.Compact(ctx)
 	case "shutdown":

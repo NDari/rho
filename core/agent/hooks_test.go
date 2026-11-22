@@ -21,6 +21,7 @@ type testHooks struct {
 	before  func(name string, args json.RawMessage) (json.RawMessage, string)
 	message func(id string, m provider.Message)
 	toolEnd func(name string, args json.RawMessage, res tools.Result)
+	tools   func(offered []string) []string
 }
 
 func (h testHooks) BeforeToolCall(_ context.Context, name string, args json.RawMessage) (json.RawMessage, string) {
@@ -52,11 +53,16 @@ func (h testHooks) UserMessage(_ context.Context, text string) (string, string) 
 	}
 	return h.user(text)
 }
-func (h testHooks) BeforeRequest(_ context.Context, system string, msgs []provider.Message, _ bool) (string, []provider.Message) {
-	if h.request == nil {
-		return system, msgs
+func (h testHooks) BeforeRequest(_ context.Context, system string, msgs []provider.Message, ts []string, _ bool) (string, []provider.Message, []string) {
+	var keep []string
+	if h.tools != nil {
+		keep = h.tools(ts)
 	}
-	return h.request(system, msgs)
+	if h.request == nil {
+		return system, msgs, keep
+	}
+	s, m := h.request(system, msgs)
+	return s, m, keep
 }
 
 func TestUserMessageHookRewritesAndKeepsAttachments(t *testing.T) {

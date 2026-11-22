@@ -154,6 +154,9 @@ type AgentControl interface {
 	FollowUp(string) error
 	// SetModel switches models; it fails while a turn runs.
 	SetModel(id string) error
+	// SetActiveTools changes the tools offered from the next request on;
+	// nil goes back to the configured set.
+	SetActiveTools(names []string) error
 	// Cancel stops the current turn, if any.
 	Cancel()
 	// Compact compacts the conversation now; it fails while a turn runs.
@@ -412,7 +415,7 @@ func (m *Manager) startOne(ctx context.Context, e *Extension) {
 	ictx, cancel := context.WithTimeout(ctx, m.timeout())
 	defer cancel()
 	var res InitializeResult
-	err = e.conn.Call(ictx, "initialize", InitializeParams{ProtocolVersion: ProtocolVersion, RhoVersion: m.o.Version, Cwd: m.o.Paths.Cwd}, &res)
+	err = e.conn.Call(ictx, "initialize", InitializeParams{ProtocolVersion: ProtocolVersion, RhoVersion: m.o.Version, Cwd: m.o.Paths.Cwd, Hooks: SupportedHooks, Methods: SupportedMethods}, &res)
 	if err != nil {
 		if logs := e.lastLogs(5); len(logs) > 0 {
 			err = fmt.Errorf("%w: %s", err, strings.Join(logs, " | "))
@@ -665,14 +668,18 @@ func (m *Manager) handler(e *Extension) rpc.Handler {
 			}
 			v, err := ui.Input(ctx, p.Title, p.Placeholder)
 			return ValueResult{Value: v, Cancelled: err != nil}, nil
-		case "session/info", "session/messages", "agent/set_model", "agent/cancel", "agent/compact":
+		case "session/info", "session/messages", "agent/set_model", "agent/set_tools", "agent/cancel", "agent/compact":
 			m.mu.Lock()
 			ag := m.o.Agent
 			m.mu.Unlock()
 			if ag == nil {
 				return nil, errors.New("no agent")
 			}
-			return agentMethod(ctx, ag, method, params)
+			res, err := agentMethod(ctx, ag, method, params)
+			if err == nil && method == "agent/set_tools" {
+				m.o.Sink(events.Notice{Level: "info", Text: fmt.Sprintf("extension %s set the tools: %s", e.Name, strings.Join(ag.Info().Tools, ", "))})
+			}
+			return res, err
 		case "session/append_message":
 			var p AppendMessageParams
 			if err := json.Unmarshal(params, &p); err != nil || p.Text == "" {
@@ -710,6 +717,14 @@ func agentMethod(ctx context.Context, ag AgentControl, method string, params jso
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "model is required"}
 		}
 		return struct{}{}, ag.SetModel(p.Model)
+	case "agent/set_tools":
+		var p SetToolsParams
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "tools must be a list of names"}
+			}
+		}
+		return struct{}{}, ag.SetActiveTools(p.Tools)
 	case "agent/cancel":
 		ag.Cancel()
 		return struct{}{}, nil
@@ -903,14 +918,15 @@ func (m *Manager) UserMessage(ctx context.Context, text string) (string, string)
 
 // BeforeRequest implements agent.Hooks: each extension in turn may replace
 // the system prompt and messages of one request.
-func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provider.Message, aside bool) (string, []provider.Message) {
+func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string) {
+	var keep []string // nil: unchanged
 	for _, e := range m.running() {
 		if !e.hasHook(HookBeforeRequest) {
 			continue
 		}
 		hctx, cancel := context.WithTimeout(ctx, 10*m.timeout())
 		var res HookResult
-		err := e.conn.Call(hctx, "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Aside: aside}, &res)
+		err := e.conn.Call(hctx, "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Tools: tools, Aside: aside}, &res)
 		cancel()
 		if err != nil {
 			e.log("before_request: " + err.Error())
@@ -922,8 +938,18 @@ func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provi
 		if len(res.Messages) > 0 {
 			msgs = res.Messages
 		}
+		if len(res.Tools) > 0 {
+			// Narrow only: names not offered are ignored.
+			narrowed := []string{}
+			for _, t := range tools {
+				if slices.Contains(res.Tools, t) {
+					narrowed = append(narrowed, t)
+				}
+			}
+			tools, keep = narrowed, narrowed
+		}
 	}
-	return system, msgs
+	return system, msgs, keep
 }
 
 // MessageEnd implements agent.Hooks: it notifies extensions of a saved
