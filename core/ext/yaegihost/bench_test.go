@@ -58,7 +58,7 @@ type workload struct {
 	yaegi  func(get func(string) reflect.Value) func()
 }
 
-func workloads(tb testing.TB) []workload {
+func workloads() []workload {
 	reply := benchwork.Reply()
 	small := benchwork.Transcript(1000)
 	large := benchwork.Transcript(100_000)
@@ -106,7 +106,7 @@ func workloads(tb testing.TB) []workload {
 
 func BenchmarkWorkloads(b *testing.B) {
 	get := interpreted(b)
-	for _, w := range workloads(b) {
+	for _, w := range workloads() {
 		run := w.yaegi(get)
 		b.Run(w.name+"/native", func(b *testing.B) {
 			b.SetBytes(int64(w.bytes))

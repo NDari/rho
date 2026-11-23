@@ -71,7 +71,7 @@ func buildBinaries(b *testing.B) (string, string) {
 		rhoBin, benchExtEx = filepath.Join(dir, "rho"), filepath.Join(dir, "benchext")
 		for out, pkg := range map[string]string{rhoBin: "../../cmd/rho", benchExtEx: "./testdata/benchext"} {
 			if o, err := exec.Command("go", "build", "-o", out, pkg).CombinedOutput(); err != nil {
-				buildErr = fmt.Errorf("go build %s: %v\n%s", pkg, err, o)
+				buildErr = fmt.Errorf("go build %s: %w\n%s", pkg, err, o)
 				return
 			}
 		}

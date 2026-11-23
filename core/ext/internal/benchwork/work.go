@@ -121,7 +121,7 @@ func EstimateTokensRunes(msgs []map[string]any) int {
 	tokens := 0
 	texts(msgs, func(t string) {
 		inWord := false
-		for _, r := range []rune(t) {
+		for _, r := range []rune(t) { //nolint:staticcheck // on purpose: ranging over the string is quadratic under Yaegi
 			switch {
 			case unicode.IsLetter(r) || unicode.IsDigit(r):
 				if !inWord {

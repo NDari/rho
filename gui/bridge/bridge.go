@@ -863,9 +863,17 @@ func (b *Bridge) ask(ctx context.Context, r UIRequest) (reply, error) {
 	}
 }
 
-// closeReason says why ctx ended, for a prompt that was closed.
+// closeReason says why ctx ended, for a prompt that was closed. A cancel
+// that records who did it (events.Cancelled, which also matches
+// context.Canceled) and any other cause give their text; a bare cancel
+// does not say why.
 func closeReason(ctx context.Context) string {
-	if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
+	cause := context.Cause(ctx)
+	var c *events.Cancelled
+	switch {
+	case errors.As(cause, &c):
+		return c.Error()
+	case cause != nil && !errors.Is(cause, context.Canceled):
 		return cause.Error()
 	}
 	return "no longer needed"
