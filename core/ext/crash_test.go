@@ -22,7 +22,7 @@ import (
 // buildCrashExt compiles testdata/crashext into a temp dir.
 func buildCrashExt(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "crashext")
+	bin := filepath.Join(t.TempDir(), "crashext.exe")
 	if out, err := exec.Command("go", "build", "-o", bin, "./testdata/crashext").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}

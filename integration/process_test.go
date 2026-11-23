@@ -31,7 +31,7 @@ func binaries(t *testing.T) (rho, crashExt string) {
 		if buildErr != nil {
 			return
 		}
-		for out, pkg := range map[string]string{"rho": "../cmd/rho", "crashext": "../core/ext/testdata/crashext"} {
+		for out, pkg := range map[string]string{"rho.exe": "../cmd/rho", "crashext.exe": "../core/ext/testdata/crashext"} {
 			if o, err := exec.Command("go", "build", "-o", filepath.Join(binDir, out), pkg).CombinedOutput(); err != nil {
 				buildErr = fmt.Errorf("go build %s: %w\n%s", pkg, err, o)
 				return
@@ -41,7 +41,7 @@ func binaries(t *testing.T) (rho, crashExt string) {
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	return filepath.Join(binDir, "rho"), filepath.Join(binDir, "crashext")
+	return filepath.Join(binDir, "rho.exe"), filepath.Join(binDir, "crashext.exe")
 }
 
 func TestMain(m *testing.M) {
