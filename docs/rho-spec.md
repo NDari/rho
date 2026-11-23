@@ -297,6 +297,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Completion for `/commands` and `@file` paths (inserts file reference/contents).
 - Mouse: the wheel scrolls; dragging selects transcript text and copies it on release (OSC 52, to both the clipboard and the primary selection). On by default; `tui.mouse_select = false` leaves selection to the terminal. Shift+drag always uses the terminal's selection.
 - Keys: Enter send · Shift+Enter / Alt+Enter / Ctrl+J newline · Esc cancel · Ctrl+C cancel/clear/quit (twice) · Ctrl+G edit the input in `$VISUAL` or `$EDITOR` (else `vi`, or `notepad` on Windows; editors with arguments such as `code --wait` work; the text comes back unsent, and an empty file or a failed editor leaves the input as it was) · while busy: Enter steers, Alt+Enter queues a follow-up.
+- Closing the terminal (SIGHUP) or SIGTERM quits as `/quit` does: the turn and any running command are cancelled and the session is saved.
 
 ### Commands
 `/model` · `/new` · `/resume` · `/rewind` · `/fork` · `/tree` · `/aside` · `/back` · `/compact` · `/context` · `/label` · `/copy` · `/export` · `/extensions` · `/reload` · `/theme` · `/config` · `/keybindings` · `/help` · `/quit`, plus prompt templates and extension commands.
@@ -310,6 +311,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - `rho -p "prompt"`: run one turn (with tools), print the final assistant text.
 - `rho -p --json "prompt"`: stream core events as JSONL to stdout. The last line is a `result` object: `status` (`done`, `error`, `cancelled`, `blocked` when an extension blocked the prompt, or `max_steps`), `error`, `answer` (the last assistant text), `model`, `steps` (model responses), `usage` and `cost` summed over every request of the turn (compaction included), and the `session` file.
 - Exit status: 0 when the turn finished, 1 otherwise (error, cancel, blocked prompt, step limit), with the reason on stderr.
+- Ctrl-C (SIGINT), SIGTERM (sent by service managers, and on Windows when the console window is closed) and SIGHUP (a Unix terminal was closed) cancel the turn: the result is `cancelled` and what streamed stays in the session. In RPC mode they shut Rho down as `shutdown` does.
 - `--max-steps N` stops the turn with an error after N model responses, so a stuck run cannot loop forever. A final answer within the limit is a success.
 - Works with `-c` / `-r`, `--model`, `--tools`, `--no-project-context`, `--system-file` and `--append-system-file`.
 - Used heavily for automated tests.

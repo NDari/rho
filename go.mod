@@ -12,6 +12,7 @@ require (
 	github.com/aymanbagabas/go-udiff v0.4.2
 	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/charmbracelet/x/ansi v0.11.10
+	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.7.1
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/openai/openai-go/v3 v3.105.0

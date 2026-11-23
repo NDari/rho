@@ -68,6 +68,7 @@ func (e *env) start(t *testing.T, args ...string) *proc {
 	cmd.Env = append(os.Environ(), "RHO_HOME="+e.home, "RHO_NO_UPDATE_CHECK=1")
 	p := &proc{cmd: cmd, lines: make(chan map[string]any, 1024), done: make(chan struct{})}
 	cmd.Stderr = &p.stderr
+	ownProcessGroup(cmd)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -140,28 +141,33 @@ func typed(typ string) func(map[string]any) bool {
 	return func(l map[string]any) bool { return l["type"] == typ }
 }
 
-// TestInterruptMidStream sends Ctrl-C (SIGINT) to rho while the model
-// streams: rho stops, says so, exits non-zero, and keeps what streamed.
+// TestInterruptMidStream stops rho while the model streams, with Ctrl-C
+// and (where a test can send them) SIGTERM and SIGHUP: rho stops, says so, exits
+// non-zero, and keeps what streamed.
 func TestInterruptMidStream(t *testing.T) {
-	body := replay.Recording("llamacpp_chat_text.sse")
-	e := newEnv(t, replay.Reply{Body: body, CutAt: len(body) / 2, Stall: true})
-	p := e.start(t, "What is 17*23?")
-	p.waitFor(t, "streamed thinking", typed("thinking_delta"))
-	interrupt(t, p.cmd.Process)
-	rest, code := p.finish(t)
-	if code == 0 {
-		t.Error("exit code 0 after an interrupt")
-	}
-	res := rest[len(rest)-1]
-	if res["type"] != "result" || res["status"] != "cancelled" {
-		t.Fatalf("last line = %v", res)
-	}
-	s := reopen(t, res["session"].(string))
-	if got := roles(s); got != "user assistant[cancelled]" {
-		t.Errorf("session = %s", got)
-	}
-	if cv := s.BuildContext(); !strings.Contains(cv.Messages[1].Content[0].Text, "17") {
-		t.Errorf("partial thinking not kept: %+v", cv.Messages[1].Content)
+	for _, sig := range stopSignals {
+		t.Run(sig.String(), func(t *testing.T) {
+			body := replay.Recording("llamacpp_chat_text.sse")
+			e := newEnv(t, replay.Reply{Body: body, CutAt: len(body) / 2, Stall: true})
+			p := e.start(t, "What is 17*23?")
+			p.waitFor(t, "streamed thinking", typed("thinking_delta"))
+			sendSignal(t, p.cmd.Process, sig)
+			rest, code := p.finish(t)
+			if code == 0 {
+				t.Error("exit code 0 after an interrupt")
+			}
+			res := rest[len(rest)-1]
+			if res["type"] != "result" || res["status"] != "cancelled" {
+				t.Fatalf("last line = %v", res)
+			}
+			s := reopen(t, res["session"].(string))
+			if got := roles(s); got != "user assistant[cancelled]" {
+				t.Errorf("session = %s", got)
+			}
+			if cv := s.BuildContext(); !strings.Contains(cv.Messages[1].Content[0].Text, "17") {
+				t.Errorf("partial thinking not kept: %+v", cv.Messages[1].Content)
+			}
+		})
 	}
 }
 

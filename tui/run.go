@@ -2,6 +2,9 @@ package tui
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -86,7 +89,21 @@ func Run(a *app.App, o Options) error {
 		// Extensions start once the UI runs, so approval prompts can show.
 		go a.StartExtensions(context.Background(), m.NewUI())
 	}
+	// A closed terminal sends SIGHUP, which would otherwise kill rho before
+	// the cleanup below and leave a running command's process group behind.
+	done := make(chan struct{})
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		select {
+		case <-hup:
+			p.Quit()
+		case <-done:
+		}
+	}()
 	_, err := p.Run()
+	signal.Stop(hup)
+	close(done)
 	a.Agent.CancelBy(events.ByShutdown)
 	a.Agent.Wait()
 	a.StopExtensions()

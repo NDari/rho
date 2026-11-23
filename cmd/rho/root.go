@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,12 @@ import (
 	"github.com/NDari/rho/headless"
 	"github.com/NDari/rho/rpcmode"
 )
+
+// stopSignals cancel the turn in print and RPC mode: Ctrl-C; SIGTERM,
+// which a service manager sends and which Windows sends when the console
+// window is closed; and SIGHUP, sent when a Unix terminal is closed. The
+// TUI gets SIGINT and SIGTERM from Bubble Tea.
+var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
@@ -107,7 +114,7 @@ func run(cmd *cobra.Command, f rootFlags, args []string) error {
 }
 
 func runRPC(cmd *cobra.Command, f rootFlags) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
 	return rpcmode.Run(ctx, app.Options{
 		Model:             f.model,
@@ -161,7 +168,7 @@ func runPrint(cmd *cobra.Command, f rootFlags, text string) error {
 	for _, w := range a.Warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
 	defer a.Agent.Session().Close()
 	a.StartExtensions(ctx, headless.UI{ErrOut: cmd.ErrOrStderr()})
