@@ -147,9 +147,7 @@ func TestInterruptMidStream(t *testing.T) {
 	e := newEnv(t, replay.Reply{Body: body, CutAt: len(body) / 2, Stall: true})
 	p := e.start(t, "What is 17*23?")
 	p.waitFor(t, "streamed thinking", typed("thinking_delta"))
-	if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
-		t.Fatal(err)
-	}
+	interrupt(t, p.cmd.Process)
 	rest, code := p.finish(t)
 	if code == 0 {
 		t.Error("exit code 0 after an interrupt")
