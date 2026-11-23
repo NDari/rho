@@ -18,7 +18,7 @@ rho --mode rpc --tools read --no-project-context
 <- {"jsonrpc":"2.0","method":"event","params":{"type":"turn_start"}}
 <- {"jsonrpc":"2.0","method":"event","params":{"type":"text_delta","text":"It starts"}}
    ...
-<- {"jsonrpc":"2.0","method":"event","params":{"type":"turn_end","reason":"done"}}
+<- {"jsonrpc":"2.0","method":"event","params":{"type":"turn_end","reason":"done","duration_ns":8215034711}}
 -> {"jsonrpc":"2.0","id":3,"method":"wait"}
 <- {"jsonrpc":"2.0","id":3,"result":{"status":"done","answer":"It starts ...","steps":2,...}}
 -> {"jsonrpc":"2.0","id":4,"method":"shutdown"}
@@ -37,7 +37,7 @@ rho --mode rpc --tools read --no-project-context
 | `steer` | `text` | `{}`; interrupts the running turn after the current tool |
 | `follow_up` | `text` | `{}`; sent when the running turn finishes |
 | `cancel` | | `{}`; stops the running turn, if any |
-| `wait` | | when no turn runs: `{"status", "error", "answer", "model", "steps", "usage", "cost", "session"}` for the last turn, as in the last line of `rho -p --json` |
+| `wait` | | when no turn runs: `{"status", "error", "answer", "model", "steps", "usage", "cost", "session", "duration_ns"}` for the last turn, as in the last line of `rho -p --json` |
 | `session/info` | | `{"id", "file", "cwd", "model", "busy", "aside", "context_tokens", "context_window", "cost", "tools"}` |
 | `session/messages` | | `{"messages": [{"id": "<entry id>", "message": {...}}]}`: the current branch as the model sees it |
 | `session/new` | | the new session's info; an error while a turn runs |
@@ -69,7 +69,7 @@ When Rho stops waiting for the answer to a `ui/` request, it sends `ui/closed` w
 - Ignore a `ui/closed` whose `id` you do not know: your answer and the close can cross, so a prompt you just answered may still be closed.
 - When the connection closes (Rho shut down or exited), close all open prompts; a `ui/closed` may not be sent then.
 
-Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`; `cancelled_by` says who cancelled: `the user`, `the RPC client`, `extension NAME` or `Rho (shutting down)`; `unanswered` holds the prompt text when the turn ended before anything was saved after it, in which case the conversation was moved back to before the prompt and the next `prompt` replaces it), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
+Event types are those of the core event stream: `turn_start`, `turn_end` (`reason`: `done`, `cancelled`, `blocked` or `error`; `cancelled_by` says who cancelled: `the user`, `the RPC client`, `extension NAME` or `Rho (shutting down)`; `duration_ns` is how long the turn took; `unanswered` holds the prompt text when the turn ended before anything was saved after it, in which case the conversation was moved back to before the prompt and the next `prompt` replaces it), `message_start`, `text_delta`, `thinking_delta`, `tool_call_delta`, `message_end` (the saved message), `tool_start`, `tool_output`, `tool_end`, `usage`, `notice`, `error`, `retry`, `compaction_start`, `compaction_end`, `model_changed`, `session_changed`, `status` and `queue`. New types may be added; ignore the ones you do not know.
 
 ## Embedding in Go
 

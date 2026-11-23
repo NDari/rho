@@ -88,6 +88,8 @@ type TurnStats struct {
 	// included. Cost is 0 when the model has no pricing.
 	Usage provider.Usage
 	Cost  float64
+	// Duration is how long the turn took, set when it ends.
+	Duration time.Duration
 }
 
 // ErrBlocked ends a turn whose message an extension blocked.
@@ -484,6 +486,7 @@ func (a *Agent) popFollowUps() []string {
 func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 	var err error
 	promptID := "" // the saved prompt's entry
+	start := time.Now()
 	defer func() {
 		reason := "done"
 		switch {
@@ -505,9 +508,11 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		if h := a.getHooks(); h != nil {
 			h.TurnEnd(context.Background())
 		}
+		took := time.Since(start)
 		a.mu.Lock()
 		a.busy = false
 		a.cancel = nil
+		a.turn.Duration = took
 		if ctx.Err() == nil {
 			a.lastErr = err
 		} else {
@@ -515,7 +520,7 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		}
 		done := a.done
 		a.mu.Unlock()
-		a.emit(events.TurnEnd{Reason: reason, Unanswered: unanswered, CancelledBy: cancelledBy})
+		a.emit(events.TurnEnd{Reason: reason, Unanswered: unanswered, CancelledBy: cancelledBy, Duration: took})
 		close(done)
 	}()
 	a.emit(events.TurnStart{})

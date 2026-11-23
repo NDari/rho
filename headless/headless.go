@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/app"
@@ -70,6 +71,8 @@ type Result struct {
 	Usage   provider.Usage `json:"usage"`
 	Cost    float64        `json:"cost"`
 	Session string         `json:"session,omitempty"`
+	// Duration is how long the turn took.
+	Duration time.Duration `json:"duration_ns"`
 }
 
 // Type implements events.Event.
@@ -98,6 +101,7 @@ func TurnResult(a *app.App, err error) Result {
 	r := Result{
 		Status: status(err), Answer: lastAssistantText(a), Model: a.Agent.Model().ID,
 		Steps: stats.Steps, Usage: stats.Usage, Cost: stats.Cost, Session: a.Agent.Session().Path(),
+		Duration: stats.Duration,
 	}
 	if err != nil {
 		r.Error = err.Error()

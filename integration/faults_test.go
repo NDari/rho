@@ -21,6 +21,10 @@ func TestRecordedToolTurn(t *testing.T) {
 	if !strings.Contains(r.result["answer"].(string), "391") || r.result["steps"] != float64(2) {
 		t.Errorf("result = %v", r.result)
 	}
+	// The turn's time is in turn_end and the result, and they agree.
+	if turnEnds := r.ofType("turn_end"); len(turnEnds) != 1 || r.result["duration_ns"].(float64) <= 0 || turnEnds[0]["duration_ns"] != r.result["duration_ns"] {
+		t.Errorf("turn_end = %v, result duration_ns = %v", turnEnds, r.result["duration_ns"])
+	}
 	ends := r.ofType("tool_end")
 	if len(ends) != 1 || toolFailed(ends[0]) {
 		t.Fatalf("tool_end = %v", ends)

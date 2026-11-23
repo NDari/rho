@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/events"
@@ -31,11 +32,11 @@ func TestStatus(t *testing.T) {
 }
 
 func TestResultJSON(t *testing.T) {
-	data, err := events.Marshal(Result{Status: "done", Answer: "ok", Model: "m", Steps: 2, Usage: provider.Usage{InputTokens: 5, OutputTokens: 1}})
+	data, err := events.Marshal(Result{Status: "done", Answer: "ok", Model: "m", Steps: 2, Usage: provider.Usage{InputTokens: 5, OutputTokens: 1}, Duration: 2500 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"type":"result","status":"done","answer":"ok","model":"m","steps":2,"usage":{"input_tokens":5,"output_tokens":1},"cost":0}`
+	const want = `{"type":"result","status":"done","answer":"ok","model":"m","steps":2,"usage":{"input_tokens":5,"output_tokens":1},"cost":0,"duration_ns":2500000000}`
 	if got := string(data); got != want || strings.Contains(got, "\n") {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}

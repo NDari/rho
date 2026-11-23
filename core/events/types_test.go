@@ -141,7 +141,7 @@ func TestMarshalFieldNames(t *testing.T) {
 		ev   Event
 		want string
 	}{
-		{TurnEnd{Reason: "done"}, `{"type":"turn_end","reason":"done"}`},
+		{TurnEnd{Reason: "done", Duration: 1500 * time.Millisecond}, `{"type":"turn_end","reason":"done","duration_ns":1500000000}`},
 		{Retry{Attempt: 2, Max: 5, Delay: 1500 * time.Millisecond, Error: "429"}, `{"type":"retry","attempt":2,"max":5,"delay_ns":1500000000,"error":"429"}`},
 		{CompactionEnd{TokensBefore: 10, TokensAfter: 3, Error: "x"}, `{"type":"compaction_end","tokens_before":10,"tokens_after":3,"error":"x"}`},
 		{Queue{}, `{"type":"queue","steering":null,"follow_ups":null}`},

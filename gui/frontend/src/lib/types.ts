@@ -19,7 +19,7 @@ export interface Message {
 
 export type CoreEvent =
   | { type: "turn_start" }
-  | { type: "turn_end"; reason: "done" | "cancelled" | "error"; unanswered?: string; cancelled_by?: string }
+  | { type: "turn_end"; reason: "done" | "cancelled" | "error"; unanswered?: string; cancelled_by?: string; duration_ns: number }
   | { type: "message_start"; model: string }
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }

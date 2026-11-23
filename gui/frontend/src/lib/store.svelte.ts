@@ -2,6 +2,7 @@
 
 import { Bridge } from "../../bindings/github.com/NDari/rho/gui/bridge";
 import type { State } from "../../bindings/github.com/NDari/rho/gui/bridge";
+import { elapsed } from "./format";
 import type { CoreEvent, Item, Message, NewItem, ToolState } from "./types";
 
 const maxToolOutput = 256 * 1024;
@@ -320,9 +321,12 @@ export class Store {
             t.isError = true;
           }
         }
+        const took = elapsed(e.duration_ns / 1e6);
         if (e.reason === "cancelled") {
           const by = e.cancelled_by && e.cancelled_by !== "the user" ? " by " + e.cancelled_by : "";
-          this.notice("warn", "Cancelled" + by);
+          this.notice("warn", "Cancelled" + by + " after " + took);
+        } else if (e.reason === "done" || e.reason === "error") {
+          this.notice("info", "Turn took " + took);
         }
         // A prompt that got no reply was taken off the conversation: drop
         // it from the transcript and put it back in the composer, so

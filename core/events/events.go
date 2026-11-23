@@ -36,6 +36,8 @@ type TurnEnd struct {
 	// "cancelled": "the user", "the RPC client", "extension NAME" or
 	// "Rho (shutting down)".
 	CancelledBy string `json:"cancelled_by,omitempty"`
+	// Duration is the time from turn_start to turn_end.
+	Duration time.Duration `json:"duration_ns"`
 }
 
 // MessageStart begins a streamed assistant message.

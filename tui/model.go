@@ -804,12 +804,15 @@ func (m *Model) handleEvent(e events.Event) {
 				t.touch()
 			}
 		}
-		if ev.Reason == "cancelled" {
+		switch ev.Reason {
+		case "cancelled":
 			text := "cancelled"
 			if ev.CancelledBy != "" && ev.CancelledBy != events.ByUser {
 				text += " by " + ev.CancelledBy
 			}
-			m.addItem(&noticeItem{level: "warn", text: text})
+			m.addItem(&noticeItem{level: "warn", text: text + " after " + elapsed(ev.Duration)})
+		case "done", "error":
+			m.addItem(&noticeItem{level: "info", text: "turn took " + elapsed(ev.Duration)})
 		}
 		left := m.agent.TakeQueue()
 		if ev.Unanswered != "" {

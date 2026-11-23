@@ -98,6 +98,29 @@ func TestTurnWithToolCall(t *testing.T) {
 	}
 }
 
+// TestTurnDuration checks that the turn's time is measured from start to
+// end and reported in turn_end and the turn's stats.
+func TestTurnDuration(t *testing.T) {
+	const pause = 50 * time.Millisecond
+	fp := fake.New("fake", fake.Step{Text: "ok", Check: func(provider.Request) { time.Sleep(pause) }})
+	a, rec, _ := newTestAgent(t, fp)
+	if err := a.Run(context.Background(), provider.UserText("hi")); err != nil {
+		t.Fatal(err)
+	}
+	var end events.TurnEnd
+	for _, e := range rec.events {
+		if te, ok := e.(events.TurnEnd); ok {
+			end = te
+		}
+	}
+	if end.Duration < pause || end.Duration > 10*time.Second {
+		t.Errorf("turn_end duration = %s, want at least %s", end.Duration, pause)
+	}
+	if got := a.LastTurn().Duration; got != end.Duration {
+		t.Errorf("LastTurn().Duration = %s, turn_end has %s", got, end.Duration)
+	}
+}
+
 func TestRetryOnTransientError(t *testing.T) {
 	fp := fake.New("fake",
 		fake.Step{Err: &provider.Error{Kind: provider.ErrTransient, StatusCode: 503, Message: "busy"}},
