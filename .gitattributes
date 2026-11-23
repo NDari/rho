@@ -1,3 +1,6 @@
-# Recorded server replies are replayed byte for byte; keep their LF line
-# endings on every platform.
+# Check text files out with LF on every platform, as they are in the
+# repository, so tests and fixtures read the same bytes everywhere.
+* text=auto eol=lf
+
+# Recorded server replies are replayed byte for byte; never convert them.
 core/provider/replay/recordings/** -text
