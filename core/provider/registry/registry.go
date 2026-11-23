@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/provider"
@@ -61,6 +62,8 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 		Headers:  pc.Headers,
 		Flavor:   pc.Flavor,
 		DebugLog: expandHome(pc.DebugLog),
+		// Zero keeps the provider's default.
+		IdleTimeout: time.Duration(pc.StreamIdleTimeout) * time.Second,
 	}
 	var p provider.Provider
 	switch pc.Type {

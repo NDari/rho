@@ -95,6 +95,7 @@ enabled = ["read", "write", "edit", "bash", "grep", "find", "ls"]
 | `headers` | extra HTTP headers |
 | `requests_per_minute`, `tokens_per_minute` | wait before sending a request that would exceed these limits (0, the default, means no limit) |
 | `debug_log` | a file that receives one JSON line per request with the exact payload and the response; it holds whole conversations, so leave it off normally |
+| `stream_idle_timeout` | seconds a response may go without data (including the wait for the first data, while the server reads the prompt) before the request counts as stalled and is retried; 0, the default, means 300, and a negative value turns the check off. Raise it for slow local servers that take minutes to read long prompts |
 | `tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences` | defaults for this provider's models, see below |
 
 Built-in providers you can use without configuring them (set the API key variable):

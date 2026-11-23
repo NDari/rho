@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/NDari/rho/core/agent"
 	"github.com/NDari/rho/core/config"
@@ -47,6 +48,9 @@ type Options struct {
 	// ExtHost is the program that runs Go source extensions (see
 	// ext.Options); empty means the running executable.
 	ExtHost string
+	// RetryDelay is the first wait before retrying a transient provider
+	// error (see agent.Options); 0 means the default. Tests set it low.
+	RetryDelay time.Duration
 }
 
 // App holds the assembled core.
@@ -102,6 +106,9 @@ func New(o Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	if msg := agent.SessionProblems(sess); msg != "" {
+		a.Warnings = append(a.Warnings, msg)
+	}
 
 	model, err := cfg.ResolveModel(o.Model)
 	if err != nil {
@@ -135,6 +142,7 @@ func New(o Options) (*App, error) {
 		SystemFile:        systemFile,
 		AppendSystemFiles: appendFiles,
 		MaxSteps:          o.MaxSteps,
+		RetryDelay:        o.RetryDelay,
 	})
 	if !o.NoExtensions {
 		// Extension tools may not take the name of a built-in tool that is
@@ -148,6 +156,8 @@ func New(o Options) (*App, error) {
 			Builtin: names,
 			ExtHost: o.ExtHost,
 			Sink:    func(e events.Event) { a.emit(e) },
+			// A restarted extension's tools are new objects.
+			OnRestart: func() { a.toolNotices(a.refreshTools()) },
 		})
 	}
 	if a.Ext == nil {

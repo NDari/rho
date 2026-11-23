@@ -87,6 +87,9 @@ type Extension struct {
 	// not count.
 	waits   map[*waitingCall]struct{}
 	prompts map[*openPrompt]struct{}
+	// exited is closed once the process's exit has been handled (status
+	// set, restart decided).
+	exited chan struct{}
 }
 
 type note struct {
@@ -299,6 +302,8 @@ func (e *Extension) lastLogs(n int) []string {
 }
 
 func (e *Extension) hasHook(name string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.Status == StatusRunning && slices.Contains(e.Info.Hooks, name)
 }
 
@@ -342,6 +347,9 @@ type Options struct {
 	Launch Launcher
 	// Sink receives notices.
 	Sink events.Sink
+	// OnRestart is called after an extension that crashed was restarted
+	// automatically, so the caller can offer its new tools.
+	OnRestart func()
 }
 
 // Manager discovers, starts and talks to extensions.
@@ -357,7 +365,23 @@ type Manager struct {
 	// testTimeout replaces extensions.timeout in tests, which need less
 	// than a second.
 	testTimeout time.Duration
+	// restarted records when each extension (by ID) was last restarted
+	// after a crash.
+	restarted map[string]time.Time
+	// restarting holds a channel per extension ID being restarted, closed
+	// when the restart is over.
+	restarting map[string]chan struct{}
+	// restartDelay replaces the wait before a restart in tests.
+	restartDelay time.Duration
 }
+
+// Crash restarts: an extension that crashes is started again after
+// restartWait, unless it was already restarted within restartWindow, so a
+// one-off crash heals itself and a crash loop stops.
+const (
+	restartWait   = time.Second
+	restartWindow = time.Minute
+)
 
 // NewManager creates a manager.
 func NewManager(o Options) *Manager {
@@ -565,13 +589,17 @@ func (m *Manager) startOne(ctx context.Context, e *Extension) {
 		_ = stdin.Close()
 		kill()
 	}
+	stderrDone := make(chan struct{})
 	if stderr != nil {
 		go func() {
+			defer close(stderrDone)
 			sc := bufio.NewScanner(stderr)
 			for sc.Scan() {
 				e.log(sc.Text())
 			}
 		}()
+	} else {
+		close(stderrDone)
 	}
 	e.conn = rpc.NewConn(stdout, stdin, m.handler(e))
 	ictx, cancel := context.WithTimeout(ctx, m.timeout())
@@ -596,6 +624,10 @@ func (m *Manager) startOne(ctx context.Context, e *Extension) {
 	e.Info = res
 	e.Status = StatusRunning
 	e.mu.Unlock()
+	exited := make(chan struct{})
+	e.mu.Lock()
+	e.exited = exited
+	e.mu.Unlock()
 	go func() {
 		<-e.conn.Done()
 		e.mu.Lock()
@@ -603,16 +635,143 @@ func (m *Manager) startOne(ctx context.Context, e *Extension) {
 		if wasRunning {
 			e.Status = StatusFailed
 			e.Err = "exited unexpectedly"
-			if logs := e.lastLogs(3); len(logs) > 0 {
-				e.Err += ": " + strings.Join(logs, " | ")
-			}
+		}
+		e.mu.Unlock()
+		restart := wasRunning && m.mayRestart(e)
+		close(exited)
+		if !wasRunning {
+			return
+		}
+		// A crashing process's last words (e.g. a panic) are still being
+		// read from stderr; give that a moment so the notice includes them.
+		select {
+		case <-stderrDone:
+		case <-time.After(500 * time.Millisecond):
+		}
+		logs := e.lastLogs(3) // takes e.mu itself
+		e.mu.Lock()
+		if len(logs) > 0 {
+			e.Err += ": " + strings.Join(logs, " | ")
 		}
 		msg := e.Err
 		e.mu.Unlock()
-		if wasRunning {
-			m.o.Sink(events.Notice{Level: "error", Text: fmt.Sprintf("extension %s crashed (%s); /reload to restart", e.Name, msg)})
+		if restart {
+			m.o.Sink(events.Notice{Level: "error", Text: fmt.Sprintf("extension %s crashed (%s); restarting it", e.Name, msg)})
+			go m.restart(e)
+			return
 		}
+		m.o.Sink(events.Notice{Level: "error", Text: fmt.Sprintf("extension %s crashed (%s); /reload to restart", e.Name, msg)})
 	}()
+}
+
+// mayRestart reports whether e may be restarted after a crash, and if so
+// records the restart. Project extensions are only restarted while still
+// trusted, so a restart never asks the user.
+func (m *Manager) mayRestart(e *Extension) bool {
+	if e.Project {
+		hash, err := HashPath(e.Path)
+		if err != nil || !m.trust.Trusted(e.Path, hash) {
+			return false
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !slices.Contains(m.exts, e) {
+		return false // replaced (e.g. by /reload) or still starting
+	}
+	if last, ok := m.restarted[e.ID]; ok && time.Since(last) < restartWindow {
+		return false
+	}
+	if m.restarted == nil {
+		m.restarted = map[string]time.Time{}
+		m.restarting = map[string]chan struct{}{}
+	}
+	m.restarted[e.ID] = time.Now()
+	m.restarting[e.ID] = make(chan struct{})
+	return true
+}
+
+// awaitRestart waits for a restart of e that is under way and returns the
+// running replacement if it still offers tool, or nil. A tool call that arrives while its
+// extension restarts (the model answers fast) then reaches the new process
+// instead of failing.
+func (m *Manager) awaitRestart(ctx context.Context, e *Extension, tool string) *Extension {
+	m.mu.Lock()
+	ch := m.restarting[e.ID]
+	m.mu.Unlock()
+	if ch != nil {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return nil
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, x := range m.exts {
+		if x.ID == e.ID && x != e {
+			x.mu.Lock()
+			ok := x.Status == StatusRunning && slices.ContainsFunc(x.Info.Tools, func(i ToolInfo) bool { return i.Name == tool })
+			x.mu.Unlock()
+			if ok {
+				return x
+			}
+		}
+	}
+	return nil
+}
+
+// restart starts a fresh copy of the crashed extension e in its place.
+func (m *Manager) restart(e *Extension) {
+	defer func() {
+		m.mu.Lock()
+		if ch := m.restarting[e.ID]; ch != nil {
+			close(ch)
+			delete(m.restarting, e.ID)
+		}
+		m.mu.Unlock()
+	}()
+	wait := restartWait
+	if m.restartDelay > 0 {
+		wait = m.restartDelay
+	}
+	time.Sleep(wait)
+	m.mu.Lock()
+	current := slices.Contains(m.exts, e)
+	m.mu.Unlock()
+	if !current {
+		return
+	}
+	c := e.Candidate
+	c.Name = e.ID
+	fresh := &Extension{Candidate: c, ID: e.ID}
+	ctx := context.Background()
+	m.startOne(ctx, fresh)
+	m.mu.Lock()
+	i := slices.Index(m.exts, e)
+	if i != -1 {
+		m.exts[i] = fresh
+	}
+	m.mu.Unlock()
+	if i == -1 {
+		stopOne(fresh, StatusStopped)
+		return
+	}
+	m.resolveConflicts()
+	fresh.mu.Lock()
+	status, errText := fresh.Status, fresh.Err
+	fresh.mu.Unlock()
+	if status != StatusRunning {
+		m.o.Sink(events.Notice{Level: "error", Text: fmt.Sprintf("extension %s could not be restarted: %s; /reload to try again", fresh.Name, errText)})
+		return
+	}
+	if fresh.hasHook(HookSessionStart) {
+		_ = fresh.call(ctx, m.timeout(), "hook/"+HookSessionStart, HookParams{}, nil)
+	}
+	if m.o.OnRestart != nil {
+		m.o.OnRestart()
+	}
+	m.o.Sink(events.Notice{Level: "info", Text: fmt.Sprintf("extension %s restarted", fresh.Name)})
 }
 
 // resolveConflicts drops tools and commands whose names are taken.
@@ -1193,10 +1352,26 @@ func (t *extTool) ReadOnly() bool { return t.info.ReadOnly }
 
 func (t *extTool) Execute(ctx context.Context, _ *tools.Env, args json.RawMessage, progress func(string)) tools.Result {
 	t.ext.mu.Lock()
-	running := t.ext.Status == StatusRunning
+	running, conn, exited := t.ext.Status == StatusRunning, t.ext.conn, t.ext.exited
 	t.ext.mu.Unlock()
+	if running && conn != nil && exited != nil {
+		select {
+		case <-conn.Done():
+			// The process died and the exit is being handled.
+			select {
+			case <-exited:
+			case <-ctx.Done():
+			}
+			running = false
+		default:
+		}
+	}
 	if !running {
-		return tools.Result{Content: []provider.Block{provider.Text("extension " + t.ext.Name + " is not running")}, IsError: true}
+		fresh := t.m.awaitRestart(ctx, t.ext, t.info.Name)
+		if fresh == nil {
+			return tools.Result{Content: []provider.Block{provider.Text("extension " + t.ext.Name + " is not running")}, IsError: true}
+		}
+		t = &extTool{m: t.m, ext: fresh, info: t.info}
 	}
 	var b [8]byte
 	_, _ = rand.Read(b[:])

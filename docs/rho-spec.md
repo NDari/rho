@@ -98,7 +98,8 @@ Clean package seams keep personal patches small and easy to rebase.
 - **Follow-up message:** queued; delivered when the agent finishes the turn.
 - **Cancel (Esc / Ctrl+C):** aborts the stream or kills the running tool (process tree), records a cancelled result, returns control to the user.
 - **Unanswered prompt:** if a turn is cancelled or fails before anything is saved after its prompt (e.g. the server is unreachable), the conversation moves back to before the prompt with a `checkout` (the prompt stays in the file on its own branch) and `turn_end` carries the prompt text in `unanswered`. The TUI and GUI drop it from the transcript and put it back in the editor, so sending it again, edited or not, replaces it instead of stacking a second copy. Once anything was saved (partial text, thinking, a tool result), the prompt stays and the next message follows it.
-- Errors from providers are surfaced as events; transient errors (429, 5xx, network) retry with backoff (configurable, default 3 attempts).
+- Errors from providers are surfaced as events; transient errors (429, 5xx, network) retry with backoff (configurable, default 3 attempts). The backoff (2s doubling, at most 30s, with up to 20% jitter) is stretched to a server's `Retry-After`; a server asking for more than 2 minutes is not retried. Errors a server reports inside a stream (an `error` chunk, or a Responses `response.failed` or `error` event) are classified the same way from their code, type and message.
+- A stream that ends cleanly without a finish reason (Chat Completions) or a final event (Responses) was cut off and counts as a transient error, as does one that sends no data for `stream_idle_timeout` seconds (default 300).
 - Context overflow error from provider → compact and retry once (see §8).
 
 ## 5. Tools
@@ -209,7 +210,8 @@ API keys only: from environment variables, or config entries that reference envi
 
 ### 7.1 Storage
 - Location: `~/.rho/sessions/<encoded-cwd>/<timestamp>_<short-id>.jsonl`.
-- **Append-only JSONL.** One entry per line. Never rewritten (except explicit delete).
+- **Append-only JSONL.** One entry per line. Never rewritten (except explicit delete). Each entry is synced to disk when written; a failed write is undone as far as possible so the next entry starts on a fresh line.
+- **Damage from interrupted writes is tolerated.** An incomplete final line (a crash mid-write) is ignored and cut off before the next append; it was never a complete entry. A partial entry joined to the start of a complete one (left by older versions) is dropped, and other unreadable lines are skipped. Only an unreadable header refuses the file. Frontends show what was found as a warning.
 
 ### 7.2 Entry schema
 
@@ -348,7 +350,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - Started at session start; one process per extension, running in the session working directory (`RHO_EXTENSION_DIR` points to the extension's own directory; manifests may use `${dir}`).
 - Per-call timeouts (configurable). Time an extension's UI prompt is open does not count against the call that is waiting; a prompt opened during a call is closed when the call ends (e.g. the turn is cancelled), the frontends take it off the screen with the reason, and RPC clients get `ui/closed` (before the call's `turn_end`; Rho waits up to a second for the frontend). A tool call cancelled while its `before_tool_call` hook waits does not run.
 - Cancels record who cancelled (the user, the RPC client, an extension by name, or Rho shutting down); cancelled tool results, `turn_end` (`cancelled_by`) and closed prompts say so.
-- Crash → extension marked failed, user notified, Rho continues. `/reload` restarts all extensions (this is "hot reload").
+- Crash → extension marked failed, user notified (with its last stderr lines), Rho continues. It is restarted automatically after a second, once per minute at most, so a one-off crash heals and a crash loop stops; a project extension is only restarted while it is still trusted, so a restart never prompts. A call to its tools during the restart waits for the new process. `/reload` restarts all extensions (this is "hot reload").
 - `/extensions` lists extensions; Enter turns one on or off without restarting the others and saves the choice in `extensions.disabled` in the global config. Tab shows status, registrations and errors.
 
 ### 12.6 Yaegi host API

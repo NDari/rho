@@ -27,6 +27,7 @@ Rho is a minimal-core coding agent harness written in Go. The design spec in [do
 - Prefer table-driven tests. Tests must not require network access or API keys; use recorded fixtures or the fake provider (`core/provider/fake`).
 - Optional integration tests run against a real server when `RHO_TEST_BASE_URL` (Chat Completions) or `RHO_TEST_RESPONSES_URL` (Responses API) is set, with `RHO_TEST_MODEL` and `RHO_TEST_API_KEY` as needed.
 - End-to-end checks run through headless mode (`rho -p --json`).
+- `integration/` holds cross-cutting tests: the real config, provider, agent, tools and session files, with `rho -p --json` output checked, against `core/provider/replay`, a server that replays responses recorded from real servers (`core/provider/replay/recordings`) and injects faults (dropped connections, streams cut short, stalls, error replies). Some build and run the `rho` binary to interrupt or kill it mid-turn. Add a scenario there when fixing a failure seen in real use, and prefer recorded responses to hand-written ones.
 
 ## Writing style
 

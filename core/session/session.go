@@ -3,14 +3,16 @@ package session
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
@@ -93,6 +95,13 @@ type Session struct {
 	byID    map[string]*Entry
 	leaf    string
 	labels  map[string]string
+	// problems describes damaged lines that Open worked around.
+	problems []string
+	// tornAt and tornEnd are the byte range of an incomplete final line
+	// (tornEnd is 0 if there is none); it is cut off before the next write.
+	tornAt, tornEnd int64
+	// size is the length of the open file.
+	size int64
 }
 
 // New creates a session. If dir is non-empty the file is created there
@@ -108,7 +117,11 @@ func New(dir, cwd, rhoVersion string) *Session {
 	return s
 }
 
-// Open loads a session file.
+// Open loads a session file. Damage left by an interrupted write is worked
+// around rather than refused: an incomplete final line is ignored (and cut
+// off before the next append), a partial entry joined to the start of a
+// complete one is dropped, and other unreadable lines are skipped.
+// Problems describes what was found.
 func Open(path string) (*Session, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -116,36 +129,102 @@ func Open(path string) (*Session, error) {
 	}
 	defer f.Close()
 	s := &Session{path: path, byID: map[string]*Entry{}, labels: map[string]string{}}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 256*1024*1024)
-	line := 0
-	for sc.Scan() {
-		line++
-		raw := sc.Bytes()
-		if len(strings.TrimSpace(string(raw))) == 0 {
-			continue
+	r := bufio.NewReaderSize(f, 1024*1024)
+	var offset int64
+	for line := 1; ; line++ {
+		raw, rerr := r.ReadBytes('\n')
+		if rerr != nil && rerr != io.EOF {
+			return nil, fmt.Errorf("%s: %w", path, rerr)
 		}
-		var e Entry
-		if err := json.Unmarshal(raw, &e); err != nil {
-			// A torn final line (e.g. after a crash) is tolerated.
-			if !sc.Scan() {
-				break
+		start := offset
+		offset += int64(len(raw))
+		if len(bytes.TrimSpace(raw)) > 0 {
+			complete := rerr == nil // ends with a newline
+			if err := s.load(raw, line, start, offset, complete); err != nil {
+				return nil, fmt.Errorf("%s:%d: %w", path, line, err)
 			}
-			return nil, fmt.Errorf("%s:%d: %w", path, line, err)
 		}
-		if line == 1 && e.Type == TypeHeader {
-			s.header = e
-			continue
+		if rerr == io.EOF {
+			break
 		}
-		s.apply(&e)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, err
 	}
 	if s.header.Type != TypeHeader {
 		return nil, fmt.Errorf("%s: missing session header", path)
 	}
+	if n := s.orphans(); n > 0 {
+		s.problems = append(s.problems, fmt.Sprintf("%d entries follow entries that could not be read, so the conversation is missing earlier messages", n))
+	}
 	return s, nil
+}
+
+// load applies one line of the file, which spans bytes start to end.
+// Only an unreadable header is an error.
+func (s *Session) load(raw []byte, line int, start, end int64, complete bool) error {
+	e, damage, err := parseLine(raw)
+	switch {
+	case err != nil && line == 1:
+		return err
+	case err != nil && !complete:
+		// The last write was interrupted by a crash.
+		s.tornAt, s.tornEnd = start, end
+		s.problems = append(s.problems, fmt.Sprintf("line %d: ignored an incomplete final entry left by an interrupted write", line))
+		return nil
+	case err != nil:
+		s.problems = append(s.problems, fmt.Sprintf("line %d: skipped an unreadable entry (%v)", line, err))
+		return nil
+	case damage:
+		s.problems = append(s.problems, fmt.Sprintf("line %d: dropped a partial entry left by an interrupted write", line))
+	}
+	if line == 1 && e.Type == TypeHeader {
+		s.header = e
+		return nil
+	}
+	s.apply(&e)
+	return nil
+}
+
+// orphans counts tree entries whose parent is unknown.
+func (s *Session) orphans() int {
+	n := 0
+	for _, e := range s.entries {
+		if e.inTree() && e.Parent != "" && s.byID[e.Parent] == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// entryStart begins every entry line (ID is the first field of Entry).
+var entryStart = []byte(`{"id":"`)
+
+// parseLine decodes one line. A write interrupted by a crash leaves a
+// partial entry without a newline, and older versions appended the next
+// entry right after it; damage reports that such a prefix was dropped.
+func parseLine(raw []byte) (e Entry, damage bool, err error) {
+	if err = json.Unmarshal(raw, &e); err == nil {
+		return e, false, nil
+	}
+	for i := 1; i < len(raw); {
+		j := bytes.Index(raw[i:], entryStart)
+		if j < 0 {
+			break
+		}
+		i += j
+		var r Entry
+		if json.Unmarshal(raw[i:], &r) == nil && r.ID != "" {
+			return r, true, nil
+		}
+		i++
+	}
+	return Entry{}, false, err
+}
+
+// Problems describes damage that Open found and worked around, one line
+// each; empty for a healthy file.
+func (s *Session) Problems() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.problems)
 }
 
 func (s *Session) apply(e *Entry) {
@@ -257,29 +336,97 @@ func (s *Session) write(e *Entry) error {
 		if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 			return err
 		}
+		if err := s.cutTorn(); err != nil {
+			return err
+		}
 		f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
 			return err
 		}
-		s.file = f
+		var prefix []byte
 		info, err := f.Stat()
-		if err == nil && info.Size() == 0 {
-			if err := writeLine(f, &s.header); err != nil {
+		switch {
+		case err != nil:
+			_ = f.Close()
+			return err
+		case info.Size() == 0:
+			if prefix, err = json.Marshal(&s.header); err != nil {
+				_ = f.Close()
 				return err
 			}
+			prefix = append(prefix, '\n')
+		case !endsWithNewline(s.path, info.Size()):
+			// An interrupted write left a partial line: start a new one so
+			// the next entry is not joined to it.
+			prefix = []byte{'\n'}
+		}
+		s.file = f
+		s.size = info.Size()
+		if err := s.writeBytes(prefix); err != nil {
+			return err
 		}
 	}
-	return writeLine(s.file, e)
-}
-
-func writeLine(f *os.File, e *Entry) error {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	_, err = f.Write(data)
-	return err
+	return s.writeBytes(append(data, '\n'))
+}
+
+// writeBytes writes data and syncs it to disk. A failed write is undone
+// as far as possible and the file closed, so the next write reopens it and
+// never joins an entry to a partial line.
+func (s *Session) writeBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	n, err := s.file.Write(data)
+	if err == nil {
+		err = s.file.Sync()
+	}
+	if err != nil {
+		if n > 0 {
+			_ = s.file.Truncate(s.size)
+		}
+		_ = s.file.Close()
+		s.file = nil
+		return fmt.Errorf("writing session %s: %w", s.path, err)
+	}
+	s.size += int64(n)
+	return nil
+}
+
+// cutTorn removes the incomplete final line Open found, if the file has
+// not changed since. It was never a complete entry, so no entry is lost.
+func (s *Session) cutTorn() error {
+	if s.tornEnd == 0 {
+		return nil
+	}
+	at, end := s.tornAt, s.tornEnd
+	s.tornAt, s.tornEnd = 0, 0
+	// If the file is gone or changed elsewhere, leave it: write then
+	// starts a new line instead.
+	info, statErr := os.Stat(s.path)
+	if unchanged := statErr == nil && info.Size() == end; !unchanged {
+		return nil
+	}
+	if err := os.Truncate(s.path, at); err != nil {
+		return fmt.Errorf("removing the incomplete last line of %s: %w", s.path, err)
+	}
+	return nil
+}
+
+func endsWithNewline(path string, size int64) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+	var b [1]byte
+	if _, err := f.ReadAt(b[:], size-1); err != nil {
+		return true
+	}
+	return b[0] == '\n'
 }
 
 // Close closes the session file.

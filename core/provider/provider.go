@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ToolSpec describes a tool offered to the model.
@@ -89,6 +90,9 @@ type Error struct {
 	StatusCode int
 	Message    string
 	Err        error
+	// RetryAfter is how long the server asked the client to wait before
+	// retrying (from a Retry-After header), or 0.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {
@@ -113,6 +117,15 @@ func KindOf(err error) ErrorKind {
 		return pe.Kind
 	}
 	return ErrOther
+}
+
+// RetryAfterOf returns the wait the server asked for, or 0.
+func RetryAfterOf(err error) time.Duration {
+	var pe *Error
+	if errors.As(err, &pe) {
+		return pe.RetryAfter
+	}
+	return 0
 }
 
 // LooksLikeContextOverflow reports whether an error message from a provider

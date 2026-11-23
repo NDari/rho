@@ -70,6 +70,10 @@ type Provider struct {
 	// DebugLog is a file that receives one JSON line per request with the
 	// exact payload and the response.
 	DebugLog string `toml:"debug_log"`
+	// StreamIdleTimeout is how many seconds a response may go without
+	// data (including the wait for the first data) before the request is
+	// treated as stalled and retried. 0 means 300; negative disables it.
+	StreamIdleTimeout int `toml:"stream_idle_timeout"`
 
 	// Defaults for this provider's models; see Model.
 	ToolFormat     string `toml:"tool_format"`
@@ -472,6 +476,9 @@ func mergeProvider(base, over Provider, defined func(string) bool) Provider {
 	}
 	if defined("debug_log") {
 		out.DebugLog = over.DebugLog
+	}
+	if defined("stream_idle_timeout") {
+		out.StreamIdleTimeout = over.StreamIdleTimeout
 	}
 	if defined("tool_format") {
 		out.ToolFormat = over.ToolFormat

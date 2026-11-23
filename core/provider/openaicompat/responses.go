@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -20,12 +21,13 @@ type ResponsesProvider struct {
 	name   string
 	client openai.Client
 	log    *debugLog
+	idle   time.Duration
 }
 
 // NewResponses creates a Responses API provider.
 func NewResponses(o Options) *ResponsesProvider {
 	p := New(o)
-	return &ResponsesProvider{name: o.Name, client: p.client, log: p.log}
+	return &ResponsesProvider{name: o.Name, client: p.client, log: p.log, idle: p.idle}
 }
 
 // Name implements provider.Provider.
@@ -77,33 +79,33 @@ func (p *ResponsesProvider) streamOnce(ctx context.Context, req provider.Request
 	}
 	opts = append(opts, option.WithJSONSet("reasoning", reasoning))
 
-	stream := p.client.Responses.NewStreaming(ctx, params, opts...)
+	sctx, dog, stop := watch(ctx, p.idle)
+	defer stop()
+	stream := p.client.Responses.NewStreaming(sctx, params, opts...)
 	defer stream.Close()
 
 	acc := &responsesAcc{prov: p.name}
 	gotData := false
 	for stream.Next() {
+		dog.kick()
 		gotData = true
 		acc.add(stream.Current().RawJSON(), onEvent)
 	}
 	resp := acc.response(req.Model)
-	if err := stream.Err(); err != nil {
-		if ctx.Err() != nil {
-			resp.StopReason = provider.StopCancelled
-			return resp, gotData, ctx.Err()
-		}
-		return resp, gotData, classify(err)
-	}
-	if ctx.Err() != nil {
+	err := stream.Err()
+	switch {
+	case ctx.Err() != nil:
 		resp.StopReason = provider.StopCancelled
+		resp.Message.Meta.StopReason = provider.StopCancelled
 		return resp, gotData, ctx.Err()
-	}
-	if acc.failure != "" {
-		kind := provider.ErrOther
-		if provider.LooksLikeContextOverflow(acc.failure) {
-			kind = provider.ErrContextOverflow
-		}
-		return resp, gotData, &provider.Error{Kind: kind, Message: acc.failure}
+	case stalled(sctx):
+		return resp, gotData, stalledError(p.idle)
+	case err != nil:
+		return resp, gotData, classify(err)
+	case acc.failed:
+		return resp, gotData, classifyFailure(acc.failure, acc.failCode, acc.failType, 0)
+	case acc.final == nil:
+		return resp, gotData, errTruncated()
 	}
 	return resp, gotData, nil
 }
@@ -188,8 +190,12 @@ type responsesAcc struct {
 	calls    map[int]string // output index -> tool name (for deltas)
 	final    []json.RawMessage
 	usage    provider.Usage
-	failure  string
 	stopMax  bool
+	// failed is set by a response.failed or error event.
+	failed   bool
+	failure  string
+	failCode string
+	failType string
 }
 
 type rEvent struct {
@@ -198,6 +204,7 @@ type rEvent struct {
 	OutputIndex int             `json:"output_index"`
 	Item        json.RawMessage `json:"item"`
 	Message     string          `json:"message"`
+	Code        flexString      `json:"code"`
 	Response    *struct {
 		Output []json.RawMessage `json:"output"`
 		Usage  *struct {
@@ -208,12 +215,31 @@ type rEvent struct {
 			} `json:"input_tokens_details"`
 		} `json:"usage"`
 		Error *struct {
-			Message string `json:"message"`
+			Message string     `json:"message"`
+			Code    flexString `json:"code"`
+			Type    string     `json:"type"`
 		} `json:"error"`
 		IncompleteDetails *struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`
 	} `json:"response"`
+}
+
+// flexString accepts a JSON string, number or null (servers differ in how
+// they send error codes).
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		*f = flexString(s)
+		return nil
+	}
+	*f = flexString(strings.Trim(string(b), `"`))
+	if *f == "null" {
+		*f = ""
+	}
+	return nil
 }
 
 type rItem struct {
@@ -265,13 +291,18 @@ func (a *responsesAcc) add(raw string, onEvent func(provider.StreamEvent)) {
 			}
 		}
 	case "response.failed":
+		a.failed = true
+		a.failure = "the response failed"
 		if ev.Response != nil && ev.Response.Error != nil {
-			a.failure = ev.Response.Error.Message
-		} else {
-			a.failure = "the response failed"
+			e := ev.Response.Error
+			if e.Message != "" {
+				a.failure = e.Message
+			}
+			a.failCode, a.failType = string(e.Code), e.Type
 		}
 	case "error":
-		a.failure = ev.Message
+		a.failed = true
+		a.failure, a.failCode = ev.Message, string(ev.Code)
 	}
 }
 

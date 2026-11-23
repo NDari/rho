@@ -16,9 +16,11 @@ import (
 	"net/http"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/NDari/rho/core/provider"
@@ -43,6 +45,10 @@ type Options struct {
 	HTTPClient *http.Client
 	// DebugLog, if set, is a file that receives one JSON line per request.
 	DebugLog string
+	// IdleTimeout ends a request whose stream sends no data for this long
+	// (as a transient error, so it is retried). 0 means
+	// DefaultIdleTimeout; negative disables the check.
+	IdleTimeout time.Duration
 }
 
 // Provider talks to an OpenAI-compatible Chat Completions endpoint.
@@ -52,6 +58,7 @@ type Provider struct {
 	openai bool
 	client openai.Client
 	log    *debugLog
+	idle   time.Duration
 }
 
 // New creates a provider.
@@ -80,12 +87,17 @@ func New(o Options) *Provider {
 	if flavor == "" && strings.Contains(o.BaseURL, "generativelanguage.googleapis.com") {
 		flavor = FlavorGemini
 	}
+	idle := o.IdleTimeout
+	if idle == 0 {
+		idle = DefaultIdleTimeout
+	}
 	return &Provider{
 		name:   o.Name,
 		flavor: flavor,
 		openai: strings.Contains(o.BaseURL, "api.openai.com"),
 		client: openai.NewClient(opts...),
 		log:    log,
+		idle:   idle,
 	}
 }
 
@@ -123,29 +135,32 @@ func isConnReset(err error) bool {
 }
 
 func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionNewParams, onEvent func(provider.StreamEvent)) (provider.Response, bool, error) {
-	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
+	sctx, dog, stop := watch(ctx, p.idle)
+	defer stop()
+	stream := p.client.Chat.Completions.NewStreaming(sctx, params)
 	defer stream.Close()
 
 	acc := newAccumulator(p.name)
 	gotData := false
 	for stream.Next() {
+		dog.kick()
 		gotData = true
 		acc.add(stream.Current(), onEvent)
 	}
 	resp := acc.response()
 	resp.Message.Meta.Model = params.Model
-	if err := stream.Err(); err != nil {
-		if ctx.Err() != nil {
-			resp.StopReason = provider.StopCancelled
-			resp.Message.Meta.StopReason = provider.StopCancelled
-			return resp, gotData, ctx.Err()
-		}
-		return resp, gotData, classify(err)
-	}
-	if ctx.Err() != nil {
+	err := stream.Err()
+	switch {
+	case ctx.Err() != nil:
 		resp.StopReason = provider.StopCancelled
 		resp.Message.Meta.StopReason = provider.StopCancelled
 		return resp, gotData, ctx.Err()
+	case stalled(sctx):
+		return resp, gotData, stalledError(p.idle)
+	case err != nil:
+		return resp, gotData, classify(err)
+	case acc.finish == "":
+		return resp, gotData, errTruncated()
 	}
 	return resp, gotData, nil
 }
@@ -481,7 +496,15 @@ func classify(err error) error {
 		case apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden:
 			kind = provider.ErrAuth
 		}
-		return &provider.Error{Kind: kind, StatusCode: apiErr.StatusCode, Message: msg, Err: err}
+		pe := &provider.Error{Kind: kind, StatusCode: apiErr.StatusCode, Message: msg, Err: err}
+		if apiErr.Response != nil && kind == provider.ErrTransient {
+			pe.RetryAfter = parseRetryAfter(apiErr.Response.Header, time.Now())
+		}
+		return pe
+	}
+	var se *ssestream.StreamError
+	if errors.As(err, &se) {
+		return classifyStreamError(se)
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {

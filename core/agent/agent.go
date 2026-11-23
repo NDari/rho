@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -71,6 +74,10 @@ type Options struct {
 	// MaxSteps, if positive, ends a turn with ErrMaxSteps once it has had
 	// that many model responses.
 	MaxSteps int
+	// RetryDelay is the first wait before retrying a transient provider
+	// error; it doubles per attempt up to 15 times its value. 0 means 2s.
+	// Tests set it low.
+	RetryDelay time.Duration
 }
 
 // TurnStats describes the current or last turn.
@@ -112,6 +119,7 @@ type Agent struct {
 	systemFile  string
 	appendFiles []string
 	maxSteps    int
+	retryDelay  time.Duration
 	turn        TurnStats
 	// toolOverride, when not nil, replaces the configured tool set (see
 	// SetActiveTools).
@@ -142,6 +150,10 @@ func New(o Options) *Agent {
 		systemFile:  o.SystemFile,
 		appendFiles: o.AppendSystemFiles,
 		maxSteps:    o.MaxSteps,
+		retryDelay:  o.RetryDelay,
+	}
+	if a.retryDelay <= 0 {
+		a.retryDelay = 2 * time.Second
 	}
 	if a.sink == nil {
 		a.sink = func(events.Event) {}
@@ -269,7 +281,25 @@ func (a *Agent) SetSession(s *session.Session) error {
 	a.cost = c
 	a.mu.Unlock()
 	a.emitSessionChanged()
+	a.reportSessionProblems()
 	return nil
+}
+
+// reportSessionProblems warns about damage found when the session file
+// was opened (see session.Open).
+func (a *Agent) reportSessionProblems() {
+	if msg := SessionProblems(a.Session()); msg != "" {
+		a.emit(events.Notice{Level: "warn", Text: msg})
+	}
+}
+
+// SessionProblems describes damage found when s was opened, or "".
+func SessionProblems(s *session.Session) string {
+	probs := s.Problems()
+	if len(probs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("session file %s is damaged, probably by an interrupted write; Rho loaded what it could:\n%s", filepath.Base(s.Path()), strings.Join(probs, "\n"))
 }
 
 func (a *Agent) emitSessionChanged() {
@@ -498,7 +528,19 @@ func (a *Agent) runTurn(ctx context.Context, first provider.Message) {
 		return
 	}
 	promptID = a.Session().Leaf()
-	err = a.loop(ctx)
+	err = a.guardedLoop(ctx)
+}
+
+// guardedLoop runs the loop and turns a panic into an error that ends the
+// turn, so the agent stays usable and the session is kept.
+func (a *Agent) guardedLoop(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.emit(events.Notice{Level: "error", Text: fmt.Sprintf("internal error: %v (this is a bug; please report it with this stack)\n%s", r, debug.Stack())})
+			err = fmt.Errorf("internal error: %v", r)
+		}
+	}()
+	return a.loop(ctx)
 }
 
 // withdrawUnanswered moves the conversation back to before the prompt
@@ -903,9 +945,9 @@ func (a *Agent) streamWithRetry(ctx context.Context, prov provider.Provider, req
 		if provider.KindOf(err) != provider.ErrTransient || attempt >= maxRetries {
 			return resp, err
 		}
-		delay := time.Duration(1<<attempt) * 2 * time.Second
-		if delay > 30*time.Second {
-			delay = 30 * time.Second
+		delay, ok := a.retryWait(attempt, provider.RetryAfterOf(err))
+		if !ok {
+			return resp, fmt.Errorf("%w (the server asked to wait %s before retrying)", err, provider.RetryAfterOf(err).Round(time.Second))
 		}
 		a.emit(events.Retry{Attempt: attempt + 1, Max: maxRetries, Delay: delay, Error: err.Error()})
 		select {
@@ -914,6 +956,23 @@ func (a *Agent) streamWithRetry(ctx context.Context, prov provider.Provider, req
 		case <-time.After(delay):
 		}
 	}
+}
+
+// maxRetryAfter is the longest Retry-After wait the agent sits through;
+// a server asking for more (e.g. a daily quota) is not retried.
+const maxRetryAfter = 2 * time.Minute
+
+// retryWait is the wait before retry attempt+1: exponential backoff with
+// up to 20% jitter, so clients that failed together do not retry together,
+// stretched to the server's Retry-After. ok is false when the server asks
+// for longer than maxRetryAfter.
+func (a *Agent) retryWait(attempt int, retryAfter time.Duration) (_ time.Duration, ok bool) {
+	if retryAfter > maxRetryAfter {
+		return 0, false
+	}
+	delay := min(a.retryDelay<<min(attempt, 10), 15*a.retryDelay)
+	delay += time.Duration(rand.Int64N(int64(delay)/5 + 1))
+	return max(delay, retryAfter), true
 }
 
 func (a *Agent) runTools(ctx context.Context, calls []provider.Block, offered []provider.ToolSpec) error {
@@ -1109,13 +1168,27 @@ func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call 
 	if ctx.Err() != nil {
 		return tools.Result{Content: []provider.Block{provider.Text("Cancelled by " + events.CancelledBy(ctx) + ".")}, IsError: true}, args
 	}
-	res := t.Execute(ctx, env, args, func(s string) {
-		a.emit(events.ToolOutput{ID: call.ID, Text: s})
-	})
+	res := a.runTool(ctx, t, env, call, args)
 	if hooks != nil {
 		res = hooks.AfterToolCall(ctx, call.Name, args, res)
 	}
 	return res, args
+}
+
+// runTool executes t. A panic in the tool is turned into an error result
+// and a notice, so one broken tool does not take down the whole program
+// (and, in the TUI, leave the terminal unusable).
+func (a *Agent) runTool(ctx context.Context, t tools.Tool, env *tools.Env, call provider.Block, args json.RawMessage) (res tools.Result) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := string(debug.Stack())
+			a.emit(events.Notice{Level: "error", Text: fmt.Sprintf("the %s tool crashed: %v (this is a bug; please report it with this stack)\n%s", call.Name, r, stack)})
+			res = tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("The %s tool failed with an internal error: %v", call.Name, r))}, IsError: true}
+		}
+	}()
+	return t.Execute(ctx, env, args, func(s string) {
+		a.emit(events.ToolOutput{ID: call.ID, Text: s})
+	})
 }
 
 // Compact compacts the conversation now.
