@@ -18,7 +18,7 @@ func Instructions(tools []provider.ToolSpec) string {
 	example, exampleParam := "tool_name", ""
 	for _, t := range tools {
 		if t.Name == "read" {
-			example, exampleParam = "read", `<parameter name="path">src/main.go</parameter>`
+			example, exampleParam = "read", `<parameter name="path">path/to/file</parameter>`
 			break
 		}
 	}
