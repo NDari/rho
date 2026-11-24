@@ -108,7 +108,7 @@ Seven built-in tools. Four are offered by default, matching pi: `read`, `write`,
 
 ### read
 - Params: `path`, optional `offset` (line), `limit` (lines).
-- Text files: returns numbered lines; default limit 2000 lines; truncation noted in result.
+- Text files: returns the lines as they are, numbered only when `offset` or `limit` is given (line numbers cost about half again as many tokens on code with some tokenizers, and most reads are of whole files); default limit 2000 lines; truncation noted in result.
 - Images (png/jpg/gif/webp): returned as image content if the model supports images, otherwise an error message.
 - Binary files: refuse with a short description (size, type).
 

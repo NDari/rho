@@ -121,7 +121,7 @@ func TestBuiltinPromptFollowsTools(t *testing.T) {
 	const intro = "You are Rho, a coding agent working in the user's terminal. You help with software engineering tasks: understanding code, making changes, running commands, and debugging.\n\nGuidelines:\n"
 	const edit = "- Read files before editing them. Use edit for targeted changes and write for new files or complete rewrites.\n- Keep changes focused on what was asked. Match the existing style of the code.\n"
 	const verify = "- Verify your work when practical (build, run tests), and report failures honestly.\n"
-	const tail = "- When requirements are unclear, ask instead of guessing.\n- Be concise. Refer to code as path:line."
+	const tail = "- When requirements are unclear, ask instead of guessing.\n- Be concise. Refer to code by path, as path:line when a tool showed you the line number."
 	tests := []struct {
 		name  string
 		tools []provider.ToolSpec

@@ -40,7 +40,7 @@ type Read struct{}
 func (Read) Spec() provider.ToolSpec {
 	return provider.ToolSpec{
 		Name: "read",
-		Description: "Read a file. Text files are returned with line numbers. " +
+		Description: "Read a file. Text files are returned as they are; when offset or limit is given, each line starts with its line number. " +
 			fmt.Sprintf("By default up to %d lines are returned; use offset and limit to page through large files. ", ReadDefaultLimit) +
 			"Images (png, jpg, gif, webp) are returned as images when the model supports them.",
 		Parameters: schema(`{
@@ -145,6 +145,10 @@ func readText(content string, a readArgs, shown string) Result {
 		limit = a.Limit
 	}
 	end := min(start-1+limit, total)
+	// Line numbers only for a range the model asked for: they cost tokens
+	// (about half again as many for code, with some tokenizers) on every
+	// whole-file read.
+	numbered := a.Offset > 0 || a.Limit > 0
 
 	var b strings.Builder
 	var plain strings.Builder
@@ -156,7 +160,10 @@ func readText(content string, a readArgs, shown string) Result {
 			line = line[:ReadMaxLineLen] + " [line truncated]"
 			longLines = true
 		}
-		entry := fmt.Sprintf("%6d\t%s\n", i+1, line)
+		entry := line + "\n"
+		if numbered {
+			entry = fmt.Sprintf("%6d\t%s\n", i+1, line)
+		}
 		if b.Len()+len(entry) > ReadMaxBytes {
 			end = i
 			truncatedBytes = true

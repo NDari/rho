@@ -49,6 +49,17 @@ func TestReadText(t *testing.T) {
 	if !strings.Contains(out, "Use offset=15") {
 		t.Errorf("missing continuation hint:\n%s", out)
 	}
+
+	// A whole-file read has no line numbers.
+	r = run(t, Read{}, env, map[string]any{"path": "a.txt"})
+	if out := text(r); r.IsError || out != content.String() {
+		t.Errorf("whole file = %q, want the file as it is", out)
+	}
+	// A limit alone is a range too.
+	r = run(t, Read{}, env, map[string]any{"path": "a.txt", "limit": 2})
+	if out := text(r); !strings.HasPrefix(out, "     1\tline\n     2\tline\n") {
+		t.Errorf("limit only:\n%s", out)
+	}
 }
 
 func TestReadBinaryAndMissing(t *testing.T) {

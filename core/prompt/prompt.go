@@ -72,7 +72,7 @@ func builtin(tools []provider.ToolSpec) string {
 	if has("bash") {
 		lines = append(lines, "- Verify your work when practical (build, run tests), and report failures honestly.")
 	}
-	lines = append(lines, "- When requirements are unclear, ask instead of guessing.", "- Be concise. Refer to code as path:line.")
+	lines = append(lines, "- When requirements are unclear, ask instead of guessing.", "- Be concise. Refer to code by path, as path:line when a tool showed you the line number.")
 	return strings.Join(lines, "\n")
 }
 
