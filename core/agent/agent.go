@@ -90,6 +90,9 @@ type TurnStats struct {
 	Cost  float64
 	// Duration is how long the turn took, set when it ends.
 	Duration time.Duration
+	// CutOff is set when the turn ended on a response cut off at the
+	// output token limit, so its answer is incomplete or missing.
+	CutOff bool
 }
 
 // ErrBlocked ends a turn whose message an extension blocked.
@@ -664,6 +667,11 @@ func (a *Agent) loop(ctx context.Context) error {
 
 		calls := resp.Message.ToolCalls()
 		if len(calls) == 0 {
+			// The turn ends here unless steering or a follow-up comes in,
+			// in which case a later response decides.
+			a.mu.Lock()
+			a.turn.CutOff = resp.StopReason == provider.StopMaxTokens
+			a.mu.Unlock()
 			switch {
 			case resp.StopReason == provider.StopMaxTokens:
 				a.emit(events.Notice{Level: "warn", Text: fmt.Sprintf("the response was cut off at the output token limit (%d tokens)", req.MaxTokens)})

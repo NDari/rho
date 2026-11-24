@@ -59,10 +59,12 @@ func Sink(o Options) events.Sink {
 // event stream.
 type Result struct {
 	// Status is "done", "error", "cancelled", "blocked" (an extension
-	// blocked the prompt) or "max_steps".
+	// blocked the prompt), "max_steps" or "cut_off" (the last response
+	// was cut off at the output token limit).
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
-	// Answer is the last assistant text of the turn.
+	// Answer is the last assistant text of the turn; when the turn was
+	// cut off, the text of the cut-off response alone (often empty).
 	Answer string `json:"answer"`
 	Model  string `json:"model"`
 	// Steps counts model responses; Usage and Cost add up every request
@@ -83,7 +85,7 @@ func (Result) Type() string { return "result" }
 // error is the one that ended the turn, so the exit status can report it.
 func Run(ctx context.Context, a *app.App, text string, o Options) error {
 	err := a.Agent.Run(ctx, provider.UserText(text))
-	final := lastAssistantText(a)
+	final := lastAssistantText(a, a.Agent.LastTurn().CutOff)
 	if !o.JSON {
 		if final != "" {
 			fmt.Fprintln(o.Out, final)
@@ -99,12 +101,14 @@ func Run(ctx context.Context, a *app.App, text string, o Options) error {
 func TurnResult(a *app.App, err error) Result {
 	stats := a.Agent.LastTurn()
 	r := Result{
-		Status: status(err), Answer: lastAssistantText(a), Model: a.Agent.Model().ID,
+		Status: status(err), Answer: lastAssistantText(a, stats.CutOff), Model: a.Agent.Model().ID,
 		Steps: stats.Steps, Usage: stats.Usage, Cost: stats.Cost, Session: a.Agent.Session().Path(),
 		Duration: stats.Duration,
 	}
 	if err != nil {
 		r.Error = err.Error()
+	} else if stats.CutOff {
+		r.Status = "cut_off"
 	}
 	return r
 }
@@ -124,12 +128,16 @@ func status(err error) string {
 	}
 }
 
-func lastAssistantText(a *app.App) string {
+// lastAssistantText returns the last assistant text of the turn. With
+// cutOff, it returns the last response's text even when empty: an earlier
+// "let me read..." is not the answer of a turn whose final response was
+// cut off.
+func lastAssistantText(a *app.App, cutOff bool) string {
 	cv := a.Agent.Session().BuildContext()
 	for i := len(cv.Messages) - 1; i >= 0; i-- {
 		m := cv.Messages[i]
 		if m.Role == provider.RoleAssistant {
-			if t := m.TextContent(); t != "" {
+			if t := m.TextContent(); t != "" || cutOff {
 				return t
 			}
 		}

@@ -347,13 +347,13 @@ func TestLastAssistantTextStopsAtUser(t *testing.T) {
 	if err := Run(context.Background(), a, "one", o); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastAssistantText(a); got != "first answer" {
+	if got := lastAssistantText(a, false); got != "first answer" {
 		t.Fatalf("after turn 1: %q", got)
 	}
 	if err := Run(context.Background(), a, "two", o); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastAssistantText(a); got != "" {
+	if got := lastAssistantText(a, false); got != "" {
 		t.Errorf("after turn 2: %q, want empty", got)
 	}
 	if got := out.String(); got != "first answer\n" {
@@ -372,8 +372,52 @@ func TestLastAssistantTextSkipsToolResults(t *testing.T) {
 	if err := Run(context.Background(), a, "hi", o); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastAssistantText(a); got != "reading" {
+	if got := lastAssistantText(a, false); got != "reading" {
 		t.Errorf("lastAssistantText = %q, want %q", got, "reading")
+	}
+}
+
+func TestRunCutOff(t *testing.T) {
+	// The final response was cut off: the result says so, and the earlier
+	// "reading" is not reported as the answer.
+	tests := []struct {
+		name, text string
+	}{
+		{"thinking only", ""},
+		{"partial answer", "The bug is in"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			steps := []fake.Step{
+				{Text: "reading", Calls: []fake.Call{{Name: "ls", Args: map[string]string{}}}},
+				{Thinking: "still thinking", Text: tc.text, Stop: provider.StopMaxTokens},
+			}
+			var out syncBuffer
+			o := Options{JSON: true, Out: &out, ErrOut: &bytes.Buffer{}}
+			a, _ := newApp(t, o, nil, steps...)
+			if err := Run(context.Background(), a, "hi", o); err != nil {
+				t.Fatal(err)
+			}
+			lines := jsonLines(t, out.String())
+			res := lines[len(lines)-1]
+			if res["type"] != "result" || res["status"] != "cut_off" || res["answer"] != tc.text {
+				t.Errorf("result = %v, want cut_off with answer %q", res, tc.text)
+			}
+
+			var printed syncBuffer
+			po := Options{Out: &printed, ErrOut: &bytes.Buffer{}}
+			pa, _ := newApp(t, po, nil, steps...)
+			if err := Run(context.Background(), pa, "hi", po); err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			if tc.text != "" {
+				want = tc.text + "\n"
+			}
+			if printed.String() != want {
+				t.Errorf("print mode = %q, want %q", printed.String(), want)
+			}
+		})
 	}
 }
 

@@ -47,7 +47,7 @@ rho --mode rpc --tools read --no-project-context
 | `shutdown` | | `{}` after stopping the turn and the extensions |
 | `exit` (notification) | | Rho exits. Closing stdin does the same |
 
-`status` is `done`, `error`, `cancelled`, `blocked` (an extension blocked the prompt) or `max_steps`. Messages use the session file's format: `{"role": "user", "content": [{"type": "text", "text": "..."}]}`, with roles `user`, `assistant` and `tool_result`.
+`status` is `done`, `error`, `cancelled`, `blocked` (an extension blocked the prompt), `max_steps` or `cut_off` (the last response was cut off at the output token limit; `answer` is then that response's text alone, often empty). Messages use the session file's format: `{"role": "user", "content": [{"type": "text", "text": "..."}]}`, with roles `user`, `assistant` and `tool_result`.
 
 ## Rho to client
 
