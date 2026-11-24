@@ -8,7 +8,7 @@ The short version: much of this already works through headless mode, `RHO_HOME`,
 
 In order of how much they matter for adoption:
 
-1. **Approval before commands or edits.** Rho never asks before running `bash` or writing files. Many users ask about this first. Keeping core minimal, it can ship as a bundled, opt-in extension with a simple policy (for example, ask before `bash`, or before writes outside the project) that works in both the TUI and GUI. Today it exists only as the `guard.go` example. Two open questions come first if it is built as an extension: [guards that fail closed](#guards-that-fail-closed-to-discuss) and [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss).
+1. **Approval before commands or edits.** Rho never asks before running `bash` or writing files. Many users ask about this first. Not decided: whether Rho should have it, and if so whether in core or as a bundled, opt-in extension with a simple policy (for example, ask before `bash`, or before writes outside the project) that works in both the TUI and GUI. Today it exists only as the `guard.go` example. As an extension it would also need [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss); [failing hooks block](#hooks-fail-closed-done) either way.
 2. **Read-only search tools.** **Done:** built-in `grep`, `find` and `ls` (spec §5), offered in side conversations and whenever `bash` is not.
 3. **Native Anthropic provider.** Deferred in the spec. Going through an OpenAI-compatible endpoint loses prompt-caching control and thinking.
 4. **File checkpoints and a changes view.** Item 1 in [feature-requests.md](feature-requests.md).
@@ -45,19 +45,15 @@ Compared with what pi offers extensions:
 
 Replacing a built-in tool already works: disable it in `tools.disabled` and an extension can register a tool with its name (a sandboxed `bash`, for example).
 
-### Guards that fail closed (to discuss)
+### Hooks fail closed (done)
 
-Hooks are advisory: when a `before_tool_call` hook fails, Rho logs it and runs the tool, so one broken extension cannot stop every tool. That is the wrong default for an extension whose job is to block, such as an approval prompt:
+Hooks used to be advisory: a hook that failed, timed out or sent a bad reply was skipped, and the action went ahead as if it had answered `{}`. An extension failing open is a bug, whatever the extension is for: it registered the hook to be consulted, and skipping it is silent and surprising (a sandboxing `before_tool_call` that fails would run the command on the host; a redacting `before_request` that fails would send what it should have removed). Now in spec §12.4 and §12.5:
 
-- **Crash:** a crashed extension is no longer running, so its hook is skipped and every later call is allowed until `/reload`. Rho shows a notice, but nothing stops the next call.
-- **Errors and bad replies:** a hook that returns an error, or a reply that does not parse, is skipped the same way.
-- **Not loaded:** an extension that is disabled, not approved (project extensions) or turned off with all the others never gets to block anything.
+- `user_message` blocks the message, `before_request` fails the turn, `before_tool_call` blocks the call, `after_tool_call` replaces the result with an error, `before_compaction` fails the compaction. `session_start`, `turn_end` and `session_end` only report.
+- A failed extension's hooks fail until `/reload` or until it is turned off; during the automatic restart they wait for the new process.
+- No opt-out (such as `"advisory": true`) for now; it is easy to add later and hard to take back.
 
-The idea: an extension declares itself a gate in its `initialize` reply (for example `"gate": true`). For a gate, a failed, timed-out or missing reply blocks the call with a reason instead of allowing it, and a crashed gate keeps blocking ("the guard extension X is not running; /reload to restart it") until it is reloaded or disabled. Open questions:
-
-- Is a crashed gate that blocks every call too strict, or is that the point?
-- Should disabling a gate (in `/extensions` or `extensions.disabled`) ask for confirmation?
-- Do gates also apply to `user_message` and `after_tool_call`, which can block or replace too?
+Separate, not decided: noticing that an extension you rely on is not loaded at all (turned off, project not approved, `--no-project-context`). It never fails, so failing closed does not cover it; something like `extensions.required` would.
 
 ### Prompts that show what is asked (to discuss)
 
@@ -84,7 +80,7 @@ pi exposes most of this (`before_provider_request`, `before_provider_headers`, `
 4. **Request headers** as an `{"headers": {...}}` result of `before_send`, rather than another hook.
 5. **Providers written as extensions** (`provider/stream`): the most power and the most work (streaming over JSON-RPC, cancellation, usage). It would also let the deferred native Anthropic provider ship as an extension.
 
-The same test against other built-ins: approval needs [guards that fail closed](#guards-that-fail-closed-to-discuss) and [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss); plan mode (`agent/set_tools`) and custom compaction (`before_compaction`) work today; file checkpoints mostly work with `before_tool_call` and `tool_end` but miss what `bash` changes (a limit for core too); "a turn needs you" notifications have `turn_end` but nothing for a prompt waiting on the user (pi has `ui_prompt_start` and `ui_prompt_end`).
+The same test against other built-ins: approval needs [hooks that fail closed](#hooks-fail-closed-done) and [prompts that show what is asked](#prompts-that-show-what-is-asked-to-discuss); plan mode (`agent/set_tools`) and custom compaction (`before_compaction`) work today; file checkpoints mostly work with `before_tool_call` and `tool_end` but miss what `bash` changes (a limit for core too); "a turn needs you" notifications have `turn_end` but nothing for a prompt waiting on the user (pi has `ui_prompt_start` and `ui_prompt_end`).
 
 ### Provider middleware (to review with the extension API)
 

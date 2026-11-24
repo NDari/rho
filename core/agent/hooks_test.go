@@ -24,6 +24,10 @@ type testHooks struct {
 	message func(id string, m provider.Message)
 	toolEnd func(name string, args json.RawMessage, res tools.Result)
 	tools   func(offered []string) []string
+	// requestErr and compactErr make before_request and
+	// before_compaction fail.
+	requestErr error
+	compactErr error
 }
 
 func (h testHooks) BeforeToolCall(_ context.Context, name string, args json.RawMessage) (json.RawMessage, string) {
@@ -36,8 +40,8 @@ func (testHooks) AfterToolCall(_ context.Context, _ string, _ json.RawMessage, r
 	return res
 }
 func (testHooks) TurnEnd(context.Context) {}
-func (testHooks) BeforeCompaction(context.Context, []provider.Message) (string, bool) {
-	return "", false
+func (h testHooks) BeforeCompaction(context.Context, []provider.Message) (string, error) {
+	return "", h.compactErr
 }
 func (h testHooks) MessageEnd(id string, m provider.Message) {
 	if h.message != nil {
@@ -55,16 +59,19 @@ func (h testHooks) UserMessage(_ context.Context, text string) (string, string) 
 	}
 	return h.user(text)
 }
-func (h testHooks) BeforeRequest(_ context.Context, system string, msgs []provider.Message, ts []string, _ bool) (string, []provider.Message, []string) {
+func (h testHooks) BeforeRequest(_ context.Context, system string, msgs []provider.Message, ts []string, _ bool) (string, []provider.Message, []string, error) {
+	if h.requestErr != nil {
+		return "", nil, nil, h.requestErr
+	}
 	var keep []string
 	if h.tools != nil {
 		keep = h.tools(ts)
 	}
 	if h.request == nil {
-		return system, msgs, keep
+		return system, msgs, keep, nil
 	}
 	s, m := h.request(system, msgs)
-	return s, m, keep
+	return s, m, keep, nil
 }
 
 func TestUserMessageHookRewritesAndKeepsAttachments(t *testing.T) {
@@ -316,5 +323,46 @@ func TestCancelDuringBeforeToolCallSkipsTheTool(t *testing.T) {
 				t.Errorf("turn_end = %+v, want cancelled by %q", end, tt.by)
 			}
 		})
+	}
+}
+
+// TestFailingBeforeRequestStopsTheTurn checks that a before_request hook
+// that fails stops the request instead of sending it unchanged.
+func TestFailingBeforeRequestStopsTheTurn(t *testing.T) {
+	fp := fake.New("fake", fake.Step{Text: "answer", Check: func(provider.Request) {
+		t.Error("the request was sent although its hook failed")
+	}})
+	a, _, _ := newTestAgent(t, fp)
+	a.SetHooks(testHooks{requestErr: errors.New("extension r failed in its before_request hook")})
+	err := a.Run(context.Background(), provider.UserText("question"))
+	if err == nil || !strings.Contains(err.Error(), "extension r failed") {
+		t.Fatalf("Run = %v, want the hook's error", err)
+	}
+}
+
+// TestFailingBeforeCompactionStopsTheCompaction checks that a
+// before_compaction hook that fails stops the compaction instead of
+// falling back to the built-in summary.
+func TestFailingBeforeCompactionStopsTheCompaction(t *testing.T) {
+	fp := fake.New("fake",
+		fake.Step{Text: "first"},
+		fake.Step{Text: "second"},
+		fake.Step{Text: "SUMMARY", Check: func(provider.Request) {
+			t.Error("the built-in summary was asked for although the hook failed")
+		}},
+	)
+	a, _, _ := newTestAgent(t, fp)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.SetHooks(testHooks{compactErr: errors.New("extension c failed in its before_compaction hook")})
+	if err := a.Compact(ctx); err == nil || !strings.Contains(err.Error(), "extension c failed") {
+		t.Fatalf("Compact = %v, want the hook's error", err)
+	}
+	if cv := a.Session().BuildContext(); cv.Compaction != nil {
+		t.Errorf("compacted anyway: %+v", cv.Compaction)
 	}
 }

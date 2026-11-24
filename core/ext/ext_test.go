@@ -306,7 +306,7 @@ func TestMessageHooksEndToEnd(t *testing.T) {
 		t.Errorf("user_message block = %q", reason)
 	}
 
-	sys, msgs, keep := m.BeforeRequest(ctx, "system", []provider.Message{provider.UserText("question")}, []string{"read", "bash"}, false)
+	sys, msgs, keep, _ := m.BeforeRequest(ctx, "system", []provider.Message{provider.UserText("question")}, []string{"read", "bash"}, false)
 	if keep != nil {
 		t.Errorf("tools changed without being asked: %v", keep)
 	}
@@ -519,7 +519,7 @@ func TestToolControlAndCapabilities(t *testing.T) {
 	m.Start(ctx)
 	defer m.Stop()
 
-	_, _, keep := m.BeforeRequest(ctx, "s", []provider.Message{provider.UserText("q")}, []string{"read", "write", "bash"}, false)
+	_, _, keep, _ := m.BeforeRequest(ctx, "s", []provider.Message{provider.UserText("q")}, []string{"read", "write", "bash"}, false)
 	if strings.Join(keep, ",") != "read" {
 		t.Errorf("narrowed tools = %v", keep)
 	}

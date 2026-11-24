@@ -35,16 +35,17 @@ type Hooks interface {
 	AfterToolCall(ctx context.Context, name string, args json.RawMessage, res tools.Result) tools.Result
 	// TurnEnd is called when control returns to the user.
 	TurnEnd(ctx context.Context)
-	// BeforeCompaction may supply its own summary.
-	BeforeCompaction(ctx context.Context, msgs []provider.Message) (string, bool)
+	// BeforeCompaction may supply its own summary ("" for none). An
+	// error stops the compaction.
+	BeforeCompaction(ctx context.Context, msgs []provider.Message) (string, error)
 	// UserMessage may rewrite the text of a user message before it is
 	// saved, or block it by returning a non-empty reason.
 	UserMessage(ctx context.Context, text string) (string, string)
 	// BeforeRequest may replace the system prompt and messages of one
 	// model request. The session is not changed.
 	// tools names the tools offered; returning a subset narrows them for
-	// this request (nil keeps them).
-	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string)
+	// this request (nil keeps them). An error stops the request.
+	BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string, error)
 	// MessageEnd and ToolEnd report a saved message and a finished tool
 	// call. They must not block.
 	MessageEnd(entryID string, m provider.Message)
@@ -814,7 +815,13 @@ func (a *Agent) buildRequest(ctx context.Context) (provider.Request, provider.Pr
 		// Count what the hook added (or removed) toward the output limit.
 		before := requestTokens(req.System, req.Messages)
 		sent := req.System
-		sys, msgs, keep := h.BeforeRequest(ctx, req.System, req.Messages, tools.Names(ts), cv.Aside)
+		sys, msgs, keep, err := h.BeforeRequest(ctx, req.System, req.Messages, tools.Names(ts), cv.Aside)
+		if err != nil {
+			if ctx.Err() != nil {
+				return req, prov, ctx.Err()
+			}
+			return req, prov, err
+		}
 		if narrowed := filterTools(ts, keep); keep != nil && len(narrowed) < len(ts) {
 			if sys == sent {
 				// Rebuild the prompt so its tool list and guidance match.
@@ -1167,12 +1174,11 @@ func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call 
 		return tools.Result{Content: []provider.Block{provider.Text(fmt.Sprintf("Unknown tool %q.", call.Name))}, IsError: true}, args
 	}
 	hooks := a.getHooks()
+	var reason string
 	if hooks != nil {
-		newArgs, reason := hooks.BeforeToolCall(ctx, call.Name, args)
-		if reason != "" {
-			return tools.Result{Content: []provider.Block{provider.Text("Blocked: " + reason)}, IsError: true}, args
-		}
-		if len(newArgs) > 0 {
+		var newArgs json.RawMessage
+		newArgs, reason = hooks.BeforeToolCall(ctx, call.Name, args)
+		if reason == "" && len(newArgs) > 0 {
 			args = newArgs
 		}
 	}
@@ -1180,6 +1186,9 @@ func (a *Agent) execute(ctx context.Context, byName map[string]tools.Tool, call 
 	// asking the user); a cancelled call must not run.
 	if ctx.Err() != nil {
 		return tools.Result{Content: []provider.Block{provider.Text("Cancelled by " + events.CancelledBy(ctx) + ".")}, IsError: true}, args
+	}
+	if reason != "" {
+		return tools.Result{Content: []provider.Block{provider.Text("Blocked: " + reason)}, IsError: true}, args
 	}
 	res := a.runTool(ctx, t, env, call, args)
 	if hooks != nil {
@@ -1269,9 +1278,12 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 	toSummarize := cv.Messages[:cut]
 	var summary string
 	if h := a.getHooks(); h != nil {
-		if s, ok := h.BeforeCompaction(ctx, toSummarize); ok {
-			summary = s
+		s, err := h.BeforeCompaction(ctx, toSummarize)
+		if err != nil {
+			a.emit(events.CompactionEnd{TokensBefore: before, TokensAfter: before, Error: err.Error()})
+			return err
 		}
+		summary = s
 	}
 	if summary == "" {
 		prov, err := a.providerFor(model)

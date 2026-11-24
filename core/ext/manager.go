@@ -747,6 +747,13 @@ func (m *Manager) restart(e *Extension) {
 	fresh := &Extension{Candidate: c, ID: e.ID}
 	ctx := context.Background()
 	m.startOne(ctx, fresh)
+	fresh.mu.Lock()
+	if fresh.Status != StatusRunning {
+		// The hooks the crashed process registered keep failing (spec
+		// 12.4) until /reload or it is turned off.
+		fresh.Info.Hooks = e.Info.Hooks
+	}
+	fresh.mu.Unlock()
 	m.mu.Lock()
 	i := slices.Index(m.exts, e)
 	if i != -1 {
@@ -765,9 +772,7 @@ func (m *Manager) restart(e *Extension) {
 		m.o.Sink(events.Notice{Level: "error", Text: fmt.Sprintf("extension %s could not be restarted: %s; /reload to try again", fresh.Name, errText)})
 		return
 	}
-	if fresh.hasHook(HookSessionStart) {
-		_ = fresh.call(ctx, m.timeout(), "hook/"+HookSessionStart, HookParams{}, nil)
-	}
+	m.lifecycleHook(ctx, fresh, HookSessionStart, HookParams{})
 	if m.o.OnRestart != nil {
 		m.o.OnRestart()
 	}
@@ -879,8 +884,8 @@ func (m *Manager) SetEnabled(ctx context.Context, name string, on bool) error {
 	status := e.Status
 	e.mu.Unlock()
 	if !on {
-		if status == StatusRunning && e.hasHook(HookSessionEnd) {
-			_ = e.call(ctx, m.timeout(), "hook/"+HookSessionEnd, HookParams{}, nil)
+		if status == StatusRunning {
+			m.lifecycleHook(ctx, e, HookSessionEnd, HookParams{})
 		}
 		stopOne(e, StatusDisabled)
 		return nil
@@ -908,9 +913,7 @@ func (m *Manager) SetEnabled(ctx context.Context, name string, on bool) error {
 	fresh.mu.Unlock()
 	switch status {
 	case StatusRunning:
-		if fresh.hasHook(HookSessionStart) {
-			_ = fresh.call(ctx, m.timeout(), "hook/"+HookSessionStart, HookParams{}, nil)
-		}
+		m.lifecycleHook(ctx, fresh, HookSessionStart, HookParams{})
 		return nil
 	case StatusNotApproved:
 		return fmt.Errorf("extension %s was not approved", name)
@@ -1149,30 +1152,150 @@ func (m *Manager) Describe() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// callHooks calls a hook that has nothing to stop (session_start,
+// turn_end, session_end) on every running extension that registered it.
+// Failures are only reported.
 func (m *Manager) callHooks(ctx context.Context, hook string, p HookParams) {
 	for _, e := range m.running() {
-		if !e.hasHook(hook) {
+		m.lifecycleHook(ctx, e, hook, p)
+	}
+}
+
+// lifecycleHook calls hook on e if it registered it and reports a failure.
+func (m *Manager) lifecycleHook(ctx context.Context, e *Extension, hook string, p HookParams) {
+	if !e.hasHook(hook) {
+		return
+	}
+	if err := m.hookCall(ctx, e, m.timeout(), hook, p, nil); err != nil {
+		m.o.Sink(events.Notice{Level: "warn", Text: err.Error()})
+	}
+}
+
+// hooked returns the extensions consulted for hook, in order: those that
+// registered it and are running or have crashed. Hooks fail closed (spec
+// 12.4), so a crashed extension stays consulted, and fails, until it is
+// restarted or turned off. One being restarted is waited for and replaced
+// by its new process.
+func (m *Manager) hooked(ctx context.Context, hook string) []*Extension {
+	m.mu.Lock()
+	exts := slices.Clone(m.exts)
+	m.mu.Unlock()
+	var out []*Extension
+	for _, e := range exts {
+		status := e.settle(ctx)
+		e.mu.Lock()
+		has := slices.Contains(e.Info.Hooks, hook)
+		e.mu.Unlock()
+		if !has {
 			continue
 		}
-		_ = e.call(ctx, m.timeout(), "hook/"+hook, p, nil)
+		switch status {
+		case StatusRunning:
+			out = append(out, e)
+		case StatusFailed:
+			x := m.current(ctx, e)
+			if x == nil {
+				continue // replaced by /reload, or turned off
+			}
+			x.mu.Lock()
+			xs, xhas := x.Status, slices.Contains(x.Info.Hooks, hook)
+			x.mu.Unlock()
+			switch {
+			case xs == StatusRunning && xhas:
+				out = append(out, x)
+			case xs == StatusFailed:
+				// Still failed (the restart failed too, or none is
+				// allowed): the hooks it registered fail.
+				out = append(out, e)
+			}
+		}
 	}
+	return out
+}
+
+// settle returns e's status, first waiting for the handling of an exit
+// that has happened but is not recorded yet.
+func (e *Extension) settle(ctx context.Context) string {
+	e.mu.Lock()
+	status, conn, exited := e.Status, e.conn, e.exited
+	e.mu.Unlock()
+	if status != StatusRunning || conn == nil || exited == nil {
+		return status
+	}
+	select {
+	case <-conn.Done():
+		select {
+		case <-exited:
+		case <-ctx.Done():
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.Status
+	default:
+		return status
+	}
+}
+
+// current waits for a restart of the crashed extension e that is under way
+// and returns the extension now in its place: e itself if it was not
+// restarted, or nil if it was replaced by /reload or turned off.
+func (m *Manager) current(ctx context.Context, e *Extension) *Extension {
+	m.mu.Lock()
+	ch := m.restarting[e.ID]
+	m.mu.Unlock()
+	if ch != nil {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return e
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, x := range m.exts {
+		if x.ID == e.ID {
+			x.mu.Lock()
+			off := x.Status == StatusDisabled || x.Status == StatusStopped
+			x.mu.Unlock()
+			if off {
+				return nil
+			}
+			return x
+		}
+	}
+	return nil
+}
+
+// hookCall calls hook on e. The error says which extension failed and how,
+// for the notice or the error that stops what the hook guards.
+func (m *Manager) hookCall(ctx context.Context, e *Extension, timeout time.Duration, hook string, p HookParams, result any) error {
+	e.mu.Lock()
+	running, why := e.Status == StatusRunning, e.Err
+	e.mu.Unlock()
+	if !running {
+		return fmt.Errorf("extension %s is not running (%s); /reload to restart it or /extensions to turn it off", e.Name, why)
+	}
+	err := e.call(ctx, timeout, "hook/"+hook, p, result)
+	if err == nil {
+		return nil
+	}
+	e.log(hook + ": " + err.Error())
+	if ctx.Err() != nil {
+		return fmt.Errorf("cancelled by %s before extension %s answered its %s hook", events.CancelledBy(ctx), e.Name, hook)
+	}
+	return fmt.Errorf("extension %s failed in its %s hook: %w", e.Name, hook, err)
 }
 
 // BeforeToolCall implements agent.Hooks. Tool hooks are serialized, so an
 // extension never handles two at once even when read-only calls run in
-// parallel.
+// parallel. A hook that fails blocks the call.
 func (m *Manager) BeforeToolCall(ctx context.Context, name string, args json.RawMessage) (json.RawMessage, string) {
 	m.toolHooks.Lock()
 	defer m.toolHooks.Unlock()
-	for _, e := range m.running() {
-		if !e.hasHook(HookBeforeToolCall) {
-			continue
-		}
+	for _, e := range m.hooked(ctx, HookBeforeToolCall) {
 		var res HookResult
-		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeToolCall, HookParams{Tool: name, Args: args}, &res)
-		if err != nil {
-			e.log("before_tool_call: " + err.Error())
-			continue
+		if err := m.hookCall(ctx, e, 10*m.timeout(), HookBeforeToolCall, HookParams{Tool: name, Args: args}, &res); err != nil {
+			return nil, err.Error()
 		}
 		if res.Block != "" {
 			return nil, res.Block + " (blocked by extension " + e.Name + ")"
@@ -1184,20 +1307,17 @@ func (m *Manager) BeforeToolCall(ctx context.Context, name string, args json.Raw
 	return args, ""
 }
 
-// AfterToolCall implements agent.Hooks; see BeforeToolCall.
+// AfterToolCall implements agent.Hooks; see BeforeToolCall. A hook that
+// fails replaces the result with an error, so the model never sees a
+// result the extension did not pass.
 func (m *Manager) AfterToolCall(ctx context.Context, name string, args json.RawMessage, res tools.Result) tools.Result {
 	m.toolHooks.Lock()
 	defer m.toolHooks.Unlock()
-	for _, e := range m.running() {
-		if !e.hasHook(HookAfterToolCall) {
-			continue
-		}
+	for _, e := range m.hooked(ctx, HookAfterToolCall) {
 		var hr HookResult
 		r := toWire(res.Content, res.IsError)
-		err := e.call(ctx, m.timeout(), "hook/"+HookAfterToolCall, HookParams{Tool: name, Args: args, Result: &r}, &hr)
-		if err != nil {
-			e.log("after_tool_call: " + err.Error())
-			continue
+		if err := m.hookCall(ctx, e, m.timeout(), HookAfterToolCall, HookParams{Tool: name, Args: args, Result: &r}, &hr); err != nil {
+			return tools.Result{Content: []provider.Block{provider.Text("The tool ran, but its result was withheld: " + err.Error())}, IsError: true}
 		}
 		if hr.Result != nil {
 			res.Content, res.IsError = fromWire(*hr.Result)
@@ -1207,17 +1327,12 @@ func (m *Manager) AfterToolCall(ctx context.Context, name string, args json.RawM
 }
 
 // UserMessage implements agent.Hooks: each extension in turn may rewrite
-// the text or block the message.
+// the text or block the message. A hook that fails blocks it.
 func (m *Manager) UserMessage(ctx context.Context, text string) (string, string) {
-	for _, e := range m.running() {
-		if !e.hasHook(HookUserMessage) {
-			continue
-		}
+	for _, e := range m.hooked(ctx, HookUserMessage) {
 		var res HookResult
-		err := e.call(ctx, 10*m.timeout(), "hook/"+HookUserMessage, HookParams{Text: text}, &res)
-		if err != nil {
-			e.log("user_message: " + err.Error())
-			continue
+		if err := m.hookCall(ctx, e, 10*m.timeout(), HookUserMessage, HookParams{Text: text}, &res); err != nil {
+			return text, err.Error()
 		}
 		if res.Block != "" {
 			return text, res.Block + " (blocked by extension " + e.Name + ")"
@@ -1230,18 +1345,14 @@ func (m *Manager) UserMessage(ctx context.Context, text string) (string, string)
 }
 
 // BeforeRequest implements agent.Hooks: each extension in turn may replace
-// the system prompt and messages of one request.
-func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string) {
+// the system prompt and messages of one request. A hook that fails stops
+// the request.
+func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provider.Message, tools []string, aside bool) (string, []provider.Message, []string, error) {
 	var keep []string // nil: unchanged
-	for _, e := range m.running() {
-		if !e.hasHook(HookBeforeRequest) {
-			continue
-		}
+	for _, e := range m.hooked(ctx, HookBeforeRequest) {
 		var res HookResult
-		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeRequest, HookParams{System: system, Messages: msgs, Tools: tools, Aside: aside}, &res)
-		if err != nil {
-			e.log("before_request: " + err.Error())
-			continue
+		if err := m.hookCall(ctx, e, 10*m.timeout(), HookBeforeRequest, HookParams{System: system, Messages: msgs, Tools: tools, Aside: aside}, &res); err != nil {
+			return "", nil, nil, err
 		}
 		if res.System != "" {
 			system = res.System
@@ -1260,7 +1371,7 @@ func (m *Manager) BeforeRequest(ctx context.Context, system string, msgs []provi
 			tools, keep = narrowed, narrowed
 		}
 	}
-	return system, msgs, keep
+	return system, msgs, keep, nil
 }
 
 // MessageEnd implements agent.Hooks: it notifies extensions of a saved
@@ -1289,19 +1400,20 @@ func (m *Manager) TurnEnd(ctx context.Context) {
 	m.callHooks(ctx, HookTurnEnd, HookParams{})
 }
 
-// BeforeCompaction implements agent.Hooks.
-func (m *Manager) BeforeCompaction(ctx context.Context, msgs []provider.Message) (string, bool) {
-	for _, e := range m.running() {
-		if !e.hasHook(HookBeforeCompaction) {
-			continue
-		}
+// BeforeCompaction implements agent.Hooks. The first summary an extension
+// supplies is used; "" means none did. A hook that fails stops the
+// compaction.
+func (m *Manager) BeforeCompaction(ctx context.Context, msgs []provider.Message) (string, error) {
+	for _, e := range m.hooked(ctx, HookBeforeCompaction) {
 		var hr HookResult
-		err := e.call(ctx, 10*m.timeout(), "hook/"+HookBeforeCompaction, HookParams{Transcript: compact.Transcript(msgs, 4000)}, &hr)
-		if err == nil && strings.TrimSpace(hr.Summary) != "" {
-			return hr.Summary, true
+		if err := m.hookCall(ctx, e, 10*m.timeout(), HookBeforeCompaction, HookParams{Transcript: compact.Transcript(msgs, 4000)}, &hr); err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(hr.Summary) != "" {
+			return hr.Summary, nil
 		}
 	}
-	return "", false
+	return "", nil
 }
 
 func toWire(blocks []provider.Block, isErr bool) ToolResult {

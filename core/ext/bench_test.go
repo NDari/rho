@@ -174,7 +174,7 @@ func BenchmarkHookBeforeRequest(b *testing.B) {
 					ctx := context.Background()
 					b.SetBytes(int64(len(data)))
 					for b.Loop() {
-						_, got, _ := m.BeforeRequest(ctx, "system", msgs, []string{"read"}, false)
+						_, got, _, _ := m.BeforeRequest(ctx, "system", msgs, []string{"read"}, false)
 						if len(got) < len(msgs) {
 							b.Fatalf("got %d messages, want %d", len(got), len(msgs))
 						}

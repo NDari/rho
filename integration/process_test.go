@@ -265,3 +265,36 @@ func TestExtensionCrashMidTurn(t *testing.T) {
 		t.Errorf("session = %s", got)
 	}
 }
+
+// TestExtensionHookCrashBlocksTheCall runs a real extension process whose
+// before_tool_call hook crashes: hooks fail closed, so the call it was
+// asked about does not run, and the model's next call waits for the
+// restart and runs once the new process allows it.
+func TestExtensionHookCrashBlocksTheCall(t *testing.T) {
+	_, crashExt := binaries(t)
+	e := newEnv(t,
+		callReply("write", `{"path":"crash-hook.txt","content":"x"}`),
+		callReply("write", `{"path":"after.txt","content":"x"}`),
+		textReply("Done."),
+	)
+	e.write(filepath.Join(e.home, "extensions", "crashy", ext.ManifestName), fmt.Sprintf("command = %q\n", crashExt))
+	r := e.run("Write the files.", runOpts{extensions: true})
+	if r.err != nil || r.result["status"] != "done" {
+		t.Fatalf("err %v, result %v\n%s", r.err, r.result, r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(e.cwd, "crash-hook.txt")); err == nil {
+		t.Error("the call whose hook crashed was run")
+	}
+	if _, err := os.Stat(filepath.Join(e.cwd, "after.txt")); err != nil {
+		t.Errorf("the call after the restart did not run: %v", err)
+	}
+	ends := r.ofType("tool_end")
+	if len(ends) != 2 || !toolFailed(ends[0]) || toolFailed(ends[1]) {
+		t.Fatalf("tool_end = %v", ends)
+	}
+	msgs := e.sentMessages(1)
+	last, _ := json.Marshal(msgs[len(msgs)-1])
+	if !strings.Contains(string(last), "extension crashy failed in its before_tool_call hook") {
+		t.Errorf("tool result sent = %s", last)
+	}
+}
