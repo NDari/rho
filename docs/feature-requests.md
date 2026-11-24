@@ -6,7 +6,7 @@ Ideas for Rho, mostly the TUI and GUI, that are not built yet, with the notes fr
 |---|---|---|---|---|
 | 1 | File restore and a changes view | yes | yes | to discuss |
 | 2 | Edit the prompt in an external editor (Ctrl+G) | done | no | done |
-| 3 | Notifications when a turn needs you | yes | yes | ready |
+| 3 | Notifications when a turn needs you | yes | yes | on hold |
 | 4 | Sessions sidebar | no | yes | GUI only |
 | 5 | Open another project (`/open`) | no | done | GUI only |
 | 6 | Terminal in the GUI | no | yes | needs dependencies |
@@ -62,15 +62,42 @@ Not needed in the GUI.
 
 ## 3. Notifications (both)
 
-**Ready.** Tell the user when Rho needs them while they are looking elsewhere:
+**On hold** until the macOS check below is done. Tell the user when Rho needs them while they are looking elsewhere. No core change is needed: the frontends already get `turn_end` and the UI requests.
 
-- when a turn ends (done, failed after retries, or cancelled),
-- when an extension asks a question (`ui/confirm`, `ui/select`, `ui/input`).
+### Design (agreed)
 
-Only when the window is not focused.
+- **When:** a turn ends (done, failed after retries, or cancelled by an extension or RPC client, not by the user, who is there), or an extension asks a question (`ui/confirm`, `ui/select`, `ui/input`).
+- **Only when the window is not focused.** Where focus is unknown (the terminal never reports it), notify only for turns that took more than about 10 seconds.
+- **Content:** "Rho", the project folder name and what happened ("turn finished", "needs your answer"). Never the model's text, since notifications can show on a locked screen. In the GUI, clicking the notification brings the window forward.
+- **On by default.**
+- **TUI:** `tui.notify = auto | osc9 | osc777 | bell | off`. `auto` picks OSC 9 or OSC 777 from the terminal's environment variables (`TERM_PROGRAM` and similar) and falls back to the bell. Send one sequence, never both: terminals that support both would notify twice.
+- **GUI:** a system notification, and on macOS perhaps a dock badge (not checked).
 
-- **TUI:** a desktop notification through the terminal (OSC 9 or OSC 777, which many terminals support), or the bell. Focus comes from terminal focus reporting where the terminal supports it. A setting such as `tui.notify = auto | bell | off`.
-- **GUI:** a system notification, and on macOS a dock badge. Check what Wails v3 offers for notifications and whether it works with the pure-Go backend on Linux; otherwise use D-Bus directly there.
+### What was checked (2026-11-24)
+
+**TUI.** Bubble Tea v2 reports focus (`View.ReportFocus`, then `FocusMsg` and `BlurMsg`; in tmux this needs `focus-events on`). Escape sequences go out with `tea.Raw`; `x/ansi` has no notification helper, so the sequences are written by hand (OSC 777 is `ESC ] 777 ; notify ; title ; body ST` and has no escaping, so semicolons and control characters must be stripped). Since they are escape sequences, the notification shows where the terminal runs, so it works over SSH, unlike `notify-send` or D-Bus from Rho. Support, mostly from other projects' tables (only Ghostty's and kitty's from their own docs):
+
+| Terminal | OSC 9 | OSC 777 |
+|---|---|---|
+| iTerm2 | yes | |
+| kitty | yes (compatibility; its own is OSC 99) | |
+| WezTerm | yes | yes |
+| Ghostty | yes | yes (dropped while the surface is focused) |
+| foot | | yes |
+| VTE terminals (GNOME Terminal) | | only with Fedora's patch |
+| Windows Terminal | no | 1.26 Preview and Canary only, off by default (`compatibility.allowOSC777`) |
+
+No terminal answers a query for this, so `auto` must guess; stable Windows Terminal, Alacritty and stock GNOME Terminal get the bell. Inside tmux, OSC sequences need `allow-passthrough`; the bell passes through.
+
+**GUI.** Wails v3.1.0 has a notifications service (`pkg/services/notifications`) with a pure-Go macOS file (`notifications_darwin_purego.go`), D-Bus on Linux through godbus (pure Go) and toasts on Windows, so it should build with `CGO_ENABLED=0`. On macOS it refuses to start without a bundle identifier: `Rho.app` has one (`gui/build/darwin/Info.plist`), a bare `rho-gui` (dev builds) does not, so that case must fail quietly.
+
+### Still to check
+
+- **macOS with an ad-hoc signed app.** Releases are ad-hoc signed unless the signing secrets are set (see [releasing.md](releasing.md)). No authoritative answer was found on whether macOS grants notification permission to an ad-hoc signed app downloaded from the internet; reports say only code-signed apps are allowed, and that ad-hoc signing may count. Test: build `Rho.app` ad-hoc signed, start it on a Mac, and see whether the permission prompt appears and a notification arrives.
+- The Windows GUI toast and the Linux D-Bus notification, in real use.
+- Terminals in the table not seen first hand.
+
+References: [Ghostty VT reference](https://ghostty.org/docs/vt/reference), [kitty desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/), [Windows Terminal OSC 777 issue](https://github.com/microsoft/terminal/issues/7718).
 
 ## 4. Sessions sidebar (GUI only)
 

@@ -55,6 +55,16 @@ Hooks used to be advisory: a hook that failed, timed out or sent a bad reply was
 
 Separate, not decided: noticing that an extension you rely on is not loaded at all (turned off, project not approved, `--no-project-context`). It never fails, so failing closed does not cover it; something like `extensions.required` would.
 
+### Approval: whether, and in core or as an extension (to discuss)
+
+Not at all: without a sandbox, prompts suggest a safety they do not give (an allowed `bash` call can do almost anything), and the real answer is a container or VM (spec §13); prompts that come often get approved without reading; pi has none; the `guard.go` example already shows how to add one, and headless and RPC mode stay simpler. Against: it is what users ask about first, and its absence may stop some from trying Rho.
+
+For an extension: core stays minimal (as in pi) and costs nothing for users who do not want prompts; policies vary (every `bash`, allowlists, writes outside the project, none in CI) and can be swapped; prompts are not a security boundary without a sandbox anyway.
+
+For core: defaults decide, and an opt-in extension leaves most users without it while they expect what other harnesses do; an extension sees the arguments at its place among the hooks, so a later extension's `before_tool_call` can rewrite them after the user said yes, while core can ask on the final arguments; a good prompt needs core UI work anyway (below); what `-p` and RPC mode do when nobody can answer is core behavior either way.
+
+One shape: the mechanism in core (asking after all hooks, the prompt, "allow for this session", headless defaults) with the policy as a short setting, and extensions still able to block through `before_tool_call`. Whether it is on by default is a separate question.
+
 ### Prompts that show what is asked (to discuss)
 
 `ui/confirm` has a title and a message but only answers yes or no; `ui/select` has more answers but only a title, no message. An approval prompt needs both: the command, or the path and the diff, to show, and more than two answers (yes, yes for the rest of the session, no). A write outside the project should also look different from one inside it. Options:
