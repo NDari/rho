@@ -48,6 +48,21 @@ func TestAgentsFilesOrder(t *testing.T) {
 	}
 }
 
+func TestBuildWrapsAgentsFiles(t *testing.T) {
+	p := testPaths(t)
+	path := filepath.Join(p.ProjectRoot, "AGENTS.md")
+	write(t, path, "# Project\n\nUse tabs.\n")
+	b, err := Build(p, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "<project_context>\nThe following instruction files were loaded. Follow them.\n\n" +
+		"<project_instructions path=\"" + path + "\">\n# Project\n\nUse tabs.\n</project_instructions>\n</project_context>"
+	if !strings.HasSuffix(b.Text, want) {
+		t.Errorf("project context:\n%s", b.Text)
+	}
+}
+
 func TestBuildUsesSystemOverrideAndAppend(t *testing.T) {
 	p := testPaths(t)
 	write(t, filepath.Join(p.Home, "SYSTEM.md"), "global system")

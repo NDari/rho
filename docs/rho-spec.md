@@ -262,7 +262,7 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 
 ## 9. Context: AGENTS.md, SYSTEM.md, skills, templates
 
-- **AGENTS.md:** load `~/.rho/AGENTS.md`, then every `AGENTS.md` from the repo root (or filesystem root) down to cwd. Concatenate in that order with path headers.
+- **AGENTS.md:** load `~/.rho/AGENTS.md`, then every `AGENTS.md` from the repo root (or filesystem root) down to cwd. Concatenate in that order, each file in a `<project_instructions path="...">` tag inside one `<project_context>` tag (tags rather than headings, since the files have headings of their own).
 - **SYSTEM.md:** `.rho/SYSTEM.md` or `~/.rho/SYSTEM.md` replaces the built-in system prompt; `APPEND_SYSTEM.md` appends to it.
 - **Built-in system prompt:** short (target under 1,000 tokens): role, tools, cwd, date, platform/shell notes.
 - **Skills:** Agent Skills format (`SKILL.md` with `name` and `description` frontmatter). Discovered from `~/.rho/skills/` and `.rho/skills/`, after Rho's built-in skills (global and project skills with the same name replace them). Only names, descriptions and paths go into the system prompt; the model reads a skill on demand with `read`.

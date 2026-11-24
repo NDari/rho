@@ -143,10 +143,13 @@ func Build(p config.Paths, o Options) (Built, error) {
 	}
 	if len(files) > 0 {
 		var ab strings.Builder
-		ab.WriteString("# Project context\n\nThe following instruction files were loaded. Follow them.")
+		// Tags, not headings: the files have headings of their own, and
+		// tags show the model where each file starts and ends.
+		ab.WriteString("<project_context>\nThe following instruction files were loaded. Follow them.")
 		for _, f := range files {
-			fmt.Fprintf(&ab, "\n\n## %s\n\n%s", f.Path, strings.TrimSpace(f.Text))
+			fmt.Fprintf(&ab, "\n\n<project_instructions path=\"%s\">\n%s\n</project_instructions>", f.Path, strings.TrimSpace(f.Text))
 		}
+		ab.WriteString("\n</project_context>")
 		if sb.Len() > 0 {
 			sb.WriteString("\n\n")
 		}
