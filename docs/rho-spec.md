@@ -250,7 +250,7 @@ Walk from the current leaf to the root. If a `compaction` entry lies on the path
 ## 8. Compaction
 
 - **Automatic.** Triggered when estimated context tokens exceed `context_window − reserve` (default reserve: 16k tokens, constant for now).
-- Token estimate: last provider-reported usage + rough estimate (chars/4) for newer entries.
+- Token estimate: last provider-reported usage + rough estimate (chars/4) for newer entries. Thinking that is not sent back (all plain thinking text; only opaque encrypted reasoning is replayed) is left out: when the last response had such thinking, its input tokens are used and the rest of the response is estimated, since its output tokens count the thinking too.
 - Process: summarize everything before a cut point, keeping roughly the most recent 20k tokens verbatim (cut at a turn boundary, never inside a tool call/result pair). Append a `compaction` entry.
 - The summary is requested at the end of the conversation itself, with the same system prompt and tools, so the provider's prompt cache covers everything except the instruction. If the model calls a tool, returns nothing, or the request overflows, Rho retries once with a plain transcript (long tool results shortened) and shows a notice.
 - The summarization prompt can be overridden with `~/.rho/COMPACT.md` (or project `.rho/COMPACT.md`).

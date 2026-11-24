@@ -1,11 +1,25 @@
 package provider
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestEstimateTokensCountsOnlyThinkingSentBack(t *testing.T) {
+	text := strings.Repeat("x", 4000)
+	plain := Message{Role: RoleAssistant, Content: []Block{{Type: BlockThinking, Text: text}}}
+	replayed := Message{Role: RoleAssistant, Content: []Block{{Type: BlockThinking, Text: text, Opaque: json.RawMessage(`{"id":"rs_1"}`)}}}
+	if n := plain.EstimateTokens(); n > 10 {
+		t.Errorf("plain thinking = %d tokens, want none counted", n)
+	}
+	if n := replayed.EstimateTokens(); n < 1000 {
+		t.Errorf("replayed thinking = %d tokens, want about 1000", n)
+	}
+}
 
 // TestLooksLikeContextOverflow uses the wording servers use. The llama.cpp
 // line is recorded (see replay/recordings); the others are the servers'

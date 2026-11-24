@@ -1324,6 +1324,14 @@ func (a *Agent) EstimateContext(cv session.Context) int {
 	return total
 }
 
+// droppedThinking reports whether m has thinking that later requests leave
+// out.
+func droppedThinking(m provider.Message) bool {
+	return slices.ContainsFunc(m.Content, func(b provider.Block) bool {
+		return b.Type == provider.BlockThinking && !b.Replayed()
+	})
+}
+
 // estimateContext returns the EstimateContext total and the part of it
 // counted from characters rather than reported by the provider.
 func (a *Agent) estimateContext(cv session.Context) (total, estimated int) {
@@ -1347,7 +1355,14 @@ func (a *Agent) estimateContext(cv session.Context) (total, estimated int) {
 		for _, later := range cv.Messages[i+1:] {
 			estimated += later.EstimateTokens()
 		}
-		return m.Meta.Usage.Total() + estimated, estimated
+		if !droppedThinking(m) {
+			return m.Meta.Usage.Total() + estimated, estimated
+		}
+		// The response's output tokens include thinking that is not sent
+		// again (with a thinking model, often most of them): count the
+		// rest of the response by estimate instead.
+		estimated += m.EstimateTokens()
+		return m.Meta.Usage.InputTokens + estimated, estimated
 	}
 	estimated = 1500 // system prompt and tool definitions, roughly
 	for _, m := range cv.Messages {

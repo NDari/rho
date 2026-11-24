@@ -147,6 +147,14 @@ func (m Message) EstimateTokens() int {
 	return n/4 + 4
 }
 
+// Replayed reports whether a thinking block is sent back to the model in
+// later requests. Providers send back only opaque data (encrypted
+// reasoning), never plain thinking text, so plain thinking takes no room
+// in the context after its own response.
+func (b Block) Replayed() bool {
+	return b.Type == BlockThinking && len(b.Opaque) > 0
+}
+
 func (b Block) estimateChars() int {
 	switch b.Type {
 	case BlockImage:
@@ -159,6 +167,11 @@ func (b Block) estimateChars() int {
 			n += c.estimateChars()
 		}
 		return n
+	case BlockThinking:
+		if !b.Replayed() {
+			return 0
+		}
+		return len(b.Text)
 	default:
 		return len(b.Text)
 	}

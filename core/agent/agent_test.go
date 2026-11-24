@@ -274,6 +274,33 @@ func TestOutputLimitLoweredNearWindow(t *testing.T) {
 	}
 }
 
+func TestThinkingNotSentLeavesOutputLimit(t *testing.T) {
+	// A long thinking turn: its output tokens are mostly thinking, which
+	// the next request does not send, so the next request has the room.
+	var limit int
+	fp := fake.New("fake",
+		fake.Step{Thinking: strings.Repeat("x", 80000), Text: "a", Usage: provider.Usage{InputTokens: 2000, OutputTokens: 20000}},
+		fake.Step{Text: "b", Check: func(r provider.Request) { limit = r.MaxTokens }},
+	)
+	a, _, _ := newTestAgent(t, fp)
+	cfg := a.Config()
+	cfg.Models[0].ContextWindow = 40000
+	cfg.Models[0].MaxOutput = 16000
+	a.SetConfig(cfg)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+	if limit != 16000 {
+		t.Errorf("max tokens = %d, want the model's 16000", limit)
+	}
+	if got := a.EstimateContext(a.Session().BuildContext()); got > 2100 {
+		t.Errorf("context estimate = %d, want about 2000 (thinking not counted)", got)
+	}
+}
+
 func TestCutOffAtLoweredLimitCompactsAndRetries(t *testing.T) {
 	fp := fake.New("fake",
 		fake.Step{Text: strings.Repeat("x", 80000)}, // about 20k tokens
