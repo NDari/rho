@@ -61,11 +61,17 @@ func builtin(tools []provider.ToolSpec) string {
 		lines = append(lines, "- Read files before editing them. Use edit for targeted changes and write for new files or complete rewrites.",
 			"- Keep changes focused on what was asked. Match the existing style of the code.")
 	}
+	// Without this, models given bash often look at files with sed, cat or
+	// grep, which takes more steps than one read.
+	readFirst := ""
+	if has("read") && has("bash") {
+		readFirst = "Use read to look at files, not cat, sed or head. "
+	}
 	switch {
 	case has("bash") && len(search) > 0:
-		lines = append(lines, "- Use "+joinNames(search)+" to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.")
+		lines = append(lines, "- "+readFirst+"Use "+joinNames(search)+" to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.")
 	case has("bash"):
-		lines = append(lines, "- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.")
+		lines = append(lines, "- "+readFirst+"Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.")
 	case len(search) > 0:
 		lines = append(lines, "- Use "+joinNames(search)+" to search and list files.")
 	}

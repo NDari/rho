@@ -143,9 +143,11 @@ func TestBuiltinPromptFollowsTools(t *testing.T) {
 		want  string
 	}{
 		{"default tools", specs("read", "write", "edit", "bash"),
-			intro + edit + "- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
+			intro + edit + "- Use read to look at files, not cat, sed or head. Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
 		{"with search tools", specs("read", "write", "edit", "bash", "grep", "find", "ls"),
-			intro + edit + "- Use grep, find and ls to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
+			intro + edit + "- Use read to look at files, not cat, sed or head. Use grep, find and ls to search and list files, and bash to build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
+		{"bash without read", specs("bash"),
+			intro + "- Use bash to search (rg, grep, find), build, test, and inspect git state. Prefer non-interactive commands.\n" + verify + tail},
 		{"read-only", specs("read", "grep", "find", "ls"),
 			intro + "- Use grep, find and ls to search and list files.\n" + tail},
 		{"read only", specs("read"), intro + tail},

@@ -144,7 +144,7 @@ Read-only, written in Go so they behave the same on every platform and need no e
 - `tools.disabled` lists tools never to offer, built-in or from extensions, by name. It wins over `tools.enabled` and `--tools`. The extension keeps running (its hooks and commands still work), and `/extensions` marks the tool as disabled. A name that matches no built-in tool and no loaded extension tool gets a warning at start and on `/reload`, since it is usually a typo.
 - When `bash` is not offered, `grep`, `find` and `ls` are added unless disabled, so a read-only setup can still search.
 - An extension tool may not take the name of a built-in tool that is offered (it is ignored with a warning), with one exception: it replaces a search tool that was only added because `bash` is off, with a notice. A search tool listed in `tools.enabled` or `--tools` stays built-in.
-- The built-in system prompt's tool guidelines follow the tools offered.
+- The built-in system prompt's tool guidelines follow the tools offered. With both `read` and `bash`, they tell the model to look at files with `read` rather than `cat`, `sed` or `head`: in tests on a small local model, this cut the steps a coding task took by about a third.
 
 ### Read-only tool set
 Used in side conversations (§7.5): the read-only tools offered, plus the read-only built-ins (`read`, `grep`, `find`, `ls`) that are not disabled, even when the main conversation does not offer them. **No bash**, since no shell command can be guaranteed read-only.
