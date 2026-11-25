@@ -16,6 +16,28 @@ In order of how much they matter for adoption:
 
 Smaller: an optional `powershell` tool so Windows works without Git Bash (as in pi), a note to the model after the third identical tool error in a row, a web fetch tool, and images in the TUI.
 
+### Rho against pi on local models (measured 2026-11-23 to 25)
+
+Rho and pi ran the same prompts against the same llama-server, with matched settings (output limit, thinking, compaction) and the server restarted before each run. A logging proxy recorded every request. The tasks were scoped changes to a small Go project, 8 runs per tool, graded by hidden tests the model never saw. The model was mostly Qwen 3.6 35B-A3B with thinking off, plus Gemma 3 27B (XML tools).
+
+**Fixed along the way:**
+- Whole-file reads have no line numbers; they made each read about 50% more expensive on Gemma.
+- `AGENTS.md` goes inside `<project_context>` tags.
+- The context count leaves out thinking that is not sent back.
+- A final reply cut off at the output limit is reported as cut off.
+- The system prompt says to look at files with `read`, not `cat`, `sed` or `head`. Without it, rho's model took about 25% more steps than pi's, mostly `grep -n` and `sed -n` calls to view lines. With it, rho took fewer steps than pi (12.2 against 14.2 requests a run).
+- `edit` ignores trailing whitespace when nothing matches exactly. When nothing matches at all, it names the first differing line and shows the file's text to copy. Recovering from a failed edit went from about 3 tool calls to 1.5; pi takes about 3.
+
+After these, both tools got 7 or 8 of 8 runs fully right on each task, with about the same steps, tokens and time.
+
+**Still open:**
+1. **No thinking budget.** pi's llama.cpp provider sends `thinking_budget_tokens`; rho can only send `reasoning_effort`. Without a cap, Qwen and Ornith often thought for 20 to 37k tokens in one reply and ran out of room before answering. Today the workaround is the server's `--reasoning-budget`. Options: a per-model `thinking_budget` setting, or per-model extra request fields.
+2. **Compaction settings are global.** `compaction.reserve` and `keep_recent` cannot suit a 32K and a 128K model at once.
+3. **Edits still fail more often than pi's** (8% against 4% of edits on the last task). Almost all failures are `old_text` the model wrote from memory, which no matcher should accept. Not done: a note when the model resends an `old_text` that just failed (no repeats were seen after the new hint), and pi's normalization of smart quotes, Unicode dashes and spaces.
+4. **How to test this again.** The proxy, runner and hidden tests were throwaway scripts. If this is repeated, keep them as a small suite (under `scripts/`, since it needs a live model) and try each change on at least two quite different models before keeping it, so the harness is not tuned to one model. Open-ended prompts ("find the most important bug") were too slow on 128K local models (25 to 45 minutes a run) and varied too much between runs to compare anything. Scoped tasks with hidden tests took 1 to 3 minutes.
+
+Seen in both tools, so model behavior rather than harness: running `go build` in the repository (leaving a binary) despite "do not change any files", changes outside what was asked, and test files left unformatted.
+
 ## 2. Extensibility
 
 ### What exists
