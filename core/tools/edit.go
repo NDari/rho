@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/NDari/rho/core/events"
@@ -110,14 +111,28 @@ func (Edit) Execute(_ context.Context, env *Env, raw json.RawMessage, _ func(str
 			return errorResult("edit %d: old_text and new_text are identical", i+1)
 		}
 		count := strings.Count(text, oldText)
-		switch {
-		case count == 0:
-			return errorResult("edit %d: old_text not found in %s. %s", i+1, shown, notFoundHint(text, oldText))
-		case count > 1:
+		if count == 1 {
+			text = strings.Replace(text, oldText, newText, 1)
+			continue
+		}
+		if count > 1 {
 			return errorResult("edit %d: old_text matches %d times in %s (at lines %s). Include more surrounding context to make it unique.",
 				i+1, count, shown, matchLines(text, oldText))
 		}
-		text = strings.Replace(text, oldText, newText, 1)
+		// Spaces and tabs at the ends of lines never change what the text
+		// means, and models often get them wrong, so match without them.
+		loose, offsets := trimLineEnds(text)
+		looseOld, _ := trimLineEnds(oldText)
+		switch n := strings.Count(loose, looseOld); {
+		case looseOld == "" || n == 0:
+			return errorResult("edit %d: old_text not found in %s. %s", i+1, shown, notFoundHint(text, oldText))
+		case n > 1:
+			return errorResult("edit %d: old_text matches %d times in %s (at lines %s) when trailing whitespace is ignored. Include more surrounding context to make it unique.",
+				i+1, n, shown, matchLines(loose, looseOld))
+		}
+		at := strings.Index(loose, looseOld)
+		start, end := offsets[at], offsets[at+len(looseOld)-1]+1
+		text = text[:start] + newText + text[end:]
 	}
 
 	out := text
@@ -148,13 +163,40 @@ func matchLines(text, sub string) string {
 	return strings.Join(nums, ", ")
 }
 
-// notFoundHint explains a failed match: either a whitespace-only difference
-// or the most similar region of the file.
+// trimLineEnds removes spaces and tabs at the end of each line of s. It also
+// returns, for each byte of the result, that byte's offset in s.
+func trimLineEnds(s string) (string, []int) {
+	var b strings.Builder
+	offsets := make([]int, 0, len(s))
+	for start := 0; ; {
+		end := strings.IndexByte(s[start:], '\n')
+		line := s[start:]
+		if end >= 0 {
+			line = s[start : start+end]
+		}
+		kept := strings.TrimRight(line, " \t")
+		b.WriteString(kept)
+		for i := range len(kept) {
+			offsets = append(offsets, start+i)
+		}
+		if end < 0 {
+			return b.String(), offsets
+		}
+		b.WriteByte('\n')
+		offsets = append(offsets, start+end)
+		start += end + 1
+	}
+}
+
+// notFoundHint explains a failed match. It finds where old_text was meant
+// to match (a match that differs only in whitespace, or else the region most
+// like it), names the first line that differs, and shows the file's text
+// there as it is, without line numbers, so it can be copied.
 func notFoundHint(text, oldText string) string {
 	fileLines := strings.Split(text, "\n")
 	oldLines := strings.Split(strings.Trim(oldText, "\n"), "\n")
 
-	// Whitespace-insensitive line match.
+	start, kind := -1, ""
 	for i := 0; i+len(oldLines) <= len(fileLines); i++ {
 		ok := true
 		for j, ol := range oldLines {
@@ -164,39 +206,50 @@ func notFoundHint(text, oldText string) string {
 			}
 		}
 		if ok {
-			return fmt.Sprintf("A match that differs only in whitespace/indentation exists at line %d:\n%s\nCopy the text exactly.",
-				i+1, numbered(fileLines, i, i+len(oldLines)))
-		}
-	}
-
-	// Closest line to the first non-empty line of old_text.
-	var first string
-	for _, l := range oldLines {
-		if strings.TrimSpace(l) != "" {
-			first = strings.TrimSpace(l)
+			start, kind = i, "A match that differs only in whitespace or indentation"
 			break
 		}
 	}
-	best, bestScore := -1, 0.0
-	for i, l := range fileLines {
-		if s := similarity(strings.TrimSpace(l), first); s > bestScore {
-			best, bestScore = i, s
+	if start < 0 {
+		// Align the first non-empty line of old_text with the file line
+		// most like it.
+		first, firstAt := "", 0
+		for j, l := range oldLines {
+			if strings.TrimSpace(l) != "" {
+				first, firstAt = strings.TrimSpace(l), j
+				break
+			}
+		}
+		best, bestScore := -1, 0.0
+		for i, l := range fileLines {
+			if s := similarity(strings.TrimSpace(l), first); s > bestScore {
+				best, bestScore = i, s
+			}
+		}
+		if best < 0 || bestScore < 0.5 {
+			return "Read the file again to see its current content."
+		}
+		start, kind = max(0, best-firstAt), "The most similar text"
+	}
+	end := min(len(fileLines), start+len(oldLines))
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is at line %d.", kind, start+1)
+	for j, ol := range oldLines {
+		fileLine := "(end of file)"
+		if start+j < len(fileLines) {
+			fileLine = strconv.Quote(fileLines[start+j])
+		}
+		if start+j >= len(fileLines) || strings.TrimRight(fileLines[start+j], " \t") != strings.TrimRight(ol, " \t") {
+			fmt.Fprintf(&b, " Line %d of old_text differs from line %d of the file:\n  old_text: %s\n  file:     %s\n",
+				j+1, start+j+1, strconv.Quote(ol), fileLine)
+			break
 		}
 	}
-	if best < 0 || bestScore < 0.5 {
-		return "Read the file again to see its current content."
-	}
-	from := max(0, best-3)
-	to := min(len(fileLines), best+len(oldLines)+3)
-	return fmt.Sprintf("The most similar text is near line %d:\n%s", best+1, numbered(fileLines, from, to))
-}
-
-func numbered(lines []string, from, to int) string {
-	var b strings.Builder
-	for i := from; i < to && i < len(lines); i++ {
-		fmt.Fprintf(&b, "%6d\t%s\n", i+1, lines[i])
-	}
-	return strings.TrimRight(b.String(), "\n")
+	from, to := max(0, start-2), min(len(fileLines), end+2)
+	fmt.Fprintf(&b, "\nLines %d-%d of the file, as they are:\n%s\nCopy old_text from this text exactly.",
+		from+1, to, strings.Join(fileLines[from:to], "\n"))
+	return b.String()
 }
 
 // similarity is a cheap token-overlap score in [0, 1].

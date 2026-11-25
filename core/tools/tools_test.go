@@ -138,6 +138,31 @@ func TestEdit(t *testing.T) {
 			errSub:  "differs only in whitespace",
 		},
 		{
+			name:    "trailing whitespace in old_text ignored",
+			initial: "a\nb\nc\n",
+			edits:   []map[string]string{{"old_text": "a  \nb", "new_text": "x\ny"}},
+			want:    "x\ny\nc\n",
+		},
+		{
+			name:    "trailing whitespace in file ignored",
+			initial: "a \t\nb\nc\n",
+			edits:   []map[string]string{{"old_text": "a\nb\n", "new_text": "z\n"}},
+			want:    "z\nc\n",
+		},
+		{
+			name:    "ambiguous without trailing whitespace",
+			initial: "x \nx\n",
+			edits:   []map[string]string{{"old_text": "x\t", "new_text": "y"}},
+			errSub:  "matches 2 times in f.txt (at lines 1, 2) when trailing whitespace is ignored",
+		},
+		{
+			name:    "hint names the differing line and shows the text to copy",
+			initial: "func f() {\n\treturn towards\n}\n",
+			edits:   []map[string]string{{"old_text": "func f() {\n\treturn toward\n}", "new_text": "x"}},
+			errSub: "Line 2 of old_text differs from line 2 of the file:\n  old_text: \"\\treturn toward\"\n  file:     \"\\treturn towards\"\n\n" +
+				"Lines 1-4 of the file, as they are:\nfunc f() {\n\treturn towards\n}\n\nCopy old_text from this text exactly.",
+		},
+		{
 			name:    "not found leaves file unchanged",
 			initial: "keep\n",
 			edits:   []map[string]string{{"old_text": "keep", "new_text": "x"}, {"old_text": "zzz", "new_text": "y"}},

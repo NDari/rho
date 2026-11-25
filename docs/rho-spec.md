@@ -120,6 +120,8 @@ Seven built-in tools. Four are offered by default, matching pi: `read`, `write`,
 ### edit
 - Params: `path`, `edits: [{old_text, new_text}]`.
 - Each `old_text` must match **exactly once**; otherwise fail with a helpful message (0 matches / N matches, with nearby context).
+- When `old_text` does not match exactly, it is matched again with spaces and tabs at the ends of lines ignored, on both sides; it is applied if that matches exactly once. Models often get trailing whitespace wrong, and it never changes what the text means.
+- When nothing matches, the message names the first line of `old_text` that differs from the file where it was meant to match (both quoted, so whitespace shows), and gives the file's text there without line numbers, to copy from.
 - **Line endings:** match against LF-normalized text; write back preserving the file's original line ending style (LF or CRLF) and trailing newline state.
 - Display data: unified diff with intraline (word-level) changes.
 
