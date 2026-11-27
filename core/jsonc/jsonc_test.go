@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -38,9 +39,9 @@ func TestDecode(t *testing.T) {
 		{name: "comment at the end without a newline", in: `{"name": "x"} // mine`, want: doc{Name: "x"}},
 		{name: "null counts as defined", in: `{"flag": null}`, defined: [][]string{{"flag"}}},
 		{name: "unknown keys",
-			in:      `{"nmae": 1, "inner": {"timeout": 1, "x": 2}, "items": [{"y": 1}, {"y": 2}], "by_name": {"a": {"z": 1}}}`,
+			in:      `{"nam": 1, "inner": {"timeout": 1, "x": 2}, "items": [{"y": 1}, {"y": 2}], "by_name": {"a": {"z": 1}}}`,
 			want:    doc{Inner: inner{Timeout: 1}, Items: []inner{{}, {}}, ByName: map[string]inner{"a": {}}},
-			unknown: []string{"by_name.a.z", "inner.x", "items.y", "nmae"}},
+			unknown: []string{"by_name.a.z", "inner.x", "items.y", "nam"}},
 		{name: "keys are case sensitive", in: `{"Name": "x"}`, unknown: []string{"Name"}},
 		{name: "syntax error", in: "{\n\"name\": ,\n}", err: "line 2"},
 		{name: "wrong type", in: `{"inner": {"timeout": "x"}}`, err: "timeout"},
@@ -195,7 +196,8 @@ func TestConvertTOML(t *testing.T) {
 	if !strings.HasPrefix(string(data), "// Converted from config.toml") {
 		t.Errorf("no header:\n%s", data)
 	}
-	if fi, _ := os.Stat(dst); fi.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits to keep.
+	if fi, _ := os.Stat(dst); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
 	}
 	if _, err := os.Stat(src); err != nil {

@@ -158,7 +158,7 @@ func TestInterruptMidStream(t *testing.T) {
 			}
 			res := rest[len(rest)-1]
 			if res["type"] != "result" || res["status"] != "cancelled" {
-				t.Fatalf("last line = %v", res)
+				t.Fatalf("last line = %v, exit code %d; stderr:\n%s", res, code, p.stderr.String())
 			}
 			s := reopen(t, res["session"].(string))
 			if got := roles(s); got != "user assistant[cancelled]" {

@@ -15,9 +15,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NDari/rho/core/jsonc"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
+
+	"github.com/NDari/rho/core/jsonc"
 )
 
 // System is the theme setting that follows the system's light or dark
