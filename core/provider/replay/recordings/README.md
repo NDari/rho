@@ -11,6 +11,8 @@ them, including its many small reasoning deltas, usage and timing fields.
 | `llamacpp_chat_overflow.json` | same, 8192-token context | Chat Completions with a 22900-token prompt: the HTTP 400 error body |
 | `llamacpp_responses_text.sse` | same | Responses API, streamed: the arithmetic answer |
 | `llamacpp_responses_tool_call.sse` | same | Responses API, streamed, one `read` tool: a `function_call` to `read` |
+| `llamacpp_messages_text.sse` | llama.cpp `llama-server` (build 12774), Qwen3.6-35B-A3B with thinking | Anthropic Messages API, streamed: the arithmetic answer, after a thinking block with an empty signature |
+| `llamacpp_messages_tool_call.sse` | same, thinking off | Anthropic Messages API, streamed, one `read` tool: a `tool_use` of `read` with `{"path":"go.mod"}` |
 
 To record more, send the request with `curl -sN` to a local server and save
 the body. Check that nothing personal (hosts, paths, user names) is in it.

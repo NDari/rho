@@ -21,6 +21,8 @@ const (
 	ProviderOpenAICompat = "openai-compat"
 	// ProviderOpenAIResponses uses the Responses API.
 	ProviderOpenAIResponses = "openai-responses"
+	// ProviderAnthropic uses the Anthropic Messages API.
+	ProviderAnthropic = "anthropic"
 )
 
 // Config is the merged configuration.
@@ -52,7 +54,8 @@ func (c Config) UpdateCheckEnabled() bool { return c.UpdateCheck == nil || *c.Up
 // Provider describes an API endpoint.
 type Provider struct {
 	// Type selects the adapter: "openai-compat" (Chat Completions, the
-	// default) or "openai-responses" (Responses API).
+	// default), "openai-responses" (Responses API) or "anthropic"
+	// (Messages API).
 	Type string `json:"type"`
 	// BaseURL is the API root, e.g. "http://localhost:9931/v1".
 	BaseURL string `json:"base_url"`
@@ -231,6 +234,11 @@ func Defaults() Config {
 				BaseURL:   "https://generativelanguage.googleapis.com/v1beta/openai/",
 				APIKeyEnv: "GEMINI_API_KEY",
 				Flavor:    "gemini",
+			},
+			"anthropic": {
+				Type:      ProviderAnthropic,
+				BaseURL:   "https://api.anthropic.com",
+				APIKeyEnv: "ANTHROPIC_API_KEY",
 			},
 		},
 		Bash:       Bash{Timeout: 120, MaxTimeout: 600},
@@ -566,7 +574,7 @@ func (c Config) Validate() error {
 		errs = append(errs, checkToolOptions("model "+strconv.Quote(m.ID), m.ToolFormat, m.SystemPromptIn, m.DecodeEntities)...)
 	}
 	for name, p := range c.Providers {
-		if p.Type != ProviderOpenAICompat && p.Type != ProviderOpenAIResponses {
+		if !slices.Contains([]string{ProviderOpenAICompat, ProviderOpenAIResponses, ProviderAnthropic}, p.Type) {
 			errs = append(errs, fmt.Errorf("provider %q: unsupported type %q", name, p.Type))
 		}
 		if p.BaseURL == "" {

@@ -892,6 +892,7 @@ func (a *Agent) requestWith(msgs []provider.Message, aside bool, ts []tools.Tool
 		MaxTokens:       model.MaxOutput,
 		ReasoningEffort: model.ReasoningEffort,
 		SupportsImages:  model.SupportsImages,
+		Thinking:        model.SupportsThinking,
 	}, nil
 }
 

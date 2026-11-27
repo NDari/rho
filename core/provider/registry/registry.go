@@ -11,6 +11,7 @@ import (
 
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/provider/anthropic"
 	"github.com/NDari/rho/core/provider/openaicompat"
 	"github.com/NDari/rho/core/provider/ratelimit"
 )
@@ -71,6 +72,11 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 		p = openaicompat.New(opts)
 	case config.ProviderOpenAIResponses:
 		p = openaicompat.NewResponses(opts)
+	case config.ProviderAnthropic:
+		p = anthropic.New(anthropic.Options{
+			Name: opts.Name, BaseURL: opts.BaseURL, APIKey: opts.APIKey, Headers: opts.Headers,
+			DebugLog: opts.DebugLog, IdleTimeout: opts.IdleTimeout,
+		})
 	default:
 		return nil, fmt.Errorf("provider %q: unsupported type %q", name, pc.Type)
 	}

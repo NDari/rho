@@ -109,8 +109,8 @@ For example, to also offer the search tools in normal sessions:
 
 | Field | Meaning |
 |---|---|
-| `type` | `openai-compat` (Chat Completions, default) or `openai-responses` (Responses API) |
-| `base_url` | API root, e.g. `http://localhost:9931/v1` |
+| `type` | `openai-compat` (Chat Completions, default), `openai-responses` (Responses API) or `anthropic` (Messages API) |
+| `base_url` | API root, e.g. `http://localhost:9931/v1` (for `anthropic`, without `/v1`) |
 | `api_key_env` | environment variable holding the API key |
 | `api_key` | a raw key (works, but Rho warns; prefer `api_key_env`) |
 | `flavor` | endpoint-specific handling; `gemini` is detected automatically |
@@ -128,8 +128,38 @@ Built-in providers you can use without configuring them (set the API key variabl
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 | `gemini` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
+| `anthropic` | `https://api.anthropic.com` (Messages API) | `ANTHROPIC_API_KEY` |
 
 Without an entry in `models` you can still use any model as `provider/name`, e.g. `rho --model openrouter/qwen/qwen3-coder`. Ad-hoc models assume a 128k context window.
+
+## Anthropic
+
+The built-in `anthropic` provider uses the Messages API with a key from the [Claude Console](https://platform.claude.com/settings/keys) in `ANTHROPIC_API_KEY`. Rho never uses a claude.ai sign-in (a Pro or Max subscription can't be used by other tools), and it ignores Anthropic credentials found elsewhere in the environment, so the key in `api_key_env` is the only one sent. List the models you use, with `supports_thinking` so they think and you see summaries of it:
+
+```jsonc
+{
+	"providers": {
+		"anthropic": {
+			"models": [
+				{
+					"id":                "opus",
+					"name":              "claude-opus-5-5",
+					"context_window":    1000000,
+					"max_output":        128000,
+					"supports_thinking": true,
+					"supports_images":   true,
+					"reasoning_effort":  "high",
+					"pricing":           {"input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write": 5.0},
+				},
+			],
+		},
+	},
+}
+```
+
+`reasoning_effort` is sent as the API's effort (`low`, `medium`, `high`, `xhigh` or `max`); without it the model's default applies. Rho caches the system prompt and the conversation so far (5-minute cache), which makes long sessions much cheaper. The prices above are examples; check Anthropic's pricing page.
+
+Any server that speaks the Messages API works with `"type": "anthropic"` and its `base_url`. llama.cpp's `llama-server` serves it at the same port as Chat Completions; give the root without `/v1`, e.g. `"base_url": "http://localhost:9931"`.
 
 ## Models
 

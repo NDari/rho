@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/provider/streamutil"
 )
 
 // sseServer replies to every request with the given SSE data payloads and
@@ -255,7 +256,7 @@ func TestIsConnReset(t *testing.T) {
 		{errors.New("context length exceeded"), false},
 	}
 	for _, tc := range tests {
-		if got := isConnReset(tc.err); got != tc.want {
+		if got := streamutil.IsConnReset(tc.err); got != tc.want {
 			t.Errorf("isConnReset(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}

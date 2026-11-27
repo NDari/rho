@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -24,6 +23,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/provider/streamutil"
 )
 
 // Flavors enable endpoint-specific behavior.
@@ -47,7 +47,7 @@ type Options struct {
 	DebugLog string
 	// IdleTimeout ends a request whose stream sends no data for this long
 	// (as a transient error, so it is retried). 0 means
-	// DefaultIdleTimeout; negative disables the check.
+	// streamutil.DefaultIdleTimeout; negative disables the check.
 	IdleTimeout time.Duration
 }
 
@@ -57,7 +57,7 @@ type Provider struct {
 	flavor string
 	openai bool
 	client openai.Client
-	log    *debugLog
+	log    *streamutil.DebugLog
 	idle   time.Duration
 }
 
@@ -78,10 +78,11 @@ func New(o Options) *Provider {
 	if o.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(o.HTTPClient))
 	}
-	var log *debugLog
-	if o.DebugLog != "" {
-		log = &debugLog{path: o.DebugLog}
-		opts = append(opts, option.WithMiddleware(log.middleware()))
+	log := streamutil.NewDebugLog(o.DebugLog)
+	if log != nil {
+		opts = append(opts, option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+			return log.Middleware(req, next)
+		}))
 	}
 	flavor := o.Flavor
 	if flavor == "" && strings.Contains(o.BaseURL, "generativelanguage.googleapis.com") {
@@ -89,7 +90,7 @@ func New(o Options) *Provider {
 	}
 	idle := o.IdleTimeout
 	if idle == 0 {
-		idle = DefaultIdleTimeout
+		idle = streamutil.DefaultIdleTimeout
 	}
 	return &Provider{
 		name:   o.Name,
@@ -111,31 +112,22 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 		return provider.Response{}, err
 	}
 	var resp provider.Response
-	ctx, capture := p.log.start(ctx)
+	ctx, capture := p.log.Start(ctx)
 	for attempt := 0; attempt < 2; attempt++ {
 		var gotData bool
 		resp, gotData, err = p.streamOnce(ctx, params, onEvent)
 		// A reused keep-alive connection that the server already closed
 		// fails before any data arrives; retry that once, silently.
-		if err == nil || gotData || ctx.Err() != nil || !isConnReset(err) {
+		if err == nil || gotData || ctx.Err() != nil || !streamutil.IsConnReset(err) {
 			break
 		}
 	}
-	p.log.write(p.name, capture, resp, err)
+	p.log.Write(p.name, capture, resp, err)
 	return resp, err
 }
 
-func isConnReset(err error) bool {
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	s := err.Error()
-	return strings.Contains(s, "connection reset") || strings.Contains(s, "server closed idle connection") ||
-		strings.Contains(s, "use of closed network connection") || strings.HasSuffix(s, ": EOF")
-}
-
 func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionNewParams, onEvent func(provider.StreamEvent)) (provider.Response, bool, error) {
-	sctx, dog, stop := watch(ctx, p.idle)
+	sctx, dog, stop := streamutil.Watch(ctx, p.idle)
 	defer stop()
 	stream := p.client.Chat.Completions.NewStreaming(sctx, params)
 	defer stream.Close()
@@ -143,7 +135,7 @@ func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionN
 	acc := newAccumulator(p.name)
 	gotData := false
 	for stream.Next() {
-		dog.kick()
+		dog.Kick()
 		gotData = true
 		acc.add(stream.Current(), onEvent)
 	}
@@ -155,12 +147,12 @@ func (p *Provider) streamOnce(ctx context.Context, params openai.ChatCompletionN
 		resp.StopReason = provider.StopCancelled
 		resp.Message.Meta.StopReason = provider.StopCancelled
 		return resp, gotData, ctx.Err()
-	case stalled(sctx):
-		return resp, gotData, stalledError(p.idle)
+	case streamutil.Stalled(sctx):
+		return resp, gotData, streamutil.StalledError(p.idle)
 	case err != nil:
 		return resp, gotData, classify(err)
 	case acc.finish == "":
-		return resp, gotData, errTruncated()
+		return resp, gotData, streamutil.ErrTruncated()
 	}
 	return resp, gotData, nil
 }
@@ -498,7 +490,7 @@ func classify(err error) error {
 		}
 		pe := &provider.Error{Kind: kind, StatusCode: apiErr.StatusCode, Message: msg, Err: err}
 		if apiErr.Response != nil && kind == provider.ErrTransient {
-			pe.RetryAfter = parseRetryAfter(apiErr.Response.Header, time.Now())
+			pe.RetryAfter = streamutil.ParseRetryAfter(apiErr.Response.Header, time.Now())
 		}
 		return pe
 	}

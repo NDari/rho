@@ -1,4 +1,4 @@
-package openaicompat
+package streamutil
 
 import (
 	"bytes"
@@ -10,52 +10,57 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/openai-go/v3/option"
-
 	"github.com/NDari/rho/core/provider"
 )
 
-// debugLog appends one JSON line per request to a file: the exact payload
+// DebugLog appends one JSON line per request to a file: the exact payload
 // sent and what came back. It holds whole conversations, so it is off by
-// default. Auth headers are never written.
-type debugLog struct {
+// default. Auth headers are never written. A nil *DebugLog logs nothing.
+type DebugLog struct {
 	path string
 	mu   sync.Mutex
 }
 
-type captureKey struct{}
-
-type capture struct{ body []byte }
-
-// middleware records request bodies for requests made with a capture in
-// their context.
-func (d *debugLog) middleware() option.Middleware {
-	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		if c, ok := req.Context().Value(captureKey{}).(*capture); ok && req.Body != nil {
-			body, err := io.ReadAll(req.Body)
-			_ = req.Body.Close()
-			if err != nil {
-				return nil, err
-			}
-			c.body = body
-			req.Body = io.NopCloser(bytes.NewReader(body))
-		}
-		return next(req)
+// NewDebugLog returns a log that writes to path, or nil when path is "".
+func NewDebugLog(path string) *DebugLog {
+	if path == "" {
+		return nil
 	}
+	return &DebugLog{path: path}
 }
 
-// start returns a context that captures the request body.
-func (d *debugLog) start(ctx context.Context) (context.Context, *capture) {
+type captureKey struct{}
+
+// Capture holds the request body of one logged request.
+type Capture struct{ body []byte }
+
+// Middleware records the body of a request made with a context from
+// Start, then sends it on with next. SDKs take it as their HTTP middleware.
+func (d *DebugLog) Middleware(req *http.Request, next func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+	if c, ok := req.Context().Value(captureKey{}).(*Capture); ok && req.Body != nil {
+		body, err := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		c.body = body
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	return next(req)
+}
+
+// Start returns a context that captures the request body.
+func (d *DebugLog) Start(ctx context.Context) (context.Context, *Capture) {
 	if d == nil {
 		return ctx, nil
 	}
-	c := &capture{}
+	c := &Capture{}
 	return context.WithValue(ctx, captureKey{}, c), c
 }
 
-// write appends the record. Errors are ignored: logging must never break
+// Write appends the record. Errors are ignored: logging must never break
 // a request.
-func (d *debugLog) write(prov string, c *capture, resp provider.Response, err error) {
+func (d *DebugLog) Write(prov string, c *Capture, resp provider.Response, err error) {
 	if d == nil || c == nil {
 		return
 	}

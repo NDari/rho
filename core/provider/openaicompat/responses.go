@@ -12,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/NDari/rho/core/provider"
+	"github.com/NDari/rho/core/provider/streamutil"
 )
 
 // ResponsesProvider talks to an endpoint implementing the OpenAI Responses
@@ -20,7 +21,7 @@ import (
 type ResponsesProvider struct {
 	name   string
 	client openai.Client
-	log    *debugLog
+	log    *streamutil.DebugLog
 	idle   time.Duration
 }
 
@@ -37,15 +38,15 @@ func (p *ResponsesProvider) Name() string { return p.name }
 func (p *ResponsesProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (provider.Response, error) {
 	var resp provider.Response
 	var err error
-	ctx, capture := p.log.start(ctx)
+	ctx, capture := p.log.Start(ctx)
 	for attempt := 0; attempt < 2; attempt++ {
 		var gotData bool
 		resp, gotData, err = p.streamOnce(ctx, req, onEvent)
-		if err == nil || gotData || ctx.Err() != nil || !isConnReset(err) {
+		if err == nil || gotData || ctx.Err() != nil || !streamutil.IsConnReset(err) {
 			break
 		}
 	}
-	p.log.write(p.name, capture, resp, err)
+	p.log.Write(p.name, capture, resp, err)
 	return resp, err
 }
 
@@ -79,7 +80,7 @@ func (p *ResponsesProvider) streamOnce(ctx context.Context, req provider.Request
 	}
 	opts = append(opts, option.WithJSONSet("reasoning", reasoning))
 
-	sctx, dog, stop := watch(ctx, p.idle)
+	sctx, dog, stop := streamutil.Watch(ctx, p.idle)
 	defer stop()
 	stream := p.client.Responses.NewStreaming(sctx, params, opts...)
 	defer stream.Close()
@@ -87,7 +88,7 @@ func (p *ResponsesProvider) streamOnce(ctx context.Context, req provider.Request
 	acc := &responsesAcc{prov: p.name}
 	gotData := false
 	for stream.Next() {
-		dog.kick()
+		dog.Kick()
 		gotData = true
 		acc.add(stream.Current().RawJSON(), onEvent)
 	}
@@ -98,14 +99,14 @@ func (p *ResponsesProvider) streamOnce(ctx context.Context, req provider.Request
 		resp.StopReason = provider.StopCancelled
 		resp.Message.Meta.StopReason = provider.StopCancelled
 		return resp, gotData, ctx.Err()
-	case stalled(sctx):
-		return resp, gotData, stalledError(p.idle)
+	case streamutil.Stalled(sctx):
+		return resp, gotData, streamutil.StalledError(p.idle)
 	case err != nil:
 		return resp, gotData, classify(err)
 	case acc.failed:
-		return resp, gotData, classifyFailure(acc.failure, acc.failCode, acc.failType, 0)
+		return resp, gotData, streamutil.ClassifyFailure(acc.failure, acc.failCode, acc.failType, 0)
 	case acc.final == nil:
-		return resp, gotData, errTruncated()
+		return resp, gotData, streamutil.ErrTruncated()
 	}
 	return resp, gotData, nil
 }

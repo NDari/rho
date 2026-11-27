@@ -74,6 +74,8 @@ core/docs/          the built-in docs and skills: rho docs, and the installed co
 rpcmode/            rho --mode rpc: JSON-RPC on stdio for other programs (a frontend, like headless/)
 core/provider/      neutral message types; fake/ (tests), registry/
 core/provider/openaicompat/  Chat Completions and Responses API adapters
+core/provider/anthropic/     Anthropic Messages API adapter
+core/provider/streamutil/    stall watchdog, retry-after, debug log shared by the adapters
 core/provider/xmltools/      XML tool calling for models without native tool calls
 core/provider/ratelimit/     requests/tokens per minute limits
 core/ext/           extension manager, protocol, trust store; rpc/ (JSON-RPC)
@@ -176,7 +178,10 @@ Block    = Text{text}
 - **OpenAI-compatible** (Chat Completions) with configurable `base_url`: covers OpenAI itself, llama.cpp `llama-server`, Ollama, LM Studio, vLLM, OpenRouter, Google Gemini's OpenAI-compatible endpoint and similar.
   - Gemini needs tool call thought signatures preserved (`ToolCall.opaque`) and thought summaries requested explicitly (`include_thoughts`).
 - **OpenAI Responses API** (provider `type = "openai-responses"`): stateless (`store=false`), with encrypted reasoning items kept in the session as `Thinking.opaque`.
-- **Anthropic** (Messages API): deferred until after the OpenAI-compatible path is solid.
+- **Anthropic** (Messages API, provider `type = "anthropic"`; built in as `anthropic` with `ANTHROPIC_API_KEY`): the official Go SDK, used with only the configured key (never credentials it would find in the environment or a claude.ai sign-in, which third-party tools may not use). `base_url` is the API root without `/v1`, so llama.cpp's `llama-server`, which also serves `/v1/messages`, works too.
+  - Thinking blocks keep their `signature` (or a redacted block's data) in `Thinking.opaque` and go back unchanged, in order, to the provider that produced them. On current Claude models a thinking block is bound to everything before it; when that changed (compaction keeps recent turns after a summary, the system prompt's date or AGENTS.md changed), requests set `block_binding.prefix_mismatch_behavior = "drop_block"` (beta `thinking-binding-controls-2026-08-01`) so the API drops those blocks instead of failing the request.
+  - `supports_thinking` turns on adaptive thinking with summarized display; `reasoning_effort` is sent as `output_config.effort`. Prompt caching marks the system prompt and the newest message (5-minute cache).
+  - Tool results and the user message after them form one user turn. A `refusal` stop is reported as an error.
 - Native Google Gemini API: later, only if the OpenAI-compatible endpoint proves lossy.
 
 ### XML tool calling

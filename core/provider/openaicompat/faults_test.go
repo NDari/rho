@@ -12,6 +12,7 @@ import (
 
 	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/provider/replay"
+	"github.com/NDari/rho/core/provider/streamutil"
 )
 
 // streamer is either provider type.
@@ -353,7 +354,7 @@ func TestRetryAfterFromErrorReplies(t *testing.T) {
 		{"HTTP date", 503, map[string]string{"Retry-After": date}, 80 * time.Second, 91 * time.Second},
 		{"none", 503, nil, 0, 0},
 		{"garbage", 429, map[string]string{"Retry-After": "soon"}, 0, 0},
-		{"capped", 429, map[string]string{"Retry-After": "86400"}, maxRetryAfter, maxRetryAfter},
+		{"capped", 429, map[string]string{"Retry-After": "86400"}, streamutil.MaxRetryAfter, streamutil.MaxRetryAfter},
 		{"not for permanent errors", 400, map[string]string{"Retry-After": "7"}, 0, 0},
 	}
 	for _, tt := range tests {

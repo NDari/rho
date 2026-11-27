@@ -25,6 +25,9 @@ type Request struct {
 	MaxTokens       int
 	ReasoningEffort string
 	SupportsImages  bool
+	// Thinking asks a provider that controls thinking per request
+	// (Anthropic's) to turn it on; the model's supports_thinking.
+	Thinking bool
 	// Stop lists sequences that end the response early.
 	Stop []string
 }
