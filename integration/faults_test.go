@@ -64,7 +64,7 @@ func TestFlakyServer(t *testing.T) {
 		{"model still loading", []replay.Reply{{Status: http.StatusServiceUnavailable, Body: []byte(`{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}`)}}, ""},
 		{"rate limited", []replay.Reply{{Status: http.StatusTooManyRequests, Header: map[string]string{"Retry-After-Ms": "30"}, Body: []byte(`{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}`)}}, ""},
 		{"server error mid-stream", []replay.Reply{{Body: midStreamErr}}, ""},
-		{"stalled mid-stream", []replay.Reply{{Body: good.Body, CutAt: half(good), Stall: true}}, "stream_idle_timeout = 1\n"},
+		{"stalled mid-stream", []replay.Reply{{Body: good.Body, CutAt: half(good), Stall: true}}, `"stream_idle_timeout": 1`},
 		{"several in a row", []replay.Reply{
 			{Body: good.Body, CutAt: len(good.Body) / 3, Abort: true},
 			{Status: http.StatusBadGateway, Body: []byte(`<html><body><h1>502 Bad Gateway</h1></body></html>`)},
@@ -73,12 +73,7 @@ func TestFlakyServer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extra := ""
-			if tt.extra != "" {
-				// Per provider: append to the [providers.local] table.
-				extra = "\n[providers.local]\n" + tt.extra
-			}
-			e := newEnvWithProviderExtra(t, extra, append(tt.faults, good)...)
+			e := newEnvWithProviderExtra(t, tt.extra, append(tt.faults, good)...)
 			r := e.run("What is 17*23?", runOpts{})
 			if r.err != nil || r.result["status"] != "done" {
 				t.Fatalf("err %v, result %v\n%s", r.err, r.result, r.stderr)
@@ -109,18 +104,21 @@ func TestFlakyServer(t *testing.T) {
 	}
 }
 
-// newEnvWithProviderExtra adds keys to the provider table. TOML does not
-// allow a table twice, so the keys are spliced into the first one.
+// newEnvWithProviderExtra adds members (`"key": value`) to the local
+// provider's object.
 func newEnvWithProviderExtra(t *testing.T, extra string, replies ...replay.Reply) *env {
 	t.Helper()
 	e := newEnv(t, replies...)
 	if extra == "" {
 		return e
 	}
-	keys := strings.TrimPrefix(extra, "\n[providers.local]\n")
-	cfg := readFile(t, e.home+"/config.toml")
-	cfg = strings.Replace(cfg, "[providers.local]\n", "[providers.local]\n"+keys, 1)
-	e.write(e.home+"/config.toml", cfg)
+	path := e.home + "/config.jsonc"
+	cfg := readFile(t, path)
+	if !strings.Contains(cfg, `"local": {"base_url": `) {
+		t.Fatal("the config has no local provider to extend")
+	}
+	cfg = strings.Replace(cfg, `"local": {"base_url": `, `"local": {`+extra+`, "base_url": `, 1)
+	e.write(path, cfg)
 	return e
 }
 

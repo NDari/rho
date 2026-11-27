@@ -207,7 +207,7 @@ func TestSetExtensionEnabledErrors(t *testing.T) {
 		}
 	})
 	t.Run("project keeps it disabled", func(t *testing.T) {
-		a := extApp(t, "[extensions]\ndisabled = [\"probe\"]\n")
+		a := extApp(t, `{"extensions": {"disabled": ["probe"]}}`)
 		if got := extStatus(t, a, "probe"); got != ext.StatusDisabled {
 			t.Fatalf("status = %s", got)
 		}

@@ -73,13 +73,14 @@ func TestUserThemes(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"mine.toml":    "base = \"nord\"\naccent = \"#ff0000\"\n",
-		"old.toml":     "base = \"github-light\"\n",
-		"bad.toml":     "base = \"nope\"\nchroma = \"nope\"\ncolour = \"x\"\n",
-		"broken.toml":  "accent = \n",
-		"plain.toml":   "accent = \"#00ff00\"\n",
-		"bgonly.toml":  "base = \"nord\"\nbackground = \"#000000\"\n",
-		"ansi256.toml": "accent = \"39\"\n",
+		"mine.jsonc":    `{"base": "nord", "accent": "#ff0000"} // mine`,
+		"old.jsonc":     `{"base": "github-light"}`,
+		"bad.jsonc":     `{"base": "nope", "chroma": "nope", "colour": "x"}`,
+		"broken.jsonc":  `{"accent": }`,
+		"plain.jsonc":   `{"accent": "#00ff00",}`,
+		"bgonly.jsonc":  `{"base": "nord", "background": "#000000"}`,
+		"ansi256.jsonc": `{"accent": "39"}`,
+		"legacy.toml":   "# from before JSONC\nbase = \"nord\"\naccent = \"#0000ff\"\n",
 	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
@@ -113,7 +114,13 @@ func TestUserThemes(t *testing.T) {
 	}
 
 	joined := strings.Join(warnings, "\n")
-	for _, want := range []string{`unknown base theme "nope"`, `unknown chroma style "nope"`, `unknown key "colour"`, "broken.toml"} {
+	if l, _ := s.Get("legacy"); l.Accent != "#0000ff" || l.Background != nord.Background {
+		t.Errorf("legacy TOML theme not converted: %+v", l)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "legacy.jsonc")); err != nil {
+		t.Errorf("legacy.jsonc not written: %v", err)
+	}
+	for _, want := range []string{`unknown base theme "nope"`, `unknown chroma style "nope"`, `unknown key "colour"`, "broken.jsonc", "converted " + filepath.Join(dir, "legacy.toml")} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("warnings %q lack %q", joined, want)
 		}

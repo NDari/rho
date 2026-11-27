@@ -9,87 +9,94 @@ import (
 	"testing"
 )
 
-func TestSetKey(t *testing.T) {
+func TestSaveSetting(t *testing.T) {
+	models := "{\n" +
+		"\t\"default_model\": \"b\",\n" +
+		"\t\"models\": [\n" +
+		"\t\t{\"id\": \"a\", \"provider\": \"p\"},\n" +
+		"\t\t// the second one\n" +
+		"\t\t{\n" +
+		"\t\t\t\"id\":               \"b\", // mine\n" +
+		"\t\t\t\"provider\":         \"p\",\n" +
+		"\t\t\t\"reasoning_effort\": \"low\",\n" +
+		"\t\t},\n" +
+		"\t],\n" +
+		"}\n"
 	tests := []struct {
-		name  string
-		in    string
-		key   string
-		value any
-		want  string
+		name, in, key, model, value string
+		want                        string
+		err                         error
 	}{
-		{"empty file", "", "theme", "light", "theme = \"light\"\n"},
-		{"empty file table", "", "bash.timeout", 60, "[bash]\ntimeout = 60\n"},
-		{
-			"replace top level keeps comments",
-			"# top\ntheme = \"dark\" # mine\n\n[bash]\ntimeout = 5\n",
-			"theme", "light",
-			"# top\ntheme = \"light\" # mine\n\n[bash]\ntimeout = 5\n",
-		},
-		{
-			"replace in table",
-			"theme = \"dark\"\n\n[bash]\n  timeout=5\nshell = \"sh\"\n",
-			"bash.timeout", 60,
-			"theme = \"dark\"\n\n[bash]\n  timeout=60\nshell = \"sh\"\n",
-		},
-		{
-			"same key in another table is left alone",
-			"[extensions]\ntimeout = 30\n\n[bash]\ntimeout = 5\n",
-			"bash.timeout", 60,
-			"[extensions]\ntimeout = 30\n\n[bash]\ntimeout = 60\n",
-		},
-		{
-			"add top level before first table",
-			"# comment\n\n[providers.local]\nbase_url = \"http://localhost:8080/v1\"\n",
-			"max_retries", 5,
-			"# comment\nmax_retries = 5\n\n[providers.local]\nbase_url = \"http://localhost:8080/v1\"\n",
-		},
-		{
-			"add top level when file starts with a table",
-			"[bash]\ntimeout = 5\n",
-			"theme", "light",
-			"theme = \"light\"\n\n[bash]\ntimeout = 5\n",
-		},
-		{
-			"add to existing table",
-			"[bash]\ntimeout = 5\n\n[tui]\nside_by_side_width = 120\n",
-			"bash.max_timeout", 600,
-			"[bash]\ntimeout = 5\nmax_timeout = 600\n\n[tui]\nside_by_side_width = 120\n",
-		},
-		{
-			"add missing table at end",
-			"theme = \"dark\"\n",
-			"compaction.reserve", 32000,
-			"theme = \"dark\"\n\n[compaction]\nreserve = 32000\n",
-		},
-		{
-			"commented out key is not edited",
-			"# theme = \"dark\"\n",
-			"theme", "light",
-			"# theme = \"dark\"\ntheme = \"light\"\n",
-		},
-		{
-			"sub-table is not the table",
-			"[tui.keybindings]\nsubmit = \"enter\"\n",
-			"tui.side_by_side_width", 0,
-			"[tui.keybindings]\nsubmit = \"enter\"\n\n[tui]\nside_by_side_width = 0\n",
-		},
+		{name: "new file", key: "theme", value: "light",
+			want: "{\n\t\"theme\": \"light\"\n}\n"},
+		{name: "new file, table", key: "bash.timeout", value: "60",
+			want: "{\n\t\"bash\": {\n\t\t\"timeout\": 60\n\t}\n}\n"},
+		{name: "replace keeps comments",
+			in:  "// top\n{\n\t\"theme\": \"dark\", // mine\n\t\"bash\": {\"timeout\": 5},\n}\n",
+			key: "theme", value: "light",
+			want: "// top\n{\n\t\"theme\": \"light\", // mine\n\t\"bash\":  {\"timeout\": 5},\n}\n"},
+		{name: "same key in another table is left alone",
+			in:  "{\n\t\"extensions\": {\"timeout\": 30},\n\t\"bash\": {\"timeout\": 5},\n}\n",
+			key: "bash.timeout", value: "60",
+			want: "{\n\t\"extensions\": {\"timeout\": 30},\n\t\"bash\":       {\"timeout\": 60},\n}\n"},
+		{name: "add to existing table",
+			in:  "{\n\t\"bash\": {\n\t\t\"timeout\": 5,\n\t},\n}\n",
+			key: "bash.max_timeout", value: "600",
+			want: "{\n\t\"bash\": {\n\t\t\"timeout\":     5,\n\t\t\"max_timeout\": 600,\n\t},\n}\n"},
+		{name: "bool", in: "{}\n", key: "compaction.auto", value: "false",
+			want: "{\"compaction\": {\n\t\"auto\": false\n}}\n"},
+		{name: "replace per-model", in: models, key: "reasoning_effort", model: "b", value: "high",
+			want: strings.Replace(models, `"low"`, `"high"`, 1)},
+		{name: "add per-model", in: models, key: "reasoning_effort", model: "a", value: "medium",
+			want: strings.Replace(models, `{"id": "a", "provider": "p"}`, `{"id": "a", "provider": "p", "reasoning_effort": "medium"}`, 1)},
+		{name: "remove per-model (optional, empty)", in: models, key: "reasoning_effort", model: "b", value: "",
+			want: strings.Replace(strings.Replace(strings.Replace(models,
+				"\t\t\t\"reasoning_effort\": \"low\",\n", "", 1),
+				`"id":               "b"`, `"id":       "b"`, 1),
+				`"provider":         "p"`, `"provider": "p"`, 1)},
+		{name: "model not in file", in: models, key: "reasoning_effort", model: "c", value: "high", err: ErrModelNotInFile},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := setKey(tt.in, tt.key, tt.value)
+			path := filepath.Join(t.TempDir(), FileName)
+			if tt.in != "" {
+				if err := os.WriteFile(path, []byte(tt.in), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s, ok := LookupSetting(tt.key)
+			if !ok {
+				t.Fatalf("no setting %s", tt.key)
+			}
+			err := SaveSetting(path, s, tt.model, tt.value)
+			if tt.err != nil {
+				if !errors.Is(err, tt.err) {
+					t.Fatalf("err = %v, want %v", err, tt.err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != tt.want {
-				t.Errorf("got\n%q\nwant\n%q", got, tt.want)
+			if got, _ := os.ReadFile(path); string(got) != tt.want {
+				t.Errorf("got\n%s\nwant\n%s", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestSetKeyRefusesUnusualLayout(t *testing.T) {
-	if _, err := setKey("bash = { timeout = 5 }\n", "bash.timeout", 60); err == nil {
-		t.Fatal("inline table: expected an error")
+func TestSaveSettingRefusesBadFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	in := "{\"bash\": 5}\n"
+	if err := os.WriteFile(path, []byte(in), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := LookupSetting("bash.timeout")
+	if err := SaveSetting(path, s, "", "60"); err == nil {
+		t.Fatal("bash is not an object: expected an error")
+	}
+	if got, _ := os.ReadFile(path); string(got) != in {
+		t.Errorf("file changed: %q", got)
 	}
 }
 
@@ -106,8 +113,8 @@ func TestNext(t *testing.T) {
 
 func TestSaveSettingRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("# keep me\n[bash]\ntimeout = 5\n"), 0o600); err != nil {
+	path := filepath.Join(dir, FileName)
+	if err := os.WriteFile(path, []byte("// keep me\n{\n\t\"bash\": {\n\t\t\"timeout\": 5,\n\t},\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := LookupSetting("bash.timeout")
@@ -126,7 +133,7 @@ func TestSaveSettingRoundTrip(t *testing.T) {
 		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
 	}
 	data, _ := os.ReadFile(path)
-	if string(data) != "# keep me\n[bash]\ntimeout = 300\n" {
+	if string(data) != "// keep me\n{\n\t\"bash\": {\n\t\t\"timeout\": 300,\n\t},\n}\n" {
 		t.Errorf("file = %q", data)
 	}
 }
@@ -148,59 +155,6 @@ func TestApplySetting(t *testing.T) {
 	}
 	if got, err := d.Apply(c, "", "m"); err != nil || got.DefaultModel != "m" {
 		t.Errorf("default_model: %v", err)
-	}
-}
-
-func TestSetKeyBoolAndRemove(t *testing.T) {
-	got, err := setKey("[compaction]\nreserve = 1\n", "compaction.auto", false)
-	if err != nil || got != "[compaction]\nreserve = 1\nauto = false\n" {
-		t.Errorf("add bool: %q, %v", got, err)
-	}
-	got, err = setKey("a = 1\ntheme = \"x\"\nb = 2\n", "theme", nil)
-	if err != nil || got != "a = 1\nb = 2\n" {
-		t.Errorf("remove: %q, %v", got, err)
-	}
-	if got, err := setKey("a = 1\n", "theme", nil); err != nil || got != "a = 1\n" {
-		t.Errorf("remove missing: %q, %v", got, err)
-	}
-}
-
-func TestSetModelKey(t *testing.T) {
-	in := `default_model = "b"
-
-[[models]]
-id = "a"
-provider = "p"
-
-# the second one
-[[models]]
-id = "b"   # mine
-provider = "p"
-reasoning_effort = "low"
-
-[bash]
-timeout = 5
-`
-	got, err := setModelKey(in, "b", "reasoning_effort", "high")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := strings.Replace(in, `reasoning_effort = "low"`, `reasoning_effort = "high"`, 1); got != want {
-		t.Errorf("replace:\n%s", got)
-	}
-	got, err = setModelKey(in, "a", "reasoning_effort", "medium")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := strings.Replace(in, "provider = \"p\"\n\n#", "provider = \"p\"\nreasoning_effort = \"medium\"\n\n#", 1); got != want {
-		t.Errorf("add:\n%s", got)
-	}
-	got, err = setModelKey(in, "b", "reasoning_effort", nil)
-	if err != nil || strings.Contains(got, "reasoning_effort") {
-		t.Errorf("remove: %v\n%s", err, got)
-	}
-	if _, err := setModelKey(in, "c", "reasoning_effort", "high"); !errors.Is(err, ErrModelNotInFile) {
-		t.Errorf("missing model: %v", err)
 	}
 }
 
@@ -247,18 +201,16 @@ func TestSetExtensionDisabled(t *testing.T) {
 		disabled bool
 		want     string
 	}{
-		{"new file", "", "a", true, "[extensions]\ndisabled = [\"a\"]\n"},
-		{"add to list", "[extensions]\ntimeout = 30\ndisabled = [\"a\"] # off\n", "b", true,
-			"[extensions]\ntimeout = 30\ndisabled = [\"a\", \"b\"] # off\n"},
-		{"already there", "[extensions]\ndisabled = [\"a\"]\n", "a", true, "[extensions]\ndisabled = [\"a\"]\n"},
-		{"remove last", "[extensions]\ndisabled = [\"a\"]\n", "a", false, "[extensions]\ndisabled = []\n"},
-		{"multi-line list", "[extensions]\ndisabled = [\n  \"a\", # first\n  \"b]\",\n]\ntimeout = 30\n", "a", false,
-			"[extensions]\ndisabled = [\"b]\"]\ntimeout = 30\n"},
-		{"remove missing", "theme = \"dark\"\n", "a", false, "theme = \"dark\"\n"},
+		{"new file", "", "a", true, "{\n\t\"extensions\": {\n\t\t\"disabled\": [\"a\"]\n\t}\n}\n"},
+		{"add to list", "{\n\t\"extensions\": {\n\t\t\"timeout\":  30,\n\t\t\"disabled\": [\"a\"], // off\n\t},\n}\n", "b", true,
+			"{\n\t\"extensions\": {\n\t\t\"timeout\":  30,\n\t\t\"disabled\": [\"a\", \"b\"], // off\n\t},\n}\n"},
+		{"already there", "{\"extensions\": {\"disabled\": [\"a\"]}}", "a", true, "{\"extensions\": {\"disabled\": [\"a\"]}}"},
+		{"remove last", "{\"extensions\": {\"disabled\": [\"a\"]}}\n", "a", false, "{\"extensions\": {\"disabled\": []}}\n"},
+		{"remove missing", "{\"theme\": \"dark\"}", "a", false, "{\"theme\": \"dark\"}"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
+			path := filepath.Join(t.TempDir(), FileName)
 			if tt.in != "" {
 				if err := os.WriteFile(path, []byte(tt.in), 0o644); err != nil {
 					t.Fatal(err)

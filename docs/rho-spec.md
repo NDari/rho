@@ -79,6 +79,7 @@ core/provider/ratelimit/     requests/tokens per minute limits
 core/ext/           extension manager, protocol, trust store; rpc/ (JSON-RPC)
 core/ext/yaegihost/ Yaegi-based extension host + `rho` symbol package
 core/config/        config loading, merging, validation
+core/jsonc/         JSONC decoding (with defined and unknown keys), comment-keeping edits, TOML conversion
 core/events/        event types shared by frontends
 core/theme/         color themes (built-in and user), shared by the frontends and the export
 core/update/        release checks and self-update (§19)
@@ -291,7 +292,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 - **Tool calls:** compact cards (tool, args summary, status, duration). Collapsed by default with a one-line preview; expand to see full output. Bash output streams live.
 - **Thinking:** shown dimmed and collapsible; toggle to hide.
 - **Errors and banners:** clearly styled (e.g., rewind "files not reverted" notice).
-- **Themes:** one theme set shared by the TUI, the GUI and the HTML export (`core/theme`): 17 built-in themes from public, documented palettes (Gruvbox, GitHub, Catppuccin, Tokyo Night, Rosé Pine, Solarized and Kanagawa in dark and light, plus Dracula, Nord and One Dark), each paired with its Chroma style. `theme = "system"` (the default) picks `theme_dark` or `theme_light` to match the terminal's background (the TUI asks once at start) or the system (GUI, export). The TUI paints the terminal's background in the theme's color, as Vim does, and restores it on exit. `/theme` previews each theme as the cursor moves; Enter saves, Esc restores. Markdown headings, links and inline code take the theme's colors; user themes are TOML files over a `base` theme, with unset roles derived from the main colors; respect terminal color capabilities.
+- **Themes:** one theme set shared by the TUI, the GUI and the HTML export (`core/theme`): 17 built-in themes from public, documented palettes (Gruvbox, GitHub, Catppuccin, Tokyo Night, Rosé Pine, Solarized and Kanagawa in dark and light, plus Dracula, Nord and One Dark), each paired with its Chroma style. `theme = "system"` (the default) picks `theme_dark` or `theme_light` to match the terminal's background (the TUI asks once at start) or the system (GUI, export). The TUI paints the terminal's background in the theme's color, as Vim does, and restores it on exit. `/theme` previews each theme as the cursor moves; Enter saves, Esc restores. Markdown headings, links and inline code take the theme's colors; user themes are JSONC files over a `base` theme, with unset roles derived from the main colors; respect terminal color capabilities.
 - Images: later, via Kitty/iTerm2 graphics protocols where supported.
 
 ### Input
@@ -329,7 +330,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 
 ### 12.2 Kinds
 - **Go source extensions** (`*.go` or a directory): run by the built-in host: Rho re-executes itself as `rho ext-host <path>`, which embeds Yaegi. No Go toolchain or other runtime needed.
-- **Executable extensions:** any program (compiled Go, Python, TS, Rust…) declared in a small manifest (`rho-extension.toml`: name, command, args). The runtime is the extension's own dependency, never Rho's.
+- **Executable extensions:** any program (compiled Go, Python, TS, Rust…) declared in a small manifest (`rho-extension.jsonc`: name, command, args). The runtime is the extension's own dependency, never Rho's.
 
 ### 12.3 Discovery and trust
 - Global: `~/.rho/extensions/`, loaded automatically.
@@ -367,14 +368,16 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 - Parity with pi: **no sandbox**. Tools and extensions run with the user's permissions. Documented prominently; recommend containers/VMs for untrusted work.
 - No permission prompts in core; an extension can add them via `before_tool_call`.
 - Project extensions require hash-based approval (§12.3).
-- **Project config is restricted:** `.rho/config.toml` may not set provider endpoints (`base_url`), API key sources, extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
+- **Project config is restricted:** `.rho/config.jsonc` may not set provider endpoints (`base_url`), API key sources, extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
 - **Untrusted checkouts:** project instruction files (`SYSTEM.md`, `AGENTS.md`, skills, prompts) load without approval, so a repository can steer the model. `--no-project-context` ignores all of them, and `--tools` limits what the model can do.
 
 ## 14. Configuration
 
-- Global: `~/.rho/config.toml`; project: `.rho/config.toml` (restricted keys, see §13). Project overrides global.
+- Global: `~/.rho/config.jsonc`; project: `.rho/config.jsonc` (restricted keys, see §13). Project overrides global.
+- Format: JSONC (JSON with `//` and `/* */` comments and trailing commas), read and edited with `tailscale/hujson` (`core/jsonc`). The same format is used for themes and extension manifests. Keys are case-sensitive; unknown keys give a warning. `/config` edits the file in place, keeping comments, and formats it.
+- Migration from TOML: Rho read TOML (`config.toml`, `themes/*.toml`, `rho-extension.toml`) before. A TOML file with no JSONC file beside it is converted once (keys in order, comments dropped) with a warning, and left in place; only the JSONC file is read afterwards. The converter is the only use of the TOML library and can be removed in a later release.
 - Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, tool selection (§5), compaction reserve (internal for now), side-by-side diff width, `update_check` (§19).
-- `rho init` writes a starting `~/.rho/config.toml` for a local llama.cpp server (`http://localhost:9931/v1`, llama-server's default port; older versions use 8080) and never replaces an existing file. When no model is configured, `rho` prints the same example and points at `rho init`; the GUI's start-up screen offers to create the file.
+- `rho init` writes a starting `~/.rho/config.jsonc` for a local llama.cpp server (`http://localhost:9931/v1`, llama-server's default port; older versions use 8080) and never replaces an existing file. When no model is configured, `rho` prints the same example and points at `rho init`; the GUI's start-up screen offers to create the file.
 - Data directories via Go's standard per-OS config/cache locations where appropriate; `~/.rho/` as the user-facing home.
 
 ## 15. Platforms

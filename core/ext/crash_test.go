@@ -80,7 +80,7 @@ func TestCrashedExtensionRestarts(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), fmt.Appendf(nil, "command = %q\n", bin), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), fmt.Appendf(nil, `{"command": %q}`, bin), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var notices noticeLog
@@ -156,7 +156,7 @@ func TestStoppedExtensionIsNotRestarted(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), fmt.Appendf(nil, "command = %q\n", bin), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), fmt.Appendf(nil, `{"command": %q}`, bin), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var notices noticeLog

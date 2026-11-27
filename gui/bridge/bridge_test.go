@@ -294,8 +294,8 @@ func TestThemes(t *testing.T) {
 func TestStartupErrorAndRetry(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("RHO_HOME", home)
-	cfg := filepath.Join(home, "config.toml")
-	if err := os.WriteFile(cfg, []byte("not [valid toml"), 0o644); err != nil {
+	cfg := filepath.Join(home, "config.jsonc")
+	if err := os.WriteFile(cfg, []byte(`{"not": valid`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h := newFakeHost()

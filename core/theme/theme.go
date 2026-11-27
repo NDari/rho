@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/NDari/rho/core/jsonc"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
@@ -33,36 +34,36 @@ const (
 // ANSI 256 numbers ("39"). Roles left empty are derived from the others
 // (see derive), so a theme only needs its palette's main colors.
 type Theme struct {
-	Name string `toml:"name"`
+	Name string `json:"name"`
 	// Base names the theme this one starts from (user themes only).
-	Base string `toml:"base"`
+	Base string `json:"base"`
 
-	Background  string `toml:"background"`
-	Surface     string `toml:"surface"`
-	Text        string `toml:"text"`
-	Muted       string `toml:"muted"`
-	Subtle      string `toml:"subtle"`
-	Border      string `toml:"border"`
-	Accent      string `toml:"accent"`
-	UserBg      string `toml:"user_bg"`
-	Error       string `toml:"error"`
-	Warning     string `toml:"warning"`
-	Success     string `toml:"success"`
-	ToolName    string `toml:"tool_name"`
-	Thinking    string `toml:"thinking"`
-	LineNumber  string `toml:"line_number"`
-	DiffAddBg   string `toml:"diff_add_bg"`
-	DiffDelBg   string `toml:"diff_del_bg"`
-	DiffAddEmph string `toml:"diff_add_emph"`
-	DiffDelEmph string `toml:"diff_del_emph"`
-	DiffAddSign string `toml:"diff_add_sign"`
-	DiffDelSign string `toml:"diff_del_sign"`
-	StatusBg    string `toml:"status_bg"`
-	StatusFg    string `toml:"status_fg"`
-	SearchBg    string `toml:"search_bg"`
-	SearchFg    string `toml:"search_fg"`
+	Background  string `json:"background"`
+	Surface     string `json:"surface"`
+	Text        string `json:"text"`
+	Muted       string `json:"muted"`
+	Subtle      string `json:"subtle"`
+	Border      string `json:"border"`
+	Accent      string `json:"accent"`
+	UserBg      string `json:"user_bg"`
+	Error       string `json:"error"`
+	Warning     string `json:"warning"`
+	Success     string `json:"success"`
+	ToolName    string `json:"tool_name"`
+	Thinking    string `json:"thinking"`
+	LineNumber  string `json:"line_number"`
+	DiffAddBg   string `json:"diff_add_bg"`
+	DiffDelBg   string `json:"diff_del_bg"`
+	DiffAddEmph string `json:"diff_add_emph"`
+	DiffDelEmph string `json:"diff_del_emph"`
+	DiffAddSign string `json:"diff_add_sign"`
+	DiffDelSign string `json:"diff_del_sign"`
+	StatusBg    string `json:"status_bg"`
+	StatusFg    string `json:"status_fg"`
+	SearchBg    string `json:"search_bg"`
+	SearchFg    string `json:"search_fg"`
 	// Chroma is the syntax highlighting style (one of Chroma's styles).
-	Chroma string `toml:"chroma"`
+	Chroma string `json:"chroma"`
 }
 
 // IsDark reports whether the theme has a dark background.
@@ -82,7 +83,10 @@ func (t Theme) ChromaStyle() *chroma.Style {
 	return chromastyles.Fallback
 }
 
-//go:embed themes/*.toml
+// Ext is the extension of theme files.
+const Ext = ".jsonc"
+
+//go:embed themes/*.jsonc
 var builtinFS embed.FS
 
 // Set is the built-in and user themes, keyed by name.
@@ -105,19 +109,24 @@ func Builtin() Set {
 func Load(home string) (Set, []string) {
 	s := Builtin()
 	var warnings []string
-	files, _ := filepath.Glob(filepath.Join(home, "themes", "*.toml"))
+	warnings = append(warnings, convertLegacy(filepath.Join(home, "themes"))...)
+	files, _ := filepath.Glob(filepath.Join(home, "themes", "*"+Ext))
 	for _, f := range files {
 		var t Theme
-		md, err := toml.DecodeFile(f, &t)
+		data, err := os.ReadFile(f)
+		var md jsonc.Meta
+		if err == nil {
+			md, err = jsonc.Decode(data, &t)
+		}
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", f, err))
 			continue
 		}
 		for _, k := range md.Undecoded() {
-			warnings = append(warnings, fmt.Sprintf("%s: unknown key %q", f, k.String()))
+			warnings = append(warnings, fmt.Sprintf("%s: unknown key %q", f, k))
 		}
 		if t.Name == "" {
-			t.Name = strings.TrimSuffix(filepath.Base(f), ".toml")
+			t.Name = strings.TrimSuffix(filepath.Base(f), Ext)
 		}
 		baseName := t.Base
 		if baseName == "" {
@@ -210,21 +219,39 @@ func (t Theme) raw() Theme {
 // written keeps each built-in as written in its file.
 var written = func() map[string]Theme {
 	m := map[string]Theme{}
-	files, _ := fs.Glob(builtinFS, "themes/*.toml")
+	files, _ := fs.Glob(builtinFS, "themes/*"+Ext)
 	for _, f := range files {
 		data, err := builtinFS.ReadFile(f)
 		if err != nil {
 			panic(err) // embedded; cannot fail
 		}
 		var t Theme
-		if _, err := toml.Decode(string(data), &t); err != nil {
+		if _, err := jsonc.Decode(data, &t); err != nil {
 			panic(fmt.Sprintf("built-in theme %s: %v", f, err))
 		}
-		t.Name = strings.TrimSuffix(filepath.Base(f), ".toml")
+		t.Name = strings.TrimSuffix(filepath.Base(f), Ext)
 		m[t.Name] = t
 	}
 	return m
 }()
+
+// convertLegacy converts the TOML themes in dir (from before Rho used
+// JSONC) that have no JSONC file yet, and returns warnings saying so.
+func convertLegacy(dir string) []string {
+	var warnings []string
+	files, _ := filepath.Glob(filepath.Join(dir, "*.toml"))
+	for _, f := range files {
+		dst := strings.TrimSuffix(f, ".toml") + Ext
+		ok, err := jsonc.ConvertTOML(f, dst)
+		switch {
+		case err != nil:
+			warnings = append(warnings, fmt.Sprintf("%s is no longer read, and converting it failed: %v", f, err))
+		case ok:
+			warnings = append(warnings, fmt.Sprintf("converted %s to %s, which Rho now reads instead; comments were not carried over", f, filepath.Base(dst)))
+		}
+	}
+	return warnings
+}
 
 // merge returns base with every non-empty string field of over set on it.
 func merge(base, over Theme) Theme {

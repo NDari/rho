@@ -1,0 +1,24 @@
+// Kanagawa Lotus.
+// Palette: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua, themes.lua)
+// License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+{
+	"background":  "#f2ecbc",
+	"surface":     "#e5ddb0",
+	"user_bg":     "#e7dba0",
+	"border":      "#e4d794",
+	"subtle":      "#a09cac",
+	"muted":       "#766b90",
+	"text":        "#545464",
+	"accent":      "#4d699b",
+	"tool_name":   "#624c83",
+	"thinking":    "#8a8980",
+	"line_number": "#a09cac",
+	"error":       "#e82424",
+	"warning":     "#e98a00",
+	"success":     "#6f894e",
+	"diff_add_bg": "#b7d0ae",
+	"diff_del_bg": "#d9a594",
+	"status_bg":   "#e7dba0",
+	"status_fg":   "#43436c",
+	"chroma":      "kanagawa-lotus",
+}

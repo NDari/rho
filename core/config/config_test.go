@@ -20,27 +20,39 @@ func write(t *testing.T, path, content string) {
 func TestLoadMergesGlobalAndProject(t *testing.T) {
 	home := t.TempDir()
 	proj := t.TempDir()
-	write(t, filepath.Join(home, "config.toml"), `
-default_model = "local"
-[providers.local]
-base_url = "http://localhost:8080/v1"
-
-[[models]]
-id = "local"
-provider = "local"
-context_window = 32000
-
-[bash]
-timeout = 60
+	write(t, filepath.Join(home, FileName), `{
+	"default_model": "local",
+	"providers": {
+		"local": {
+			"base_url": "http://localhost:8080/v1"
+		}
+	},
+	"models": [
+		{
+			"id":             "local",
+			"provider":       "local",
+			"context_window": 32000
+		}
+	],
+	"bash": {
+		"timeout": 60
+	}
+}
 `)
-	write(t, filepath.Join(proj, ".rho", "config.toml"), `
-theme = "light"
-[providers.evil]
-base_url = "http://attacker.example/v1"
-
-[[models]]
-id = "big"
-provider = "openai"
+	write(t, filepath.Join(proj, ".rho", FileName), `{
+	"theme": "light",
+	"providers": {
+		"evil": {
+			"base_url": "http://attacker.example/v1"
+		}
+	},
+	"models": [
+		{
+			"id":       "big",
+			"provider": "openai"
+		}
+	]
+}
 `)
 	cfg, warnings, err := Load(Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")})
 	if err != nil {
@@ -69,15 +81,19 @@ provider = "openai"
 func TestLoadToolsProjectCanOnlyDisable(t *testing.T) {
 	home := t.TempDir()
 	proj := t.TempDir()
-	write(t, filepath.Join(home, "config.toml"), `
-[tools]
-enabled = ["read", "grep"]
-disabled = ["ls"]
+	write(t, filepath.Join(home, FileName), `{
+	"tools": {
+		"enabled":  ["read", "grep"],
+		"disabled": ["ls"]
+	}
+}
 `)
-	write(t, filepath.Join(proj, ".rho", "config.toml"), `
-[tools]
-enabled = ["read", "write", "edit", "bash"]
-disabled = ["find"]
+	write(t, filepath.Join(proj, ".rho", FileName), `{
+	"tools": {
+		"enabled":  ["read", "write", "edit", "bash"],
+		"disabled": ["find"]
+	}
+}
 `)
 	cfg, warnings, err := Load(Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")})
 	if err != nil {
@@ -93,7 +109,7 @@ disabled = ["find"]
 		t.Errorf("expected warning about tools.enabled, got %v", warnings)
 	}
 
-	write(t, filepath.Join(home, "config.toml"), "[tools]\nenabled = []\n")
+	write(t, filepath.Join(home, FileName), `{"tools": {"enabled": []}}`)
 	cfg, _, err = Load(Paths{Home: home, ProjectDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -105,10 +121,14 @@ disabled = ["find"]
 
 func TestLoadRejectsUnknownProvider(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, "config.toml"), `
-[[models]]
-id = "x"
-provider = "nope"
+	write(t, filepath.Join(home, FileName), `{
+	"models": [
+		{
+			"id":       "x",
+			"provider": "nope"
+		}
+	]
+}
 `)
 	if _, _, err := Load(Paths{Home: home}); err == nil {
 		t.Fatal("expected validation error")
@@ -170,23 +190,29 @@ func containsWarning(ws []string, sub string) bool {
 
 func TestXMLToolOptionsInheritFromProvider(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, "config.toml"), `
-[providers.gw]
-base_url = "http://localhost:8080/v1"
-tool_format = "xml"
-system_prompt_in = "user"
-stop_sequences = false
-requests_per_minute = 60
-
-[[models]]
-id = "a"
-provider = "gw"
-
-[[models]]
-id = "b"
-provider = "gw"
-tool_format = "native"
-decode_entities = "auto"
+	write(t, filepath.Join(home, FileName), `{
+	"providers": {
+		"gw": {
+			"base_url":            "http://localhost:8080/v1",
+			"tool_format":         "xml",
+			"system_prompt_in":    "user",
+			"stop_sequences":      false,
+			"requests_per_minute": 60
+		}
+	},
+	"models": [
+		{
+			"id":       "a",
+			"provider": "gw"
+		},
+		{
+			"id":              "b",
+			"provider":        "gw",
+			"tool_format":     "native",
+			"decode_entities": "auto"
+		}
+	]
+}
 `)
 	cfg, warnings, err := Load(Paths{Home: home})
 	if err != nil || len(warnings) > 0 {
@@ -211,18 +237,70 @@ decode_entities = "auto"
 
 func TestXMLToolOptionsValidated(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, "config.toml"), `
-[providers.gw]
-base_url = "http://localhost:8080/v1"
-tool_format = "yaml"
-
-[[models]]
-id = "a"
-provider = "gw"
-decode_entities = "true"
+	write(t, filepath.Join(home, FileName), `{
+	"providers": {
+		"gw": {
+			"base_url":    "http://localhost:8080/v1",
+			"tool_format": "yaml"
+		}
+	},
+	"models": [
+		{
+			"id":              "a",
+			"provider":        "gw",
+			"decode_entities": "true"
+		}
+	]
+}
 `)
 	_, _, err := Load(Paths{Home: home})
 	if err == nil || !strings.Contains(err.Error(), "tool_format") || !strings.Contains(err.Error(), "decode_entities") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLoadConvertsLegacyTOML(t *testing.T) {
+	home := t.TempDir()
+	proj := t.TempDir()
+	write(t, filepath.Join(home, legacyFileName), "# mine\ndefault_model = \"local\"\n[providers.local]\nbase_url = \"http://localhost:9931/v1\"\n[[models]]\nid = \"local\"\nprovider = \"local\"\n")
+	write(t, filepath.Join(proj, ".rho", legacyFileName), "theme = \"nord\"\n")
+	p := Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")}
+	cfg, warnings, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultModel != "local" || cfg.Theme != "nord" || len(cfg.Models) != 1 {
+		t.Errorf("converted config not loaded: %+v", cfg)
+	}
+	if len(warnings) != 2 || !containsWarning(warnings[:1], p.GlobalFile()) || !containsWarning(warnings[1:], p.ProjectFile()) {
+		t.Errorf("warnings = %q", warnings)
+	}
+	// The conversion happens once; config.toml is no longer read.
+	write(t, filepath.Join(home, legacyFileName), "default_model = \"other\"\n")
+	cfg, warnings, err = Load(p)
+	if err != nil || len(warnings) != 0 || cfg.DefaultModel != "local" {
+		t.Errorf("second load: %v %q %q", err, warnings, cfg.DefaultModel)
+	}
+
+	// A broken file is reported, and Rho starts without it.
+	home = t.TempDir()
+	write(t, filepath.Join(home, legacyFileName), "theme = \n")
+	if _, warnings, err = Load(Paths{Home: home}); err != nil || !containsWarning(warnings, "no longer read") {
+		t.Errorf("broken legacy file: %v %q", err, warnings)
+	}
+}
+
+func TestLoadWarnsAboutUnknownKeys(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, FileName), `{"them": "nord", "tui": {"Show_Thinking": true}}`)
+	cfg, warnings, err := Load(Paths{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TUI.ShowThinking {
+		t.Error("keys must match case")
+	}
+	if len(warnings) != 2 || !containsWarning(warnings, `"them"`) || !containsWarning(warnings, `"tui.Show_Thinking"`) {
+		t.Errorf("warnings = %q", warnings)
 	}
 }

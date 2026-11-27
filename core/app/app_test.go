@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NDari/rho/core/compact"
+	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/prompt"
 	"github.com/NDari/rho/core/provider"
 )
@@ -75,16 +76,16 @@ func TestToolSelection(t *testing.T) {
 		wantErr bool
 	}{
 		{"default", "", nil, "read,write,edit,bash", false},
-		{"config", "[tools]\nenabled = [\"read\", \"bash\"]\ndisabled = [\"bash\"]\n", nil, "read,grep,find,ls", false},
-		{"flag replaces enabled", "[tools]\nenabled = [\"read\", \"bash\"]\n", ParseToolList("read, grep"), "read,grep,find,ls", false},
-		{"flag keeps disabled", "[tools]\ndisabled = [\"ls\"]\n", ParseToolList("read,bash,ls"), "read,bash", false},
+		{"config", `{"tools": {"enabled": ["read", "bash"], "disabled": ["bash"]}}`, nil, "read,grep,find,ls", false},
+		{"flag replaces enabled", `{"tools": {"enabled": ["read", "bash"]}}`, ParseToolList("read, grep"), "read,grep,find,ls", false},
+		{"flag keeps disabled", `{"tools": {"disabled": ["ls"]}}`, ParseToolList("read,bash,ls"), "read,bash", false},
 		{"unknown tool", "", ParseToolList("read,shell"), "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("RHO_HOME", home)
-			if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(tt.config), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(tt.config), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			a, err := New(Options{Cwd: t.TempDir(), Model: "openai/test-model", NoExtensions: true, Tools: tt.tools})
@@ -114,9 +115,9 @@ func TestNoProjectContext(t *testing.T) {
 	t.Setenv("RHO_HOME", home)
 	proj := t.TempDir()
 	files := map[string]string{
-		filepath.Join(home, "config.toml"):                           "theme = \"dark\"\n",
+		filepath.Join(home, config.FileName):                         `{"theme": "dark"}`,
 		filepath.Join(proj, ".git", "HEAD"):                          "",
-		filepath.Join(proj, ".rho", "config.toml"):                   "theme = \"light\"\n",
+		filepath.Join(proj, ".rho", config.FileName):                 `{"theme": "light"}`,
 		filepath.Join(proj, ".rho", "skills", "evil", "SKILL.md"):    "---\nname: evil\ndescription: d\n---\nbody\n",
 		filepath.Join(proj, ".rho", "prompts", "evil.md"):            "evil prompt\n",
 		filepath.Join(proj, ".rho", "extensions", "evil", "evil.go"): "package main\n",

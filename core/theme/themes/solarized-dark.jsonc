@@ -1,0 +1,19 @@
+// Solarized, dark.
+// Palette: https://ethanschoonover.com/solarized/
+// License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+{
+	"background":  "#002b36",
+	"surface":     "#073642",
+	"user_bg":     "#073642",
+	"muted":       "#586e75",
+	"text":        "#839496",
+	"accent":      "#268bd2",
+	"tool_name":   "#6c71c4",
+	"line_number": "#586e75",
+	"error":       "#dc322f",
+	"warning":     "#b58900",
+	"success":     "#859900",
+	"status_bg":   "#073642",
+	"status_fg":   "#93a1a1",
+	"chroma":      "solarized-dark",
+}

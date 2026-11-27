@@ -18,6 +18,7 @@ require (
 	github.com/openai/openai-go/v3 v3.105.0
 	github.com/sergi/go-diff v1.4.5
 	github.com/spf13/cobra v1.10.2
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/traefik/yaegi v0.16.3
 	github.com/yuin/goldmark v1.8.7
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc

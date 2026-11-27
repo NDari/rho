@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -143,7 +142,7 @@ func (b *Bridge) CreateConfig() error {
 	if err != nil {
 		return err
 	}
-	if err := config.CreateExample(filepath.Join(home, "config.toml")); err != nil {
+	if err := config.CreateExample(config.Paths{Home: home}.GlobalFile()); err != nil {
 		return err
 	}
 	return b.Retry()

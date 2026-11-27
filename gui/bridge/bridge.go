@@ -219,7 +219,7 @@ func (b *Bridge) Startup() StartupInfo {
 	defer b.switching.Unlock()
 	info := StartupInfo{Error: b.startErr, Dir: b.dir, Example: config.Example}
 	if home, err := config.HomeDir(); err == nil {
-		info.ConfigPath = filepath.Join(home, "config.toml")
+		info.ConfigPath = config.Paths{Home: home}.GlobalFile()
 		_, err := os.Stat(info.ConfigPath)
 		info.ConfigExists = err == nil
 	}

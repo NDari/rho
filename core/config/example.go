@@ -9,20 +9,30 @@ import (
 // Example is a starting configuration for a local OpenAI-compatible
 // server such as llama.cpp's llama-server (port 9931 by default; older
 // versions use 8080).
-const Example = `default_model = "local"
-
-[providers.local]
-base_url = "http://localhost:9931/v1"
-
-[[models]]
-id = "local"
-provider = "local"
-context_window = 65536
+const Example = `{
+	"default_model": "local",
+	"providers": {
+		"local": {
+			"base_url": "http://localhost:9931/v1"
+		}
+	},
+	"models": [
+		{
+			"id":             "local",
+			"provider":       "local",
+			"context_window": 65536
+		}
+	]
+}
 `
 
 // CreateExample writes Example to path, creating its directory. It never
-// replaces an existing file.
+// replaces an existing file, and converts a legacy config.toml next to
+// path instead of writing the example.
 func CreateExample(path string) error {
+	if w := ConvertLegacy(path); w != "" {
+		return fmt.Errorf("%s", w)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}

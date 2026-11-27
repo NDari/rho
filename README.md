@@ -40,7 +40,7 @@ Rho looks for a new release once a day. When there is one, the TUI shows a banne
 rho update
 ```
 
-This replaces `rho` where it is. If that folder is not writable, the new version goes to `~/.local/bin` instead (`%LOCALAPPDATA%\Programs\Rho` on Windows), and Rho tells you if you need to add that folder to your `PATH`. To turn the daily check off, set `update_check = false` in `~/.rho/config.toml` or set the `RHO_NO_UPDATE_CHECK` environment variable.
+This replaces `rho` where it is. If that folder is not writable, the new version goes to `~/.local/bin` instead (`%LOCALAPPDATA%\Programs\Rho` on Windows), and Rho tells you if you need to add that folder to your `PATH`. To turn the daily check off, set `"update_check": false` in `~/.rho/config.jsonc` or set the `RHO_NO_UPDATE_CHECK` environment variable.
 
 ### With Go
 
@@ -68,18 +68,24 @@ The GUI also needs Node.js 22.12 or newer, since its web frontend is built with 
 
 ## Quick start
 
-Point Rho at a model in `~/.rho/config.toml`. `rho init` creates the file with this example for a local OpenAI-compatible server such as llama.cpp's `llama-server` (port 9931 by default; older versions use 8080):
+Point Rho at a model in `~/.rho/config.jsonc` (JSON that allows comments and trailing commas). `rho init` creates the file with this example for a local OpenAI-compatible server such as llama.cpp's `llama-server` (port 9931 by default; older versions use 8080):
 
-```toml
-default_model = "local"
-
-[providers.local]
-base_url = "http://localhost:9931/v1"
-
-[[models]]
-id = "local"
-provider = "local"
-context_window = 65536
+```jsonc
+{
+	"default_model": "local",
+	"providers": {
+		"local": {
+			"base_url": "http://localhost:9931/v1"
+		}
+	},
+	"models": [
+		{
+			"id":             "local",
+			"provider":       "local",
+			"context_window": 65536
+		}
+	]
+}
 ```
 
 Or use a hosted provider directly by setting its API key, for example `OPENAI_API_KEY`, and running `rho --model openai/<model-name>`.

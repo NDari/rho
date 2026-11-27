@@ -6,12 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/NDari/rho/core/jsonc"
 )
 
 // Kind is the type of a setting's value.
@@ -31,7 +30,7 @@ type Setting struct {
 	Description string
 	Kind        Kind
 	// PerModel settings belong to the current model and are saved in its
-	// [[models]] entry.
+	// models entry.
 	PerModel bool
 	// Optional settings accept "" (shown as "default"), which removes the
 	// key so the built-in behavior applies.
@@ -102,7 +101,7 @@ func boolSetting(key, desc string, get func(*Config) bool, set func(*Config, boo
 	}
 }
 
-// modelEntry returns the [[models]] entry for id, adding one for an ad-hoc
+// modelEntry returns the models entry for id, adding one for an ad-hoc
 // "provider/name" model. c.Models is copied first, since Config values
 // share it.
 func (c *Config) modelEntry(id string) *Model {
@@ -197,13 +196,13 @@ func Next(choices []string, current string, isInt bool) string {
 }
 
 // ErrModelNotInFile is returned when a per-model setting can't be saved
-// because the file has no [[models]] entry for the model.
-var ErrModelNotInFile = errors.New("the model has no [[models]] entry in the file")
+// because the file's models list has no entry for the model.
+var ErrModelNotInFile = errors.New("the model has no entry in the file's models list")
 
-// SaveSetting writes the setting's value into the TOML file at path,
-// creating the file if needed. A per-model setting goes into the [[models]]
-// entry with id model. An empty optional value removes the key. The rest of
-// the file, comments included, is kept as is.
+// SaveSetting writes the setting's value into the config file at path,
+// creating the file if needed. A per-model setting goes into the models
+// entry with id model. An empty optional value removes the key. Comments
+// in the file are kept, and the file is formatted.
 func SaveSetting(path string, s Setting, model, value string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -222,15 +221,19 @@ func SaveSetting(path string, s Setting, model, value string) error {
 	case s.Kind == KindBool:
 		v = value == "true"
 	}
-	var out string
+	key := strings.Split(s.Key, ".")
 	if s.PerModel {
-		out, err = setModelKey(string(data), model, s.Key, v)
-	} else {
-		out, err = setKey(string(data), s.Key, v)
+		var file Config
+		if _, err := jsonc.Decode(data, &file); err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		i := slices.IndexFunc(file.Models, func(m Model) bool { return m.ID == model })
+		if i < 0 {
+			return ErrModelNotInFile
+		}
+		key = append([]string{"models", strconv.Itoa(i)}, key...)
 	}
-	if errors.Is(err, ErrModelNotInFile) {
-		return err
-	}
+	out, err := jsonc.Set(data, key, v)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", path, err)
 	}
@@ -238,7 +241,7 @@ func SaveSetting(path string, s Setting, model, value string) error {
 }
 
 // writeFile replaces path atomically, keeping its permissions.
-func writeFile(path, text string) error {
+func writeFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -246,12 +249,12 @@ func writeFile(path, text string) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.jsonc")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(text); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -264,298 +267,15 @@ func writeFile(path, text string) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// section is a part of a TOML file: the root (before any header), a
-// [table] or one [[array]] entry. Body lines are [body, end).
-type section struct {
-	name      string
-	array     bool
-	body, end int
-}
-
-func sections(lines []string) []section {
-	secs := []section{{body: 0, end: len(lines)}}
-	for i, l := range lines {
-		name, array, ok := header(l)
-		if !ok {
-			continue
-		}
-		secs[len(secs)-1].end = i
-		secs = append(secs, section{name: name, array: array, body: i + 1, end: len(lines)})
-	}
-	return secs
-}
-
-func splitLines(text string) []string {
-	if text == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-}
-
-func joinLines(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
-// setKey sets a key ("name" or "table.name") in TOML text, or removes it
-// when value is nil. It edits the existing line when there is one, or adds
-// the key, and checks that the result parses with the new value.
-func setKey(text, key string, value any) (string, error) {
-	table, name, dotted := strings.Cut(key, ".")
-	if !dotted {
-		table, name = "", key
-	}
-	lines := splitLines(text)
-	for _, sec := range sections(lines) {
-		if sec.name == table && !sec.array {
-			out, err := editSection(lines, sec, name, value)
-			if err != nil {
-				return "", err
-			}
-			return checked(joinLines(out), key, value, func(m map[string]any) any { return m })
-		}
-	}
-	if value == nil {
-		return text, nil
-	}
-	val, err := tomlValue(value)
-	if err != nil {
-		return "", err
-	}
-	// No such table yet: add it at the end.
-	out := strings.TrimRight(text, "\n")
-	if out != "" {
-		out += "\n\n"
-	}
-	return checked(out+"["+table+"]\n"+name+" = "+val+"\n", key, value, func(m map[string]any) any { return m })
-}
-
-// setModelKey sets (or with a nil value removes) key in the [[models]]
-// entry whose id is model.
-func setModelKey(text, model, key string, value any) (string, error) {
-	lines := splitLines(text)
-	for _, sec := range sections(lines) {
-		if !sec.array || sec.name != "models" || sectionID(lines, sec) != model {
-			continue
-		}
-		out, err := editSection(lines, sec, key, value)
-		if err != nil {
-			return "", err
-		}
-		return checked(joinLines(out), key, value, func(m map[string]any) any {
-			list, _ := m["models"].([]map[string]any)
-			for _, e := range list {
-				if e["id"] == model {
-					return e
-				}
-			}
-			return nil
-		})
-	}
-	return "", ErrModelNotInFile
-}
-
-// sectionID returns the string value of the section's id key.
-func sectionID(lines []string, sec section) string {
-	for _, l := range lines[sec.body:sec.end] {
-		if k, _, ok := keyLine(l); ok && k == "id" {
-			var v struct{ ID string }
-			if _, err := toml.Decode("id = "+strings.TrimSpace(strings.SplitN(l, "=", 2)[1]), &v); err == nil {
-				return v.ID
-			}
-		}
-	}
-	return ""
-}
-
-// editSection replaces, adds or (for a nil value) removes name in sec.
-func editSection(lines []string, sec section, name string, value any) ([]string, error) {
-	val := ""
-	if value != nil {
-		var err error
-		if val, err = tomlValue(value); err != nil {
-			return nil, err
-		}
-	}
-	out := slices.Clone(lines)
-	for i := sec.body; i < sec.end; i++ {
-		k, rest, ok := keyLine(out[i])
-		if !ok || k != name {
-			continue
-		}
-		// The value may continue on later lines (a multi-line array).
-		last, col := valueEnd(out, i, len(out[i])-len(rest))
-		if value == nil {
-			return slices.Delete(out, i, last+1), nil
-		}
-		comment := ""
-		if c := strings.Index(out[last][col:], "#"); c != -1 {
-			comment = " " + out[last][col+c:]
-		}
-		out[i] = out[i][:len(out[i])-len(rest)] + val + comment
-		return slices.Delete(out, i+1, last+1), nil
-	}
-	if value == nil {
-		return out, nil
-	}
-	line := name + " = " + val
-	// Insert after the last non-blank line of the section.
-	blank := func(i int) bool { return strings.TrimSpace(out[i]) == "" }
-	at := sec.end
-	for at > sec.body && blank(at-1) {
-		at--
-	}
-	// A comment block set off by a blank line describes what follows the
-	// section (the next header), so insert above it.
-	j := at
-	for j > sec.body && strings.HasPrefix(strings.TrimSpace(out[j-1]), "#") {
-		j--
-	}
-	if j < at && j > sec.body && blank(j-1) {
-		at = j
-		for at > sec.body && blank(at-1) {
-			at--
-		}
-	}
-	ins := []string{line}
-	if sec.name == "" && at == 0 && at < len(out) {
-		// A first line right before a header: keep them apart.
-		ins = append(ins, "")
-	}
-	return slices.Insert(out, at, ins...), nil
-}
-
-// header reports the table name of a "[name]" or "[[name]]" line.
-func header(l string) (name string, array, ok bool) {
-	t := strings.TrimSpace(l)
-	if !strings.HasPrefix(t, "[") {
-		return "", false, false
-	}
-	if i := strings.Index(t, "#"); i != -1 {
-		t = strings.TrimSpace(t[:i])
-	}
-	array = strings.HasPrefix(t, "[[")
-	t = strings.TrimSuffix(strings.TrimPrefix(t, "["), "]")
-	t = strings.TrimSuffix(strings.TrimPrefix(t, "["), "]")
-	return strings.TrimSpace(t), array, true
-}
-
-// keyLine splits "  key = value # note" into the key and the value text
-// (from the first non-blank character after "=").
-func keyLine(l string) (key, rest string, ok bool) {
-	k, rest, ok := strings.Cut(l, "=")
-	if !ok {
-		return "", "", false
-	}
-	k = strings.Trim(strings.TrimSpace(k), `"'`)
-	if k == "" || strings.HasPrefix(k, "#") {
-		return "", "", false
-	}
-	return k, strings.TrimLeft(rest, " \t"), true
-}
-
-// valueEnd finds where the value starting at lines[i][col] ends: the line
-// and the column just after it. Strings, arrays and inline tables are
-// followed across lines; anything else ends at a comment or the line end.
-func valueEnd(lines []string, i, col int) (int, int) {
-	depth := 0
-	var quote byte
-	for ; i < len(lines); i, col = i+1, 0 {
-		l := lines[i]
-		for ; col < len(l); col++ {
-			ch := l[col]
-			switch {
-			case quote != 0:
-				if ch == '\\' && quote == '"' {
-					col++
-				} else if ch == quote {
-					quote = 0
-					if depth == 0 {
-						return i, col + 1
-					}
-				}
-			case ch == '"' || ch == '\'':
-				quote = ch
-			case ch == '#':
-				if depth == 0 {
-					return i, col
-				}
-				col = len(l)
-			case ch == '[' || ch == '{':
-				depth++
-			case ch == ']' || ch == '}':
-				depth--
-				if depth == 0 {
-					return i, col + 1
-				}
-			}
-		}
-		if depth == 0 && quote == 0 {
-			return i, len(l)
-		}
-		quote = 0 // strings don't span lines here
-	}
-	return len(lines) - 1, len(lines[len(lines)-1])
-}
-
-func tomlValue(v any) (string, error) {
-	var b strings.Builder
-	if err := toml.NewEncoder(&b).Encode(map[string]any{"v": v}); err != nil {
-		return "", err
-	}
-	_, val, _ := strings.Cut(strings.TrimSpace(b.String()), "= ")
-	return val, nil
-}
-
-// checked parses text and confirms key now holds want (or is gone, for a
-// nil want) in the table that table picks, so an unusual layout (an inline
-// table, a dotted key) is refused instead of written wrongly.
-func checked(text, key string, want any, table func(map[string]any) any) (string, error) {
-	var m map[string]any
-	if _, err := toml.Decode(text, &m); err != nil {
-		return "", fmt.Errorf("could not set %s: %w", key, err)
-	}
-	got := table(m)
-	for _, part := range strings.Split(key, ".") {
-		mm, ok := got.(map[string]any)
-		if !ok {
-			got = nil
-			break
-		}
-		got = mm[part]
-	}
-	if !reflect.DeepEqual(got, normalize(want)) {
-		return "", fmt.Errorf("could not set %s automatically; edit the file by hand", key)
-	}
-	return text, nil
-}
-
-// normalize converts want to the types the TOML decoder produces.
-func normalize(v any) any {
-	switch v := v.(type) {
-	case int:
-		return int64(v)
-	case []string:
-		out := make([]any, len(v))
-		for i, s := range v {
-			out[i] = s
-		}
-		return out
-	}
-	return v
-}
-
 // SetExtensionDisabled adds name to (or removes it from)
-// extensions.disabled in the TOML file at path.
+// extensions.disabled in the config file at path.
 func SetExtensionDisabled(path, name string, disabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	var file Config
-	if _, err := toml.Decode(string(data), &file); err != nil {
+	if _, err := jsonc.Decode(data, &file); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	if slices.Contains(file.Extensions.Disabled, name) == disabled {
@@ -568,7 +288,7 @@ func SetExtensionDisabled(path, name string, disabled bool) error {
 	if list == nil {
 		list = []string{}
 	}
-	out, err := setKey(string(data), "extensions.disabled", list)
+	out, err := jsonc.Set(data, []string{"extensions", "disabled"}, list)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", path, err)
 	}
@@ -576,19 +296,51 @@ func SetExtensionDisabled(path, name string, disabled bool) error {
 }
 
 // GlobalFile is the global config file.
-func (p Paths) GlobalFile() string { return filepath.Join(p.Home, "config.toml") }
+func (p Paths) GlobalFile() string { return filepath.Join(p.Home, FileName) }
+
+// ProjectFile is the project config file, or "" when project files are
+// ignored or there is no project directory apart from Home.
+func (p Paths) ProjectFile() string { return p.Project(FileName) }
+
+// ConvertLegacy writes the config file at path from the TOML file
+// (config.toml) next to it, when only that one exists. It returns a
+// warning saying so, or describing why it failed.
+func ConvertLegacy(path string) string {
+	legacy := filepath.Join(filepath.Dir(path), legacyFileName)
+	ok, err := jsonc.ConvertTOML(legacy, path)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("%s is no longer read, and converting it to %s failed: %v", legacy, FileName, err)
+	case ok:
+		return fmt.Sprintf("converted %s to %s, which Rho now reads instead; comments were not carried over", legacy, path)
+	}
+	return ""
+}
+
+// readProject decodes the project config file, if there is one.
+func (p Paths) readProject() (Config, jsonc.Meta, bool) {
+	path := p.ProjectFile()
+	if path == "" {
+		return Config{}, jsonc.Meta{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, jsonc.Meta{}, false
+	}
+	var c Config
+	md, err := jsonc.Decode(data, &c)
+	if err != nil {
+		return Config{}, jsonc.Meta{}, false
+	}
+	return c, md, true
+}
 
 // ProjectSets reports whether the project config sets key (for a
 // per-model setting, defines the model at all), which then overrides the
 // global value.
 func (p Paths) ProjectSets(s Setting, model string) bool {
-	path := p.Project("config.toml")
-	if path == "" {
-		return false
-	}
-	var c Config
-	md, err := toml.DecodeFile(path, &c)
-	if err != nil {
+	c, md, ok := p.readProject()
+	if !ok {
 		return false
 	}
 	if s.PerModel {
@@ -600,13 +352,6 @@ func (p Paths) ProjectSets(s Setting, model string) bool {
 // ProjectDisables reports whether the project config lists extension name
 // in extensions.disabled.
 func (p Paths) ProjectDisables(name string) bool {
-	path := p.Project("config.toml")
-	if path == "" {
-		return false
-	}
-	var c Config
-	if _, err := toml.DecodeFile(path, &c); err != nil {
-		return false
-	}
-	return slices.Contains(c.Extensions.Disabled, name)
+	c, _, ok := p.readProject()
+	return ok && slices.Contains(c.Extensions.Disabled, name)
 }

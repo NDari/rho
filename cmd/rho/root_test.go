@@ -109,8 +109,12 @@ func setStdin(t *testing.T, content string) {
 // writeConfig points model "m" (the default) at the server.
 func writeConfig(t *testing.T, home, url string) {
 	t.Helper()
-	cfg := fmt.Sprintf("default_model = \"m\"\n\n[providers.test]\nbase_url = %q\n\n[[models]]\nid = \"m\"\nprovider = \"test\"\ncontext_window = 32000\n", url)
-	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(cfg), 0o644); err != nil {
+	cfg := fmt.Sprintf(`{
+	"default_model": "m",
+	"providers": {"test": {"base_url": %q}},
+	"models": [{"id": "m", "provider": "test", "context_window": 32000}],
+}`, url)
+	if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -360,12 +364,12 @@ func TestNoModel(t *testing.T) {
 	if !errors.Is(err, config.ErrNoModel) {
 		t.Fatalf("error = %v, want config.ErrNoModel", err)
 	}
-	path := filepath.Join(home, "config.toml")
+	path := filepath.Join(home, config.FileName)
 	hint := noModelHint()
 	if !strings.Contains(hint, "rho init") || !strings.Contains(hint, path) || !strings.Contains(hint, indent(config.Example)) {
 		t.Errorf("hint without a config file = %q", hint)
 	}
-	if err := os.WriteFile(path, []byte("max_retries = 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"max_retries": 1}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	hint = noModelHint()
@@ -376,12 +380,12 @@ func TestNoModel(t *testing.T) {
 
 func TestInit(t *testing.T) {
 	home := testEnv(t)
-	path := filepath.Join(home, "config.toml")
+	path := filepath.Join(home, config.FileName)
 	stdout, _, err := execute("init")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(stdout, "Wrote "+path+":\n\n") || !strings.Contains(stdout, `  default_model = "local"`) {
+	if !strings.HasPrefix(stdout, "Wrote "+path+":\n\n") || !strings.Contains(stdout, `"default_model": "local"`) {
 		t.Errorf("output = %q", stdout)
 	}
 	data, err := os.ReadFile(path)

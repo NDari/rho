@@ -15,7 +15,7 @@ rho-gui -session FILE   # open a specific session file
 rho-gui -no-extensions
 ```
 
-Configure models in `~/.rho/config.toml` first, as described in the [README](../README.md#quick-start) and [configuration.md](configuration.md). If Rho cannot start (for example because no model is configured yet), the window shows the error with an example configuration for a local llama.cpp server. When there is no config file yet, **Create the config file with this example** writes it and opens the project; otherwise fix the file and press **Try again**.
+Configure models in `~/.rho/config.jsonc` first, as described in the [README](../README.md#quick-start) and [configuration.md](configuration.md). If Rho cannot start (for example because no model is configured yet), the window shows the error with an example configuration for a local llama.cpp server. When there is no config file yet, **Create the config file with this example** writes it and opens the project; otherwise fix the file and press **Try again**.
 
 To work in another project, use `/open` (or **Open another folder…** in an empty conversation) to pick a folder. `/open path/to/project` skips the dialog. Switching starts a new session in that folder.
 

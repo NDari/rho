@@ -34,7 +34,7 @@ const extLang: Record<string, string> = {
   go: "go", ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript",
   py: "python", rs: "rust", rb: "ruby", java: "java", kt: "kotlin", c: "c", h: "c", cc: "cpp", cpp: "cpp",
   hpp: "cpp", cs: "csharp", swift: "swift", php: "php", sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
-  json: "json", yaml: "yaml", yml: "yaml", toml: "ini", ini: "ini", md: "markdown", html: "xml", xml: "xml",
+  json: "json", jsonc: "json", yaml: "yaml", yml: "yaml", toml: "ini", ini: "ini", md: "markdown", html: "xml", xml: "xml",
   svelte: "xml", vue: "xml", css: "css", scss: "scss", sql: "sql", lua: "lua", mod: "go", diff: "diff",
   makefile: "makefile",
 };

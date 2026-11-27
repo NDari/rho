@@ -18,18 +18,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/NDari/rho/core/compact"
 	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/ext/rpc"
+	"github.com/NDari/rho/core/jsonc"
 	"github.com/NDari/rho/core/provider"
 	"github.com/NDari/rho/core/tools"
 )
 
 // ManifestName is the manifest file for executable extensions.
-const ManifestName = "rho-extension.toml"
+const ManifestName = "rho-extension.jsonc"
+
+// legacyManifestName is the TOML manifest Rho read before it used JSONC.
+const legacyManifestName = "rho-extension.toml"
 
 // Extension kinds.
 const (
@@ -58,9 +60,9 @@ type Candidate struct {
 }
 
 type manifest struct {
-	Name    string   `toml:"name"`
-	Command string   `toml:"command"`
-	Args    []string `toml:"args"`
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
 }
 
 // Extension is a running (or failed) extension process.
@@ -447,6 +449,11 @@ func (m *Manager) Discover() ([]Candidate, []string) {
 				continue
 			}
 			p := filepath.Join(d.path, e.Name())
+			if e.IsDir() {
+				if w := convertLegacyManifest(p); w != "" {
+					warnings = append(warnings, w)
+				}
+			}
 			c, ok, err := candidateAt(p, e.IsDir())
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("%s: %v", p, err))
@@ -471,7 +478,7 @@ func candidateAt(p string, isDir bool) (Candidate, bool, error) {
 	mpath := filepath.Join(p, ManifestName)
 	if data, err := os.ReadFile(mpath); err == nil {
 		var mf manifest
-		if _, err := toml.Decode(string(data), &mf); err != nil {
+		if _, err := jsonc.Decode(data, &mf); err != nil {
 			return Candidate{}, false, fmt.Errorf("invalid %s: %w", ManifestName, err)
 		}
 		if mf.Command == "" {
@@ -496,6 +503,20 @@ func candidateAt(p string, isDir bool) (Candidate, bool, error) {
 		return Candidate{Name: filepath.Base(p), Path: p, Kind: KindGo, Dir: p}, true, nil
 	}
 	return Candidate{}, false, nil
+}
+
+// convertLegacyManifest writes the manifest in dir from its TOML manifest,
+// when only that one exists, and returns a warning saying so.
+func convertLegacyManifest(dir string) string {
+	src := filepath.Join(dir, legacyManifestName)
+	ok, err := jsonc.ConvertTOML(src, filepath.Join(dir, ManifestName))
+	switch {
+	case err != nil:
+		return fmt.Sprintf("%s is no longer read, and converting it to %s failed: %v", src, ManifestName, err)
+	case ok:
+		return fmt.Sprintf("converted %s to %s, which Rho now reads instead", src, ManifestName)
+	}
+	return ""
 }
 
 // Start discovers and starts all extensions. Problems are recorded per

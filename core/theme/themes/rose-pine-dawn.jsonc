@@ -1,0 +1,22 @@
+// Rose Pine Dawn.
+// Palette: https://github.com/rose-pine/rose-pine-palette (source/index.ts)
+// License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+{
+	"background":  "#faf4ed",
+	"surface":     "#fffaf3",
+	"user_bg":     "#f2e9e1",
+	"border":      "#dfdad9",
+	"subtle":      "#cecacd",
+	"muted":       "#797593",
+	"text":        "#575279",
+	"accent":      "#907aa9",
+	"tool_name":   "#d7827e",
+	"thinking":    "#9893a5",
+	"line_number": "#9893a5",
+	"error":       "#b4637a",
+	"warning":     "#ea9d34",
+	"success":     "#56949f",
+	"status_bg":   "#f2e9e1",
+	"status_fg":   "#797593",
+	"chroma":      "rose-pine-dawn",
+}

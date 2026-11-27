@@ -372,7 +372,7 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	err = config.SaveSetting(path, s, model, s.Value(cfg, model))
 	switch {
 	case errors.Is(err, config.ErrModelNotInFile):
-		note = "changed for this session only: model " + model + " has no [[models]] entry in " + path
+		note = "changed for this session only: model " + model + " has no entry in the models list of " + path
 	case err != nil:
 		return false, "", err
 	default:
@@ -381,9 +381,9 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	switch {
 	case saved && a.Paths.ProjectSets(s, model):
 		if s.PerModel {
-			note = "the project's .rho/config.toml defines model " + model + ", so its settings win on the next start"
+			note = "the project's .rho/config.jsonc defines model " + model + ", so its settings win on the next start"
 		} else {
-			note = "the project's .rho/config.toml also sets " + key + " and wins on the next start"
+			note = "the project's .rho/config.jsonc also sets " + key + " and wins on the next start"
 		}
 	}
 	a.Config = cfg
@@ -415,7 +415,7 @@ func (a *App) SetExtensionEnabled(ctx context.Context, id string, on bool) (note
 	a.Config = cfg
 	a.Agent.SetConfig(cfg)
 	if on && a.Paths.ProjectDisables(id) {
-		note = "the project's .rho/config.toml also disables " + id + ", so it stays off on the next start"
+		note = "the project's .rho/config.jsonc also disables " + id + ", so it stays off on the next start"
 	}
 	err = a.Ext.SetEnabled(ctx, id, on)
 	a.refreshTools()

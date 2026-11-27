@@ -24,10 +24,10 @@ func testApp(t *testing.T, global, project string, extensions bool, steps ...fak
 	t.Setenv("RHO_HOME", home)
 	cwd := t.TempDir()
 	if global != "" {
-		writeFile(t, filepath.Join(home, "config.toml"), global)
+		writeFile(t, filepath.Join(home, config.FileName), global)
 	}
 	if project != "" {
-		writeFile(t, filepath.Join(cwd, ".rho", "config.toml"), project)
+		writeFile(t, filepath.Join(cwd, ".rho", config.FileName), project)
 	}
 	a, err := New(Options{Cwd: cwd, Model: "openai/test-model", NoExtensions: !extensions})
 	if err != nil {
@@ -80,7 +80,7 @@ func whileBusy(t *testing.T, a *App, fn func()) {
 }
 
 func TestSetSetting(t *testing.T) {
-	const modelEntry = "[[models]]\nid = \"openai/test-model\"\nprovider = \"openai\"\n"
+	const modelEntry = `{"models": [{"id": "openai/test-model", "provider": "openai"}]}`
 	tests := []struct {
 		name      string
 		global    string
@@ -97,38 +97,38 @@ func TestSetSetting(t *testing.T) {
 		{name: "unknown theme", key: "theme", value: "no-such-theme", wantErr: `unknown theme "no-such-theme"`},
 		{name: "system is only for theme", key: "theme_dark", value: "system", wantErr: `unknown theme "system"`},
 		{name: "bad int", key: "max_retries", value: "many", wantErr: "max_retries"},
-		{name: "theme saved", key: "theme", value: "github-light", wantSaved: true, wantFile: `theme = "github-light"`,
+		{name: "theme saved", key: "theme", value: "github-light", wantSaved: true, wantFile: `"theme": "github-light"`,
 			check: func(t *testing.T, c config.Config) {
 				if c.Theme != "github-light" {
 					t.Errorf("Theme = %q", c.Theme)
 				}
 			}},
-		{name: "theme system", key: "theme", value: "system", wantSaved: true, wantFile: `theme = "system"`},
-		{name: "int saved", key: "max_retries", value: "5", wantSaved: true, wantFile: "max_retries = 5",
+		{name: "theme system", key: "theme", value: "system", wantSaved: true, wantFile: `"theme": "system"`},
+		{name: "int saved", key: "max_retries", value: "5", wantSaved: true, wantFile: `"max_retries": 5`,
 			check: func(t *testing.T, c config.Config) {
 				if c.MaxRetries != 5 {
 					t.Errorf("MaxRetries = %d", c.MaxRetries)
 				}
 			}},
-		{name: "bool saved", key: "tui.mouse_select", value: "false", wantSaved: true, wantFile: "mouse_select = false",
+		{name: "bool saved", key: "tui.mouse_select", value: "false", wantSaved: true, wantFile: `"mouse_select": false`,
 			check: func(t *testing.T, c config.Config) {
 				if c.TUI.MouseSelectEnabled() {
 					t.Error("mouse select still on")
 				}
 			}},
 		{name: "per-model setting without a models entry", key: "reasoning_effort", value: "high",
-			wantNote: "changed for this session only: model openai/test-model has no [[models]] entry",
+			wantNote: "changed for this session only: model openai/test-model has no entry in the models list",
 			check: func(t *testing.T, c config.Config) {
 				if m, _ := c.ResolveModel("openai/test-model"); m.ReasoningEffort != "high" {
 					t.Errorf("ReasoningEffort = %q", m.ReasoningEffort)
 				}
 			}},
 		{name: "per-model setting with a models entry", global: modelEntry, key: "reasoning_effort", value: "low",
-			wantSaved: true, wantFile: `reasoning_effort = "low"`},
-		{name: "project sets the key too", project: "theme = \"github-light\"\n", key: "theme", value: "gruvbox-dark",
-			wantSaved: true, wantFile: `theme = "gruvbox-dark"`, wantNote: "the project's .rho/config.toml also sets theme"},
+			wantSaved: true, wantFile: `"reasoning_effort": "low"`},
+		{name: "project sets the key too", project: `{"theme": "github-light"}`, key: "theme", value: "gruvbox-dark",
+			wantSaved: true, wantFile: `"theme": "gruvbox-dark"`, wantNote: "the project's .rho/config.jsonc also sets theme"},
 		{name: "project defines the model", global: modelEntry, project: modelEntry, key: "reasoning_effort", value: "medium",
-			wantSaved: true, wantNote: "the project's .rho/config.toml defines model openai/test-model"},
+			wantSaved: true, wantNote: "the project's .rho/config.jsonc defines model openai/test-model"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

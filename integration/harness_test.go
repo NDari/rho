@@ -40,25 +40,26 @@ func newEnv(t *testing.T, replies ...replay.Reply) *env {
 	t.Helper()
 	e := &env{t: t, home: t.TempDir(), cwd: t.TempDir(), srv: replay.New(replies...)}
 	t.Cleanup(e.srv.Close)
-	cfg := fmt.Sprintf(`default_model = "local"
-max_retries = 3
-update_check = false
-
-[providers.local]
-base_url = %q
-
-[[models]]
-id = "local"
-name = "qwen"
-provider = "local"
-context_window = 65536
-max_output = 4096
-
-[compaction]
-reserve = 1000
-keep_recent = 40
+	cfg := fmt.Sprintf(`{
+	"default_model": "local",
+	"max_retries":   3,
+	"update_check":  false,
+	"providers": {
+		"local": {"base_url": %q},
+	},
+	"models": [
+		{
+			"id":             "local",
+			"name":           "qwen",
+			"provider":       "local",
+			"context_window": 65536,
+			"max_output":     4096,
+		},
+	],
+	"compaction": {"reserve": 1000, "keep_recent": 40},
+}
 `, e.srv.URL+"/v1")
-	e.write(filepath.Join(e.home, "config.toml"), cfg)
+	e.write(filepath.Join(e.home, "config.jsonc"), cfg)
 	e.write(filepath.Join(e.cwd, "go.mod"), "module example.com/demo\n\ngo 1.25\n")
 	e.write(filepath.Join(e.cwd, "main.go"), "package main\n\nfunc main() {}\n")
 	t.Setenv("RHO_HOME", e.home)

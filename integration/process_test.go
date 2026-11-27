@@ -239,7 +239,7 @@ func TestExtensionCrashMidTurn(t *testing.T) {
 		callReply("work", `{}`),
 		textReply("The extension recovered."),
 	)
-	e.write(filepath.Join(e.home, "extensions", "crashy", ext.ManifestName), fmt.Sprintf("command = %q\n", crashExt))
+	e.write(filepath.Join(e.home, "extensions", "crashy", ext.ManifestName), fmt.Sprintf(`{"command": %q}`, crashExt))
 	r := e.run("Try the extension.", runOpts{extensions: true})
 	if r.err != nil || r.result["status"] != "done" {
 		t.Fatalf("err %v, result %v\n%s", r.err, r.result, r.stderr)
@@ -277,7 +277,7 @@ func TestExtensionHookCrashBlocksTheCall(t *testing.T) {
 		callReply("write", `{"path":"after.txt","content":"x"}`),
 		textReply("Done."),
 	)
-	e.write(filepath.Join(e.home, "extensions", "crashy", ext.ManifestName), fmt.Sprintf("command = %q\n", crashExt))
+	e.write(filepath.Join(e.home, "extensions", "crashy", ext.ManifestName), fmt.Sprintf(`{"command": %q}`, crashExt))
 	r := e.run("Write the files.", runOpts{extensions: true})
 	if r.err != nil || r.result["status"] != "done" {
 		t.Fatalf("err %v, result %v\n%s", r.err, r.result, r.stderr)

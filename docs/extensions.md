@@ -5,7 +5,7 @@ Extensions add tools, slash commands and hooks to Rho. Every extension runs as a
 There are two kinds:
 
 - **Go source extensions:** a `.go` file, or a directory of `.go` files, run by Rho's built-in interpreter (`rho ext-host`, based on Yaegi). No Go toolchain is needed.
-- **Executable extensions:** any program, described by a `rho-extension.toml` manifest. The program's runtime (Python, Node, a compiled binary...) is the extension's own dependency.
+- **Executable extensions:** any program, described by a `rho-extension.jsonc` manifest. The program's runtime (Python, Node, a compiled binary...) is the extension's own dependency.
 
 **Letting the model write them.** This guide, the configuration guide, the spec and the examples are built into `rho`: `rho docs` lists them and `rho docs extensions` prints this one. Rho also installs them in `~/.rho/docs/<version>/` and offers the model a built-in `rho-extensions` skill that points there, so asking Rho to "write an extension that..." works without anything else. A skill of your own named `rho-extensions` replaces the built-in one.
 
@@ -22,11 +22,11 @@ Each entry in an extensions directory is one extension:
 
 - `name.go`: a single-file Go extension.
 - `name/` containing `*.go` files: a multi-file Go extension (`package main`).
-- `name/` containing `rho-extension.toml`: an executable extension.
+- `name/` containing `rho-extension.jsonc`: an executable extension (a `rho-extension.toml` from earlier versions is converted to it once).
 
-Names starting with `.` or `_` are ignored. To disable an extension without deleting it, turn it off in `/extensions` or add its name to `extensions.disabled` in `config.toml`.
+Names starting with `.` or `_` are ignored. To disable an extension without deleting it, turn it off in `/extensions` or add its name to `extensions.disabled` in `config.jsonc`.
 
-Use `/extensions` to list extensions: Enter turns the selected one on or off (it starts or stops right away, the others keep running, and the choice is saved to `extensions.disabled` in `~/.rho/config.toml`), and Tab shows status, registrations, errors and recent log lines. `/reload` restarts all extensions.
+Use `/extensions` to list extensions: Enter turns the selected one on or off (it starts or stops right away, the others keep running, and the choice is saved to `extensions.disabled` in `~/.rho/config.jsonc`), and Tab shows status, registrations, errors and recent log lines. `/reload` restarts all extensions.
 
 ## Go extensions
 
@@ -101,11 +101,13 @@ See [`examples/extensions/guard.go`](../examples/extensions/guard.go).
 
 ## Executable extensions
 
-```toml
-# rho-extension.toml
-name = "wordcount"
-command = "python3"
-args = ["${dir}/main.py"]
+```jsonc
+// rho-extension.jsonc
+{
+	"name":    "wordcount",
+	"command": "python3",
+	"args":    ["${dir}/main.py"]
+}
 ```
 
 `${dir}` expands to the extension's directory. A relative `command` containing a path separator is resolved against that directory too. The process runs in the session's working directory, with `RHO_EXTENSION_DIR` set to the extension's directory.
@@ -199,7 +201,7 @@ In headless mode, `ui/confirm` answers `false`, and `ui/select` and `ui/input` a
 ### Lifecycle
 
 - One process per extension, started with the session.
-- Hooks and commands have a per-call timeout (`extensions.timeout` in `config.toml`, default 30 seconds; longer for hooks that may wait on the user). Time a `ui/confirm`, `ui/select` or `ui/input` prompt is open does not count, so a prompt can wait for the user as long as it takes. Tools run until they finish or the user cancels.
+- Hooks and commands have a per-call timeout (`extensions.timeout` in `config.jsonc`, default 30 seconds; longer for hooks that may wait on the user). Time a `ui/confirm`, `ui/select` or `ui/input` prompt is open does not count, so a prompt can wait for the user as long as it takes. Tools run until they finish or the user cancels.
 - A prompt opened while Rho waits for a hook, command or tool is closed (answered as dismissed) when that call ends, so it cannot be answered after the call was decided. The TUI and GUI take it off the screen and say why: the turn was cancelled (by the user, the RPC client or an extension, named), the extension stopped, or it replied without waiting for the answer. A tool call cancelled while its `before_tool_call` hook waits never runs, and its result says who cancelled it.
 - If an extension crashes, it is marked failed, you are notified (with the last lines it wrote to stderr), and Rho continues. Rho restarts it after a second, at most once a minute; if it crashes again sooner it stays failed until `/reload`, which restarts everything. Hooks called during the restart wait for the new process; while it stays failed, its hooks fail (see above) until `/reload` or until you turn it off in `/extensions`. A restarted extension is a fresh process, so it gets `session_start` again and keeps no state from before the crash.
 - There are no per-token or per-frame hooks, which keeps out-of-process extensions cheap.

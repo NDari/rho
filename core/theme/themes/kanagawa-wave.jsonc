@@ -1,0 +1,24 @@
+// Kanagawa Wave.
+// Palette: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua, themes.lua)
+// License of the palette: MIT. Roles not set here are derived (docs/configuration.md).
+{
+	"background":  "#1f1f28",
+	"surface":     "#1a1a22",
+	"user_bg":     "#2a2a37",
+	"border":      "#363646",
+	"subtle":      "#54546d",
+	"muted":       "#938aa9",
+	"text":        "#dcd7ba",
+	"accent":      "#7e9cd8",
+	"tool_name":   "#957fb8",
+	"thinking":    "#727169",
+	"line_number": "#54546d",
+	"error":       "#e82424",
+	"warning":     "#ff9e3b",
+	"success":     "#98bb6c",
+	"diff_add_bg": "#2b3328",
+	"diff_del_bg": "#43242b",
+	"status_bg":   "#2a2a37",
+	"status_fg":   "#c8c093",
+	"chroma":      "kanagawa-wave",
+}

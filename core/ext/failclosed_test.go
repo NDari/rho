@@ -46,7 +46,7 @@ func startScripted(t *testing.T, s script) (*ext.Manager, *noticeLog) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), []byte("command = \"unused\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), []byte(`{"command": "unused"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var started atomic.Int32

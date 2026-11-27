@@ -97,7 +97,7 @@ func findShell(override string) (string, error) {
 	if p, err := exec.LookPath("bash"); err == nil && !isWSLBash(p) {
 		return p, nil
 	}
-	return "", errors.New("Git Bash not found; install Git for Windows or set bash.shell in ~/.rho/config.toml")
+	return "", errors.New("Git Bash not found; install Git for Windows or set bash.shell in ~/.rho/config.jsonc")
 }
 
 func isWSLBash(p string) bool {

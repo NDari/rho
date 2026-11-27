@@ -94,7 +94,7 @@ func TestResolvePaths(t *testing.T) {
 			if got != want {
 				t.Errorf("ResolvePaths(%q) =\n %+v\nwant\n %+v", tc.cwd, got, want)
 			}
-			if got.GlobalFile() != filepath.Join(home, "config.toml") {
+			if got.GlobalFile() != filepath.Join(home, FileName) {
 				t.Errorf("GlobalFile = %q", got.GlobalFile())
 			}
 		})
@@ -108,40 +108,82 @@ func TestLoadMergesBuiltinProvider(t *testing.T) {
 	no := false
 	tests := []struct {
 		name string
-		toml string
+		file string
 		want func(p *Provider)
 	}{
-		{"nothing set keeps the built-in values", `[providers.openai]`, func(*Provider) {}},
-		{"base_url only", `[providers.openai]
-base_url = "http://localhost:9931/v1"`, func(p *Provider) { p.BaseURL = "http://localhost:9931/v1" }},
-		{"key and flavor", `[providers.openai]
-api_key_env = "MY_KEY"
-flavor = "gemini"`, func(p *Provider) { p.APIKeyEnv = "MY_KEY"; p.Flavor = "gemini" }},
-		{"type", `[providers.openai]
-type = "openai-responses"`, func(p *Provider) { p.Type = ProviderOpenAIResponses }},
-		{"limits, headers and debug log", `[providers.openai]
-requests_per_minute = 10
-tokens_per_minute = 5000
-debug_log = "/tmp/debug.jsonl"
-[providers.openai.headers]
-X-Test = "1"`, func(p *Provider) {
+		{"nothing set keeps the built-in values", `{
+	"providers": {
+		"openai": {}
+	}
+}
+`, func(*Provider) {}},
+		{"base_url only", `{
+	"providers": {
+		"openai": {
+			"base_url": "http://localhost:9931/v1"
+		}
+	}
+}
+`, func(p *Provider) { p.BaseURL = "http://localhost:9931/v1" }},
+		{"key and flavor", `{
+	"providers": {
+		"openai": {
+			"api_key_env": "MY_KEY",
+			"flavor":      "gemini"
+		}
+	}
+}
+`, func(p *Provider) { p.APIKeyEnv = "MY_KEY"; p.Flavor = "gemini" }},
+		{"type", `{
+	"providers": {
+		"openai": {
+			"type": "openai-responses"
+		}
+	}
+}
+`, func(p *Provider) { p.Type = ProviderOpenAIResponses }},
+		{"limits, headers and debug log", `{
+	"providers": {
+		"openai": {
+			"requests_per_minute": 10,
+			"tokens_per_minute":   5000,
+			"debug_log":           "/tmp/debug.jsonl",
+			"headers": {
+				"X-Test": "1"
+			}
+		}
+	}
+}
+`, func(p *Provider) {
 			p.RequestsPerMinute, p.TokensPerMinute, p.DebugLog = 10, 5000, "/tmp/debug.jsonl"
 			p.Headers = map[string]string{"X-Test": "1"}
 		}},
-		{"xml tool defaults", `[providers.openai]
-tool_format = "xml"
-system_prompt_in = "user"
-decode_entities = "auto"
-stop_sequences = false`, func(p *Provider) {
+		{"xml tool defaults", `{
+	"providers": {
+		"openai": {
+			"tool_format":      "xml",
+			"system_prompt_in": "user",
+			"decode_entities":  "auto",
+			"stop_sequences":   false
+		}
+	}
+}
+`, func(p *Provider) {
 			p.ToolFormat, p.SystemPromptIn, p.DecodeEntities, p.StopSequences = ToolFormatXML, "user", "auto", &no
 		}},
-		{"raw api key", `[providers.openai]
-api_key = "sk-test"`, func(p *Provider) { p.APIKey = "sk-test" }},
+		{"raw api key", `{
+	"providers": {
+		"openai": {
+			"api_key": "sk-test"
+		}
+	}
+}
+`, func(p *Provider) { p.APIKey = "sk-test" }},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
-			write(t, filepath.Join(home, "config.toml"), tc.toml+"\n")
+			write(t, filepath.Join(home, FileName), tc.file)
 			cfg, _, err := Load(Paths{Home: home})
 			if err != nil {
 				t.Fatalf("Load: %v", err)
@@ -160,22 +202,22 @@ api_key = "sk-test"`, func(p *Provider) { p.APIKey = "sk-test" }},
 
 func TestLoadMouseSelect(t *testing.T) {
 	tests := []struct {
-		toml string
+		file string
 		want bool
 	}{
 		{"", true},
-		{"[tui]\nmouse_select = true\n", true},
-		{"[tui]\nmouse_select = false\n", false},
+		{`{"tui": {"mouse_select": true}}`, true},
+		{`{"tui": {"mouse_select": false}}`, false},
 	}
 	for _, tc := range tests {
 		home := t.TempDir()
-		write(t, filepath.Join(home, "config.toml"), tc.toml)
+		write(t, filepath.Join(home, FileName), tc.file)
 		cfg, _, err := Load(Paths{Home: home})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got := cfg.TUI.MouseSelectEnabled(); got != tc.want {
-			t.Errorf("config %q: MouseSelectEnabled = %v, want %v", tc.toml, got, tc.want)
+			t.Errorf("config %q: MouseSelectEnabled = %v, want %v", tc.file, got, tc.want)
 		}
 	}
 }
@@ -188,14 +230,21 @@ func TestProjectSetsAndDisables(t *testing.T) {
 		}
 		return s
 	}
-	const project = `theme = "light"
-[compaction]
-reserve = 8000
-[extensions]
-disabled = ["noisy"]
-[[models]]
-id = "local"
-provider = "openai"
+	const project = `{
+	"theme": "light",
+	"compaction": {
+		"reserve": 8000
+	},
+	"extensions": {
+		"disabled": ["noisy"]
+	},
+	"models": [
+		{
+			"id":       "local",
+			"provider": "openai"
+		}
+	]
+}
 `
 	tests := []struct {
 		name      string
@@ -214,14 +263,14 @@ provider = "openai"
 		{"per-model setting for another model", project, false, "reasoning_effort", "remote", false, "", false},
 		{"project files ignored", project, true, "theme", "local", false, "noisy", false},
 		{"no project config", "", false, "theme", "local", false, "noisy", false},
-		{"unparsable project config", "theme = \n", false, "theme", "local", false, "noisy", false},
+		{"unparsable project config", `{"theme": }`, false, "theme", "local", false, "noisy", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			p := Paths{Home: t.TempDir(), Cwd: root, ProjectRoot: root, ProjectDir: filepath.Join(root, ".rho"), NoProject: tc.noProject}
 			if tc.project != "" {
-				write(t, filepath.Join(p.ProjectDir, "config.toml"), tc.project)
+				write(t, filepath.Join(p.ProjectDir, FileName), tc.project)
 			}
 			if got := p.ProjectSets(setting(tc.key), tc.model); got != tc.wantSets {
 				t.Errorf("ProjectSets(%s, %s) = %v, want %v", tc.key, tc.model, got, tc.wantSets)

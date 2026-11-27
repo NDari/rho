@@ -1,0 +1,22 @@
+// Gruvbox, dark mode (medium contrast).
+// Palette: https://github.com/morhetz/gruvbox (colors/gruvbox.vim)
+// License of the palette: MIT/X11. Roles not set here are derived (docs/configuration.md).
+{
+	"background":  "#282828",
+	"surface":     "#32302f",
+	"user_bg":     "#3c3836",
+	"border":      "#504945",
+	"subtle":      "#665c54",
+	"muted":       "#a89984",
+	"text":        "#ebdbb2",
+	"accent":      "#83a598",
+	"tool_name":   "#d3869b",
+	"thinking":    "#928374",
+	"line_number": "#7c6f64",
+	"error":       "#fb4934",
+	"warning":     "#fabd2f",
+	"success":     "#b8bb26",
+	"status_bg":   "#3c3836",
+	"status_fg":   "#d5c4a1",
+	"chroma":      "gruvbox",
+}

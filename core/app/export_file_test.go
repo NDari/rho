@@ -84,7 +84,7 @@ func TestAppExportHTML(t *testing.T) {
 	}{
 		{"default name in the working directory", "", nil,
 			func(a *App) string { return filepath.Join(a.Paths.Cwd, DefaultExportName(a.Agent.Session())) }, true},
-		{"relative path is relative to the working directory", "theme = \"github-light\"\n",
+		{"relative path is relative to the working directory", `{"theme": "github-light"}`,
 			func(string) string { return "sub.html" },
 			func(a *App) string { return filepath.Join(a.Paths.Cwd, "sub.html") }, false},
 		{"absolute path", "", func(cwd string) string { return filepath.Join(cwd, "abs.html") },

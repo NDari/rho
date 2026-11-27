@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/NDari/rho/core/jsonc"
 )
 
 // Provider types understood by the provider registry.
@@ -25,23 +25,23 @@ const (
 
 // Config is the merged configuration.
 type Config struct {
-	DefaultModel string `toml:"default_model"`
+	DefaultModel string `json:"default_model"`
 	// Theme is a theme name, or "system" to use ThemeDark or ThemeLight
 	// to match the system (the terminal's background in the TUI).
-	Theme      string              `toml:"theme"`
-	ThemeDark  string              `toml:"theme_dark"`
-	ThemeLight string              `toml:"theme_light"`
-	Providers  map[string]Provider `toml:"providers"`
-	Models     []Model             `toml:"models"`
-	Bash       Bash                `toml:"bash"`
-	TUI        TUI                 `toml:"tui"`
-	Compaction Compaction          `toml:"compaction"`
-	Extensions Extensions          `toml:"extensions"`
-	Tools      Tools               `toml:"tools"`
+	Theme      string              `json:"theme"`
+	ThemeDark  string              `json:"theme_dark"`
+	ThemeLight string              `json:"theme_light"`
+	Providers  map[string]Provider `json:"providers"`
+	Models     []Model             `json:"models"`
+	Bash       Bash                `json:"bash"`
+	TUI        TUI                 `json:"tui"`
+	Compaction Compaction          `json:"compaction"`
+	Extensions Extensions          `json:"extensions"`
+	Tools      Tools               `json:"tools"`
 	// MaxRetries is the number of retries for transient provider errors.
-	MaxRetries int `toml:"max_retries"`
+	MaxRetries int `json:"max_retries"`
 	// UpdateCheck lets Rho look for new releases once a day (default true).
-	UpdateCheck *bool `toml:"update_check"`
+	UpdateCheck *bool `json:"update_check"`
 }
 
 // UpdateCheckEnabled reports whether update checks are on.
@@ -51,35 +51,35 @@ func (c Config) UpdateCheckEnabled() bool { return c.UpdateCheck == nil || *c.Up
 type Provider struct {
 	// Type selects the adapter: "openai-compat" (Chat Completions, the
 	// default) or "openai-responses" (Responses API).
-	Type string `toml:"type"`
+	Type string `json:"type"`
 	// BaseURL is the API root, e.g. "http://localhost:9931/v1".
-	BaseURL string `toml:"base_url"`
+	BaseURL string `json:"base_url"`
 	// APIKeyEnv names the environment variable that holds the API key.
-	APIKeyEnv string `toml:"api_key_env"`
+	APIKeyEnv string `json:"api_key_env"`
 	// APIKey is a raw key. Allowed, but discouraged (a warning is emitted).
-	APIKey string `toml:"api_key"`
+	APIKey string `json:"api_key"`
 	// Flavor enables endpoint-specific handling. "gemini" is detected
 	// automatically from the base URL.
-	Flavor string `toml:"flavor"`
+	Flavor string `json:"flavor"`
 	// Headers are extra HTTP headers sent with each request.
-	Headers map[string]string `toml:"headers"`
+	Headers map[string]string `json:"headers"`
 	// RequestsPerMinute and TokensPerMinute make Rho wait before sending
 	// a request that would exceed them (0 means no limit).
-	RequestsPerMinute int `toml:"requests_per_minute"`
-	TokensPerMinute   int `toml:"tokens_per_minute"`
+	RequestsPerMinute int `json:"requests_per_minute"`
+	TokensPerMinute   int `json:"tokens_per_minute"`
 	// DebugLog is a file that receives one JSON line per request with the
 	// exact payload and the response.
-	DebugLog string `toml:"debug_log"`
+	DebugLog string `json:"debug_log"`
 	// StreamIdleTimeout is how many seconds a response may go without
 	// data (including the wait for the first data) before the request is
 	// treated as stalled and retried. 0 means 300; negative disables it.
-	StreamIdleTimeout int `toml:"stream_idle_timeout"`
+	StreamIdleTimeout int `json:"stream_idle_timeout"`
 
 	// Defaults for this provider's models; see Model.
-	ToolFormat     string `toml:"tool_format"`
-	SystemPromptIn string `toml:"system_prompt_in"`
-	DecodeEntities string `toml:"decode_entities"`
-	StopSequences  *bool  `toml:"stop_sequences"`
+	ToolFormat     string `json:"tool_format"`
+	SystemPromptIn string `json:"system_prompt_in"`
+	DecodeEntities string `json:"decode_entities"`
+	StopSequences  *bool  `json:"stop_sequences"`
 }
 
 // Tool formats.
@@ -91,33 +91,33 @@ const (
 // Model describes a model available through a provider.
 type Model struct {
 	// ID is the name used inside Rho (e.g. with --model or /model).
-	ID string `toml:"id"`
+	ID string `json:"id"`
 	// Name is the model name sent to the API. Defaults to ID.
-	Name             string   `toml:"name"`
-	Provider         string   `toml:"provider"`
-	ContextWindow    int      `toml:"context_window"`
-	MaxOutput        int      `toml:"max_output"`
-	SupportsImages   bool     `toml:"supports_images"`
-	SupportsThinking bool     `toml:"supports_thinking"`
-	ReasoningEffort  string   `toml:"reasoning_effort"`
-	Pricing          *Pricing `toml:"pricing"`
+	Name             string   `json:"name"`
+	Provider         string   `json:"provider"`
+	ContextWindow    int      `json:"context_window"`
+	MaxOutput        int      `json:"max_output"`
+	SupportsImages   bool     `json:"supports_images"`
+	SupportsThinking bool     `json:"supports_thinking"`
+	ReasoningEffort  string   `json:"reasoning_effort"`
+	Pricing          *Pricing `json:"pricing"`
 
 	// ToolFormat is "native" (the API's tool calling, the default) or
 	// "xml": tools are described in the prompt and the model calls them by
 	// writing XML, for models or gateways without native tool calls.
-	ToolFormat string `toml:"tool_format"`
+	ToolFormat string `json:"tool_format"`
 	// SystemPromptIn is "system" (default) or "user": put the system prompt
 	// at the start of the first user message, for gateways that drop or
 	// override system messages. Only used with tool_format "xml".
-	SystemPromptIn string `toml:"system_prompt_in"`
+	SystemPromptIn string `json:"system_prompt_in"`
 	// DecodeEntities is "off" (default), "auto" or "always": decode
 	// &lt; &gt; &amp; &quot; &apos; in XML tool arguments, for models that
 	// escape them. "auto" decodes only values with no raw markup.
-	DecodeEntities string `toml:"decode_entities"`
+	DecodeEntities string `json:"decode_entities"`
 	// StopSequences sends a stop sequence so the server ends the response
 	// before the model writes a tool result itself (default true). Turn it
 	// off if a gateway rejects the "stop" field.
-	StopSequences *bool `toml:"stop_sequences"`
+	StopSequences *bool `json:"stop_sequences"`
 }
 
 // XMLTools reports whether the model uses XML tool calling.
@@ -136,34 +136,34 @@ func (m Model) APIName() string {
 
 // Pricing is in US dollars per million tokens.
 type Pricing struct {
-	Input      float64 `toml:"input"`
-	Output     float64 `toml:"output"`
-	CacheRead  float64 `toml:"cache_read"`
-	CacheWrite float64 `toml:"cache_write"`
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cache_read"`
+	CacheWrite float64 `json:"cache_write"`
 }
 
 // Bash configures the bash tool.
 type Bash struct {
 	// Timeout is the default timeout in seconds.
-	Timeout int `toml:"timeout"`
+	Timeout int `json:"timeout"`
 	// MaxTimeout caps the timeout the model may request, in seconds.
-	MaxTimeout int `toml:"max_timeout"`
+	MaxTimeout int `json:"max_timeout"`
 	// Shell overrides the shell executable (useful on Windows).
-	Shell string `toml:"shell"`
+	Shell string `json:"shell"`
 }
 
 // TUI configures the terminal frontend.
 type TUI struct {
 	// SideBySideWidth is the minimum terminal width for side-by-side diffs.
-	SideBySideWidth int `toml:"side_by_side_width"`
+	SideBySideWidth int `json:"side_by_side_width"`
 	// Keybindings maps action names to key strings.
-	Keybindings map[string]string `toml:"keybindings"`
+	Keybindings map[string]string `json:"keybindings"`
 	// ShowThinking starts with thinking expanded (ctrl+t toggles it).
-	ShowThinking bool `toml:"show_thinking"`
+	ShowThinking bool `json:"show_thinking"`
 	// MouseSelect lets a mouse drag select transcript text and copies it
 	// on release (default true). When false, use the terminal's own
 	// selection (usually shift+drag).
-	MouseSelect *bool `toml:"mouse_select"`
+	MouseSelect *bool `json:"mouse_select"`
 }
 
 // MouseSelectEnabled reports whether mouse selection is on.
@@ -172,13 +172,13 @@ func (t TUI) MouseSelectEnabled() bool { return t.MouseSelect == nil || *t.Mouse
 // Compaction configures automatic compaction.
 type Compaction struct {
 	// Reserve is the number of tokens kept free below the context window.
-	Reserve int `toml:"reserve"`
+	Reserve int `json:"reserve"`
 	// KeepRecent is roughly how many recent tokens are kept verbatim.
-	KeepRecent int `toml:"keep_recent"`
+	KeepRecent int `json:"keep_recent"`
 	// Auto compacts before a turn that nears the context limit (default
 	// true). When false, compaction runs only on /compact, or when the
 	// server rejects a request as too long.
-	Auto *bool `toml:"auto"`
+	Auto *bool `json:"auto"`
 }
 
 // AutoEnabled reports whether automatic compaction is on.
@@ -187,9 +187,9 @@ func (c Compaction) AutoEnabled() bool { return c.Auto == nil || *c.Auto }
 // Extensions configures the extension manager.
 type Extensions struct {
 	// Timeout is the per-call timeout in seconds.
-	Timeout int `toml:"timeout"`
+	Timeout int `json:"timeout"`
 	// Disabled lists extension names that should not be started.
-	Disabled []string `toml:"disabled"`
+	Disabled []string `json:"disabled"`
 }
 
 // Tools selects the tools offered to the model.
@@ -197,9 +197,9 @@ type Tools struct {
 	// Enabled lists the built-in tools to offer; nil means read, write,
 	// edit and bash. grep, find and ls are added whenever bash is not
 	// offered.
-	Enabled []string `toml:"enabled"`
+	Enabled []string `json:"enabled"`
 	// Disabled lists tools, built-in or from extensions, never to offer.
-	Disabled []string `toml:"disabled"`
+	Disabled []string `json:"disabled"`
 }
 
 // Defaults returns the built-in configuration.
@@ -302,17 +302,27 @@ func FindProjectRoot(dir string) string {
 	}
 }
 
+// FileName is the name of the global and project config files.
+const FileName = "config.jsonc"
+
+// legacyFileName is the TOML config file Rho read before it used JSONC.
+const legacyFileName = "config.toml"
+
 // Load reads the global and project config files and merges them over the
 // defaults. Warnings describe ignored or discouraged settings.
 func Load(p Paths) (Config, []string, error) {
 	cfg := Defaults()
 	var warnings []string
 
-	if err := mergeFile(&cfg, p.GlobalFile(), false, &warnings); err != nil {
-		return cfg, warnings, err
+	files := []string{p.GlobalFile()}
+	if project := p.ProjectFile(); project != "" {
+		files = append(files, project)
 	}
-	if project := p.Project("config.toml"); project != "" {
-		if err := mergeFile(&cfg, project, true, &warnings); err != nil {
+	for i, f := range files {
+		if w := ConvertLegacy(f); w != "" {
+			warnings = append(warnings, w)
+		}
+		if err := mergeFile(&cfg, f, i > 0, &warnings); err != nil {
 			return cfg, warnings, err
 		}
 	}
@@ -337,12 +347,12 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	var file Config
-	md, err := toml.Decode(string(data), &file)
+	md, err := jsonc.Decode(data, &file)
 	if err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	for _, k := range md.Undecoded() {
-		*warnings = append(*warnings, fmt.Sprintf("%s: unknown key %q", path, k.String()))
+		*warnings = append(*warnings, fmt.Sprintf("%s: unknown key %q", path, k))
 	}
 	defined := func(key ...string) bool {
 		if !md.IsDefined(key...) {
@@ -585,7 +595,7 @@ func (m Model) withDefaults() Model {
 }
 
 // ErrNoModel is returned when no model is configured or given.
-var ErrNoModel = errors.New("no model configured: set default_model or [[models]] in config.toml, or pass --model provider/name")
+var ErrNoModel = errors.New("no model configured: set default_model or models in " + FileName + ", or pass --model provider/name")
 
 // ResolveModel finds a model by id. A spec of the form "provider/name" that
 // doesn't match a configured id creates an ad-hoc model with defaults.

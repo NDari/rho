@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NDari/rho/core/config"
 	"github.com/NDari/rho/core/events"
 	"github.com/NDari/rho/core/tools"
 )
@@ -55,14 +56,14 @@ func TestExtensionToolsAndToolSelection(t *testing.T) {
 			"read,find,ls,grep*,word_count", "an extension's grep tool replaces the built-in grep", "  tool: grep\n"},
 		{"a listed built-in wins", "", ParseToolList("read,grep"),
 			"read,grep,find,ls,word_count", "", ""},
-		{"disabled extension tool and a typo", "[tools]\ndisabled = [\"word_count\", \"bassh\"]\n", nil,
+		{"disabled extension tool and a typo", `{"tools": {"disabled": ["word_count", "bassh"]}}`, nil,
 			"read,write,edit,bash,grep*", `tools.disabled: no tool named "bassh" is loaded`, "  tool: word_count (disabled in tools.disabled)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("RHO_HOME", home)
-			if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(tt.config), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(tt.config), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			extDir := filepath.Join(home, "extensions", "search")
@@ -119,7 +120,7 @@ func TestExtensionToolsAndToolSelection(t *testing.T) {
 func TestUnknownDisabledWithoutExtensions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("RHO_HOME", home)
-	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[tools]\ndisabled = [\"bassh\", \"write\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(`{"tools": {"disabled": ["bassh", "write"]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a, err := New(Options{Cwd: t.TempDir(), Model: "openai/test-model", NoExtensions: true})

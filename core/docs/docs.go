@@ -30,7 +30,7 @@ type Topic struct {
 // Topics are the documents, in the order `rho docs` lists them.
 var Topics = []Topic{
 	{"extensions", "docs/extensions.md", "writing extensions: tools, commands, hooks and the protocol"},
-	{"configuration", "docs/configuration.md", "config.toml, tool selection, and the files Rho reads"},
+	{"configuration", "docs/configuration.md", "config.jsonc, tool selection, and the files Rho reads"},
 	{"rpc", "docs/rpc.md", "driving Rho from another program (rho --mode rpc)"},
 	{"spec", "docs/rho-spec.md", "the design spec"},
 	{"gui", "docs/gui.md", "the desktop app"},

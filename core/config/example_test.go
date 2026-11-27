@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,13 +27,24 @@ func TestCreateExample(t *testing.T) {
 	}
 
 	// It never replaces an existing file.
-	write(t, p.GlobalFile(), "theme = \"light\"\n")
+	write(t, p.GlobalFile(), `{"theme": "light"}`)
 	if err := CreateExample(p.GlobalFile()); err == nil {
 		t.Fatal("expected an error for an existing file")
 	}
 	data, _ := os.ReadFile(p.GlobalFile())
-	if string(data) != "theme = \"light\"\n" {
+	if string(data) != `{"theme": "light"}` {
 		t.Fatalf("file was changed: %q", data)
+	}
+
+	// A legacy config.toml is converted instead.
+	home = t.TempDir()
+	p = Paths{Home: home}
+	write(t, filepath.Join(home, legacyFileName), "theme = \"nord\"\n")
+	if err := CreateExample(p.GlobalFile()); err == nil || !strings.Contains(err.Error(), "converted") {
+		t.Fatalf("legacy file: %v", err)
+	}
+	if cfg, _, err := Load(p); err != nil || cfg.Theme != "nord" {
+		t.Fatalf("converted file: %v %q", err, cfg.Theme)
 	}
 }
 
@@ -48,12 +60,12 @@ func TestUpdateCheckSetting(t *testing.T) {
 		want bool
 	}{
 		{"", true},
-		{"update_check = true\n", true},
-		{"update_check = false\n", false},
+		{`{"update_check": true}`, true},
+		{`{"update_check": false}`, false},
 	}
 	for _, tt := range tests {
 		home := t.TempDir()
-		write(t, filepath.Join(home, "config.toml"), tt.file)
+		write(t, filepath.Join(home, FileName), tt.file)
 		cfg, _, err := Load(Paths{Home: home})
 		if err != nil {
 			t.Fatal(err)

@@ -10,13 +10,14 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/NDari/rho/core/app"
+	"github.com/NDari/rho/core/config"
 )
 
 func TestConfigPickerCyclesAndSaves(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("RHO_HOME", home)
-	cfgPath := filepath.Join(home, "config.toml")
-	if err := os.WriteFile(cfgPath, []byte("# my settings\ntheme = \"dark\"\n\n[bash]\ntimeout = 120\n"), 0o644); err != nil {
+	cfgPath := filepath.Join(home, config.FileName)
+	if err := os.WriteFile(cfgPath, []byte("// my settings\n{\n\t\"theme\": \"dark\",\n\n\t\"bash\": {\n\t\t\"timeout\": 120,\n\t},\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a, err := app.New(app.Options{Cwd: t.TempDir(), Model: "openai/test-model", NoExtensions: true})
@@ -47,7 +48,7 @@ func TestConfigPickerCyclesAndSaves(t *testing.T) {
 		t.Errorf("row title = %q", it.title)
 	}
 	data, _ := os.ReadFile(cfgPath)
-	if want := "# my settings\ntheme = \"dark\"\n\n[bash]\ntimeout = 30\n"; string(data) != want {
+	if want := "// my settings\n{\n\t\"theme\": \"dark\",\n\n\t\"bash\": {\n\t\t\"timeout\": 30,\n\t},\n}\n"; string(data) != want {
 		t.Errorf("config file = %q, want %q", data, want)
 	}
 
@@ -69,8 +70,8 @@ func TestConfigPickerCyclesAndSaves(t *testing.T) {
 func TestThemePickerPreviews(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("RHO_HOME", home)
-	cfgPath := filepath.Join(home, "config.toml")
-	if err := os.WriteFile(cfgPath, []byte("theme = \"nord\"\n"), 0o644); err != nil {
+	cfgPath := filepath.Join(home, config.FileName)
+	if err := os.WriteFile(cfgPath, []byte("{\n\t\"theme\": \"nord\"\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a, err := app.New(app.Options{Cwd: t.TempDir(), Model: "openai/test-model", NoExtensions: true})
@@ -105,7 +106,7 @@ func TestThemePickerPreviews(t *testing.T) {
 	m.handleKey(down)
 	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	data, _ := os.ReadFile(cfgPath)
-	if m.theme.Name != "one-dark" || string(data) != "theme = \"one-dark\"\n" {
+	if m.theme.Name != "one-dark" || string(data) != "{\n\t\"theme\": \"one-dark\"\n}\n" {
 		t.Errorf("enter: theme %q, config %q", m.theme.Name, data)
 	}
 
@@ -127,8 +128,22 @@ func TestThemePickerPreviews(t *testing.T) {
 func TestConfigPerModelAndThinking(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("RHO_HOME", home)
-	cfgPath := filepath.Join(home, "config.toml")
-	file := "default_model = \"m\"\n\n[providers.p]\nbase_url = \"http://localhost:8080/v1\"\n\n[[models]]\nid = \"m\"\nprovider = \"p\"\n"
+	cfgPath := filepath.Join(home, config.FileName)
+	file := `{
+	"default_model": "m",
+	"providers": {
+		"p": {
+			"base_url": "http://localhost:8080/v1"
+		}
+	},
+	"models": [
+		{
+			"id":       "m",
+			"provider": "p"
+		}
+	]
+}
+`
 	if err := os.WriteFile(cfgPath, []byte(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +162,14 @@ func TestConfigPerModelAndThinking(t *testing.T) {
 		t.Fatalf("effort = %q, want low", got)
 	}
 	data, _ := os.ReadFile(cfgPath)
-	if want := file + "reasoning_effort = \"low\"\n"; string(data) != want {
+	if want := strings.Replace(file, `
+			"id":       "m",
+			"provider": "p"
+`, `
+			"id":               "m",
+			"provider":         "p",
+			"reasoning_effort": "low"
+`, 1); string(data) != want {
 		t.Errorf("config file = %q", data)
 	}
 	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})

@@ -1,10 +1,14 @@
 # Configuration
 
-Rho reads `~/.rho/config.toml` (global) and `.rho/config.toml` in the project (the nearest directory with `.git`, or the working directory). Project settings override global ones, except for keys that could redirect your API keys or run code: **`providers` and `bash.shell` are only honored in the global config**.
+Rho reads `~/.rho/config.jsonc` (global) and `.rho/config.jsonc` in the project (the nearest directory with `.git`, or the working directory). Project settings override global ones, except for keys that could redirect your API keys or run code: **`providers` and `bash.shell` are only honored in the global config**.
 
-Set `RHO_HOME` to use a directory other than `~/.rho`. `rho init` creates `~/.rho/config.toml` with a starting configuration for a local server (it never replaces an existing file).
+The files are JSONC: JSON that also allows `//` and `/* */` comments and trailing commas. Keys are case-sensitive, and Rho warns about a key it doesn't know.
 
-In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.toml`, keeping the rest of the file and its comments. `reasoning_effort` applies to the current model and is saved in its `[[models]]` entry (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
+Set `RHO_HOME` to use a directory other than `~/.rho`. `rho init` creates `~/.rho/config.jsonc` with a starting configuration for a local server (it never replaces an existing file).
+
+In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.jsonc`, keeping the file's comments (Rho formats the file as it saves it). `reasoning_effort` applies to the current model and is saved in its `models` entry (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
+
+Earlier versions of Rho used TOML files. When it finds a `config.toml` with no `config.jsonc` next to it, it writes `config.jsonc` from it once, warns, and from then on reads only `config.jsonc`. It does the same for TOML themes in `~/.rho/themes/` and `rho-extension.toml` manifests. Comments in the old files are not carried over, and the old files are left in place for you to delete.
 
 ## Updates
 
@@ -12,58 +16,71 @@ Rho asks GitHub for the latest release at most once a day, when the TUI or the G
 
 ## Example
 
-```toml
-default_model = "local"
-theme = "system"        # a theme name, or "system" (see Themes)
-max_retries = 3         # retries for 429/5xx/network errors
-update_check = true     # look for a new Rho release once a day
+```jsonc
+{
+	"default_model": "local",
+	"theme":         "system", // a theme name, or "system" (see Themes)
+	"max_retries":   3,        // retries for 429/5xx/network errors
+	"update_check":  true,     // look for a new Rho release once a day
 
-# A local OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM...).
-# llama.cpp's llama-server listens on port 9931 by default (older versions: 8080).
-[providers.local]
-base_url = "http://localhost:9931/v1"
+	"providers": {
+		// A local OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM...).
+		// llama.cpp's llama-server listens on port 9931 by default (older versions: 8080).
+		"local": {
+			"base_url": "http://localhost:9931/v1",
+		},
+	},
 
-[[models]]
-id = "local"             # the name you use in Rho (--model, /model)
-name = "qwen3-coder"     # the model name sent to the server (defaults to id)
-provider = "local"
-context_window = 65536   # local servers often don't report this; set it
-max_output = 8192
-supports_thinking = true
+	"models": [
+		{
+			"id":                "local",       // the name you use in Rho (--model, /model)
+			"name":              "qwen3-coder", // the model name sent to the server (defaults to id)
+			"provider":          "local",
+			"context_window":    65536,         // local servers often don't report this; set it
+			"max_output":        8192,
+			"supports_thinking": true,
+		},
+		// A hosted model, with pricing for cost tracking (US dollars per million
+		// tokens; the numbers here are placeholders, use your provider's prices)
+		{
+			"id":               "hosted",
+			"name":             "provider-model-name",
+			"provider":         "openai",
+			"context_window":   200000,
+			"max_output":       32000,
+			"supports_images":  true,
+			"reasoning_effort": "medium",
+			"pricing":          {"input": 1.0, "output": 5.0, "cache_read": 0.1},
+		},
+	],
 
-# A hosted model, with pricing for cost tracking (US dollars per million
-# tokens; the numbers here are placeholders, use your provider's prices)
-[[models]]
-id = "hosted"
-name = "provider-model-name"
-provider = "openai"
-context_window = 200000
-max_output = 32000
-supports_images = true
-reasoning_effort = "medium"
-pricing = { input = 1.0, output = 5.0, cache_read = 0.1 }
+	"bash": {
+		"timeout":     120, // default timeout in seconds
+		"max_timeout": 600, // the most the model may request
+	},
 
-[bash]
-timeout = 120       # default timeout in seconds
-max_timeout = 600   # the most the model may request
+	"tui": {
+		"side_by_side_width": 160,   // show diffs side by side at this terminal width or more
+		"show_thinking":      false, // start with thinking expanded (ctrl+t toggles)
+		"mouse_select":       true,  // drag to select transcript text and copy it; false: the terminal's own selection
+	},
 
-[tui]
-side_by_side_width = 160   # show diffs side by side at this terminal width or more
-show_thinking = false      # start with thinking expanded (ctrl+t toggles)
-mouse_select = true        # drag to select transcript text and copy it; false: the terminal's own selection
+	"compaction": {
+		"auto":        true,  // false: compact only on /compact or when the server says the context is full
+		"reserve":     16000, // compact when the context comes within this many tokens of the window
+		"keep_recent": 20000, // roughly how many recent tokens to keep verbatim
+	},
 
-[compaction]
-auto = true          # false: compact only on /compact or when the server says the context is full
-reserve = 16000      # compact when the context comes within this many tokens of the window
-keep_recent = 20000  # roughly how many recent tokens to keep verbatim
+	"extensions": {
+		"timeout":  30, // seconds per hook/command call
+		"disabled": [], // extension names not to start
+	},
 
-[extensions]
-timeout = 30         # seconds per hook/command call
-disabled = []        # extension names not to start
-
-[tools]
-enabled = ["read", "write", "edit", "bash"]   # built-in tools to offer (this is the default)
-disabled = []        # tools never to offer, built-in or from extensions
+	"tools": {
+		"enabled":  ["read", "write", "edit", "bash"], // built-in tools to offer (this is the default)
+		"disabled": [],                                // tools never to offer, built-in or from extensions
+	},
+}
 ```
 
 ## Tools
@@ -74,13 +91,16 @@ Rho has seven built-in tools: `read`, `write`, `edit` and `bash`, offered by def
 - `tools.disabled` removes tools by name, including extension tools, and wins over both. The extension itself keeps running, and `/extensions` marks the tool as disabled. A name that matches no tool gets a warning, so a typo like `bassh` does not leave `bash` on unnoticed.
 - Whenever `bash` is not offered, `grep`, `find` and `ls` are added unless disabled. A read-only assistant is `--tools read`. An extension tool with one of those names replaces the built-in one, unless you listed the built-in yourself.
 - Side conversations (`/aside`) always get the read-only built-ins that are not disabled.
-- A project's `.rho/config.toml` can add to `tools.disabled` but cannot set `tools.enabled`.
+- A project's `.rho/config.jsonc` can add to `tools.disabled` but cannot set `tools.enabled`.
 
 For example, to also offer the search tools in normal sessions:
 
-```toml
-[tools]
-enabled = ["read", "write", "edit", "bash", "grep", "find", "ls"]
+```jsonc
+{
+	"tools": {
+		"enabled": ["read", "write", "edit", "bash", "grep", "find", "ls"],
+	},
+}
 ```
 
 ## Providers
@@ -106,20 +126,25 @@ Built-in providers you can use without configuring them (set the API key variabl
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 | `gemini` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
 
-Without a `[[models]]` entry you can still use any model as `provider/name`, e.g. `rho --model openrouter/qwen/qwen3-coder`. Ad-hoc models assume a 128k context window.
+Without an entry in `models` you can still use any model as `provider/name`, e.g. `rho --model openrouter/qwen/qwen3-coder`. Ad-hoc models assume a 128k context window.
 
 ## Models without native tool calling
 
 Some models and gateways don't support tool calls. Set `tool_format = "xml"` on the provider (or on individual models) and Rho describes the tools in the prompt, the model calls them by writing XML blocks, and Rho turns those into ordinary tool calls:
 
-```toml
-[providers.gateway]
-base_url = "https://gateway.example.com/v1"
-api_key_env = "GATEWAY_API_KEY"
-tool_format = "xml"
-system_prompt_in = "user"   # for gateways that drop or override system messages
-requests_per_minute = 120
-tokens_per_minute = 500000
+```jsonc
+{
+	"providers": {
+		"gateway": {
+			"base_url":            "https://gateway.example.com/v1",
+			"api_key_env":         "GATEWAY_API_KEY",
+			"tool_format":         "xml",
+			"system_prompt_in":    "user", // for gateways that drop or override system messages
+			"requests_per_minute": 120,
+			"tokens_per_minute":   500000,
+		},
+	},
+}
 ```
 
 Values are written raw, without JSON escaping, which also makes code edits more reliable for some models that do support native tools.
@@ -160,12 +185,14 @@ One theme colors everything: the TUI, the GUI, syntax highlighting, Markdown, di
 
 ### Your own themes
 
-A theme is a TOML file in `~/.rho/themes/`, named after the file (`~/.rho/themes/mine.toml` is `mine`). It starts from `base` (any theme; `gruvbox-dark` when not set) and changes only what it sets:
+A theme is a JSONC file in `~/.rho/themes/`, named after the file (`~/.rho/themes/mine.jsonc` is `mine`). It starts from `base` (any theme; `gruvbox-dark` when not set) and changes only what it sets:
 
-```toml
-base = "nord"
-accent = "#ebcb8b"
-chroma = "nord"
+```jsonc
+{
+	"base":   "nord",
+	"accent": "#ebcb8b",
+	"chroma": "nord",
+}
 ```
 
 Colors are `#rrggbb`, or ANSI 256 numbers such as `"39"` (but a color worked out from others needs hex ones). The roles:
@@ -198,12 +225,12 @@ A role that neither the theme nor its base sets is worked out from the others: `
 | `~/.rho/skills/*/SKILL.md`, `.rho/skills/*/SKILL.md` | skills (name and description are listed in the prompt; the model reads the file on demand) |
 | `~/.rho/prompts/*.md`, `.rho/prompts/*.md` | prompt templates, available as `/name args`, with `$ARGS` and `$1`, `$2`... |
 | `.rho/COMPACT.md` or `~/.rho/COMPACT.md` | replaces the compaction instructions |
-| `~/.rho/themes/*.toml` | color themes, see [Themes](#themes) |
+| `~/.rho/themes/*.jsonc` | color themes, see [Themes](#themes) |
 | `~/.rho/extensions/`, `.rho/extensions/` | extensions, see [extensions.md](extensions.md) |
 
 Use `/context` to see exactly what is sent to the model and what each part costs.
 
-`--no-project-context` ignores every file in this table that comes from the project (the `.rho/` directory and `AGENTS.md` files) and the project's `.rho/config.toml`, for running on a checkout you don't trust. `--system-file <file>` replaces the system prompt and `--append-system-file <file>` adds to it, without putting anything in the project. For example, a read-only pull request reviewer in CI:
+`--no-project-context` ignores every file in this table that comes from the project (the `.rho/` directory and `AGENTS.md` files) and the project's `.rho/config.jsonc`, for running on a checkout you don't trust. `--system-file <file>` replaces the system prompt and `--append-system-file <file>` adds to it, without putting anything in the project. For example, a read-only pull request reviewer in CI:
 
 ```bash
 gh pr diff 123 | rho -p --no-project-context --tools read --system-file reviewer.md "Review this pull request."

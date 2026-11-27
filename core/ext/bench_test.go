@@ -124,7 +124,7 @@ func benchManager(b *testing.B, mode, work string) *ext.Manager {
 		o.ExtHost = rho
 	case "compiled-process":
 		_, exe := buildBinaries(b)
-		write("rho-extension.toml", fmt.Sprintf("name = \"bench\"\ncommand = %q\nargs = [%q]\n", exe, work))
+		write(ext.ManifestName, fmt.Sprintf(`{"name": "bench", "command": %q, "args": [%q]}`, exe, work))
 	}
 	m := ext.NewManager(o)
 	m.Start(context.Background())

@@ -182,7 +182,7 @@ func TestDiscoverManifest(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), []byte("name = \"pyext\"\ncommand = \"python3\"\nargs = [\"${dir}/main.py\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ext.ManifestName), []byte(`{"name": "pyext", "command": "python3", "args": ["${dir}/main.py"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := ext.NewManager(ext.Options{Paths: config.Paths{Home: home, ProjectDir: filepath.Join(home, "nope")}, Config: config.Defaults()})
@@ -193,6 +193,31 @@ func TestDiscoverManifest(t *testing.T) {
 	c := cands[0]
 	if c.Name != "pyext" || c.Kind != ext.KindExec || c.Command != "python3" || c.Args[0] != filepath.Join(dir, "main.py") && c.Args[0] != dir+"/main.py" {
 		t.Errorf("candidate = %+v", c)
+	}
+}
+
+func TestDiscoverConvertsLegacyManifest(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "extensions", "py")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rho-extension.toml"), []byte("name = \"pyext\"\ncommand = \"python3\"\nargs = [\"main.py\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := ext.NewManager(ext.Options{Paths: config.Paths{Home: home, ProjectDir: filepath.Join(home, "nope")}, Config: config.Defaults()})
+	cands, warnings := m.Discover()
+	if len(cands) != 1 || cands[0].Name != "pyext" || len(cands[0].Args) != 1 {
+		t.Fatalf("cands=%+v", cands)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "converted") {
+		t.Errorf("warnings = %q", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ext.ManifestName)); err != nil {
+		t.Error(err)
+	}
+	if _, warnings = m.Discover(); len(warnings) != 0 {
+		t.Errorf("second discovery warned again: %q", warnings)
 	}
 }
 
