@@ -133,15 +133,14 @@ func TestConfigPerModelAndThinking(t *testing.T) {
 	"default_model": "m",
 	"providers": {
 		"p": {
-			"base_url": "http://localhost:8080/v1"
+			"base_url": "http://localhost:8080/v1",
+			"models": [
+				{
+					"id": "m"
+				}
+			]
 		}
-	},
-	"models": [
-		{
-			"id":       "m",
-			"provider": "p"
-		}
-	]
+	}
 }
 `
 	if err := os.WriteFile(cfgPath, []byte(file), 0o644); err != nil {
@@ -163,12 +162,10 @@ func TestConfigPerModelAndThinking(t *testing.T) {
 	}
 	data, _ := os.ReadFile(cfgPath)
 	if want := strings.Replace(file, `
-			"id":       "m",
-			"provider": "p"
+					"id": "m"
 `, `
-			"id":               "m",
-			"provider":         "p",
-			"reasoning_effort": "low"
+					"id":               "m",
+					"reasoning_effort": "low"
 `, 1); string(data) != want {
 		t.Errorf("config file = %q", data)
 	}

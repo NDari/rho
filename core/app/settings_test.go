@@ -80,7 +80,7 @@ func whileBusy(t *testing.T, a *App, fn func()) {
 }
 
 func TestSetSetting(t *testing.T) {
-	const modelEntry = `{"models": [{"id": "openai/test-model", "provider": "openai"}]}`
+	const modelEntry = `{"providers": {"openai": {"models": [{"id": "openai/test-model"}]}}}`
 	tests := []struct {
 		name      string
 		global    string
@@ -117,7 +117,7 @@ func TestSetSetting(t *testing.T) {
 				}
 			}},
 		{name: "per-model setting without a models entry", key: "reasoning_effort", value: "high",
-			wantNote: "changed for this session only: model openai/test-model has no entry in the models list",
+			wantNote: "changed for this session only: model openai/test-model is not listed under any provider in",
 			check: func(t *testing.T, c config.Config) {
 				if m, _ := c.ResolveModel("openai/test-model"); m.ReasoningEffort != "high" {
 					t.Errorf("ReasoningEffort = %q", m.ReasoningEffort)

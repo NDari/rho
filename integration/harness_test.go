@@ -45,17 +45,18 @@ func newEnv(t *testing.T, replies ...replay.Reply) *env {
 	"max_retries":   3,
 	"update_check":  false,
 	"providers": {
-		"local": {"base_url": %q},
-	},
-	"models": [
-		{
-			"id":             "local",
-			"name":           "qwen",
-			"provider":       "local",
-			"context_window": 65536,
-			"max_output":     4096,
+		"local": {
+			"base_url": %q,
+			"models": [
+				{
+					"id":             "local",
+					"name":           "qwen",
+					"context_window": 65536,
+					"max_output":     4096,
+				},
+			],
 		},
-	],
+	},
 	"compaction": {"reserve": 1000, "keep_recent": 40},
 }
 `, e.srv.URL+"/v1")

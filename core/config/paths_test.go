@@ -238,12 +238,11 @@ func TestProjectSetsAndDisables(t *testing.T) {
 	"extensions": {
 		"disabled": ["noisy"]
 	},
-	"models": [
-		{
-			"id":       "local",
-			"provider": "openai"
+	"providers": {
+		"openai": {
+			"models": [{"id": "local"}]
 		}
-	]
+	}
 }
 `
 	tests := []struct {

@@ -30,7 +30,7 @@ type Setting struct {
 	Description string
 	Kind        Kind
 	// PerModel settings belong to the current model and are saved in its
-	// models entry.
+	// entry in its provider's models.
 	PerModel bool
 	// Optional settings accept "" (shown as "default"), which removes the
 	// key so the built-in behavior applies.
@@ -196,12 +196,12 @@ func Next(choices []string, current string, isInt bool) string {
 }
 
 // ErrModelNotInFile is returned when a per-model setting can't be saved
-// because the file's models list has no entry for the model.
-var ErrModelNotInFile = errors.New("the model has no entry in the file's models list")
+// because no provider in the file lists the model.
+var ErrModelNotInFile = errors.New("no provider in the file lists the model")
 
 // SaveSetting writes the setting's value into the config file at path,
-// creating the file if needed. A per-model setting goes into the models
-// entry with id model. An empty optional value removes the key. Comments
+// creating the file if needed. A per-model setting goes into the entry
+// with id model in its provider's models. An empty optional value removes the key. Comments
 // in the file are kept, and the file is formatted.
 func SaveSetting(path string, s Setting, model, value string) error {
 	data, err := os.ReadFile(path)
@@ -227,17 +227,28 @@ func SaveSetting(path string, s Setting, model, value string) error {
 		if _, err := jsonc.Decode(data, &file); err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
-		i := slices.IndexFunc(file.Models, func(m Model) bool { return m.ID == model })
+		prov, i := file.findModel(model)
 		if i < 0 {
 			return ErrModelNotInFile
 		}
-		key = append([]string{"models", strconv.Itoa(i)}, key...)
+		key = append([]string{"providers", prov, "models", strconv.Itoa(i)}, key...)
 	}
 	out, err := jsonc.Set(data, key, v)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", path, err)
 	}
 	return writeFile(path, out)
+}
+
+// findModel returns the provider that lists the model with id in a decoded
+// file, and the model's index in its models, or -1.
+func (c Config) findModel(id string) (string, int) {
+	for name, p := range c.Providers {
+		if i := slices.IndexFunc(p.Models, func(m Model) bool { return m.ID == id }); i >= 0 {
+			return name, i
+		}
+	}
+	return "", -1
 }
 
 // writeFile replaces path atomically, keeping its permissions.
@@ -307,7 +318,7 @@ func (p Paths) ProjectFile() string { return p.Project(FileName) }
 // warning saying so, or describing why it failed.
 func ConvertLegacy(path string) string {
 	legacy := filepath.Join(filepath.Dir(path), legacyFileName)
-	ok, err := jsonc.ConvertTOML(legacy, path)
+	ok, err := jsonc.ConvertTOML(legacy, path, nestModels)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("%s is no longer read, and converting it to %s failed: %v", legacy, FileName, err)
@@ -344,7 +355,8 @@ func (p Paths) ProjectSets(s Setting, model string) bool {
 		return false
 	}
 	if s.PerModel {
-		return slices.ContainsFunc(c.Models, func(m Model) bool { return m.ID == model })
+		_, i := c.findModel(model)
+		return i >= 0
 	}
 	return md.IsDefined(strings.Split(s.Key, ".")...)
 }

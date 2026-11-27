@@ -16,12 +16,13 @@ import (
 )
 
 // ConvertTOML writes the TOML file src as JSONC to dst, when src exists
-// and dst does not. Comments in src are not carried over. It reports
-// whether it wrote dst; src is left in place.
+// and dst does not. Comments in src are not carried over. fix, if not nil,
+// changes the converted JSONC before it is written. It reports whether it
+// wrote dst; src is left in place.
 //
 // Rho used TOML files before it switched to JSONC; this lets existing
 // files keep working.
-func ConvertTOML(src, dst string) (bool, error) {
+func ConvertTOML(src, dst string, fix func([]byte) ([]byte, error)) (bool, error) {
 	data, err := os.ReadFile(src)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -33,6 +34,9 @@ func ConvertTOML(src, dst string) (bool, error) {
 		return false, nil
 	}
 	out, err := FromTOML(data)
+	if err == nil && fix != nil {
+		out, err = fix(out)
+	}
 	if err != nil {
 		return false, fmt.Errorf("convert %s: %w", src, err)
 	}

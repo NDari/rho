@@ -111,8 +111,10 @@ func writeConfig(t *testing.T, home, url string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
 	"default_model": "m",
-	"providers": {"test": {"base_url": %q}},
-	"models": [{"id": "m", "provider": "test", "context_window": 32000}],
+	"providers": {"test": {
+		"base_url": %q,
+		"models":   [{"id": "m", "context_window": 32000}],
+	}},
 }`, url)
 	if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)

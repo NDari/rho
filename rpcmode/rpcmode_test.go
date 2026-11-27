@@ -43,8 +43,10 @@ func TestRPCMode(t *testing.T) {
 	srv := chatServer(t)
 	cfg := fmt.Sprintf(`{
 	"default_model": "m",
-	"providers": {"test": {"base_url": %q}},
-	"models": [{"id": "m", "provider": "test", "context_window": 32000}],
+	"providers": {"test": {
+		"base_url": %q,
+		"models":   [{"id": "m", "context_window": 32000}],
+	}},
 }`, srv.URL)
 	if err := os.WriteFile(filepath.Join(home, "config.jsonc"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)

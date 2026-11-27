@@ -195,7 +195,7 @@ For models or gateways without native tool calls, `tool_format = "xml"` (on a pr
 Implementation preference: use the **official Go SDKs** (or a widely used, well-maintained client library) per provider. Hand-written HTTP + SSE clients only where no good library exists.
 
 ### Models config
-Per model: `id`, `provider`, `context_window`, `max_output`, `supports_images`, `supports_thinking`, optional pricing (for cost display), and the XML tool options (`tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences`), which default to the provider's. Local servers often don't report context size, so it's always configurable.
+Models are listed under their provider (`providers.NAME.models`). Per model: `id` (unique across providers), `name`, `context_window`, `max_output`, `supports_images`, `supports_thinking`, optional pricing (for cost display), and the XML tool options (`tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences`), which default to the provider's. Local servers often don't report context size, so it's always configurable. `default_model` picks the model for new sessions; without it, the first model of the first provider by name.
 
 ### Mid-session switching
 - `/model` switches the model for subsequent requests; recorded as a `model_change` entry.
@@ -308,7 +308,7 @@ Built with Bubble Tea, Bubbles, Lip Gloss, Glamour (markdown) and Chroma (syntax
 
 **Export:** `/export [file]` (TUI and GUI) and `rho export [session file] [-o file]` save the conversation on the current path as one self-contained HTML page (default `rho-<session>.html` in the working directory): messages rendered from Markdown with goldmark, thinking and tool calls collapsed, edits as diffs, tool results cut at 20,000 characters, compaction summaries. Raw HTML in messages is escaped, so the page runs nothing a model wrote. It follows the system's light or dark scheme.
 
-`/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.mouse_select`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that line (per-model settings in the model's `[[models]]` entry), so comments and layout are kept.
+`/config` lists the settings that can change while Rho runs (`default_model`, `reasoning_effort` for the current model, `theme`, `tui.show_thinking`, `tui.mouse_select`, `tui.side_by_side_width`, `compaction.auto`, `compaction.reserve`, `compaction.keep_recent`, `max_retries`, `bash.timeout`, `bash.max_timeout`). Up/Down select, Enter moves the selected setting to its next value; `/config KEY VALUE` sets any value. Changes apply at once and are saved to the global config by editing just that key (per-model settings in the model's entry under its provider), so comments are kept; the file is formatted as it is saved.
 
 ## 11. Headless mode
 
@@ -368,14 +368,14 @@ A tiny `rho` package exposed to interpreted code: `RegisterTool`, `RegisterComma
 - Parity with pi: **no sandbox**. Tools and extensions run with the user's permissions. Documented prominently; recommend containers/VMs for untrusted work.
 - No permission prompts in core; an extension can add them via `before_tool_call`.
 - Project extensions require hash-based approval (§12.3).
-- **Project config is restricted:** `.rho/config.jsonc` may not set provider endpoints (`base_url`), API key sources, extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
+- **Project config is restricted:** `.rho/config.jsonc` may not add providers, change their settings (endpoints, API key sources), or set extension commands or `tools.enabled`, so a cloned repo can't redirect your API keys, run code without approval or turn tools back on. It may add models to configured providers and add to `tools.disabled`. Those keys are only honored from global config (or after the project is trusted).
 - **Untrusted checkouts:** project instruction files (`SYSTEM.md`, `AGENTS.md`, skills, prompts) load without approval, so a repository can steer the model. `--no-project-context` ignores all of them, and `--tools` limits what the model can do.
 
 ## 14. Configuration
 
 - Global: `~/.rho/config.jsonc`; project: `.rho/config.jsonc` (restricted keys, see §13). Project overrides global.
 - Format: JSONC (JSON with `//` and `/* */` comments and trailing commas), read and edited with `tailscale/hujson` (`core/jsonc`). The same format is used for themes and extension manifests. Keys are case-sensitive; unknown keys give a warning. `/config` edits the file in place, keeping comments, and formats it.
-- Migration from TOML: Rho read TOML (`config.toml`, `themes/*.toml`, `rho-extension.toml`) before. A TOML file with no JSONC file beside it is converted once (keys in order, comments dropped) with a warning, and left in place; only the JSONC file is read afterwards. The converter is the only use of the TOML library and can be removed in a later release.
+- Migration from TOML: Rho read TOML (`config.toml`, `themes/*.toml`, `rho-extension.toml`) before. A TOML file with no JSONC file beside it is converted once (keys in order, comments dropped, `[[models]]` moved under their providers, with `default_model` set to the first model when missing) with a warning, and left in place; only the JSONC file is read afterwards. The converter is the only use of the TOML library and can be removed in a later release.
 - Contents: default model, providers, models, theme, keybindings (not applied yet, see Later), bash timeout defaults, tool selection (§5), compaction reserve (internal for now), side-by-side diff width, `update_check` (§19).
 - `rho init` writes a starting `~/.rho/config.jsonc` for a local llama.cpp server (`http://localhost:9931/v1`, llama-server's default port; older versions use 8080) and never replaces an existing file. When no model is configured, `rho` prints the same example and points at `rho init`; the GUI's start-up screen offers to create the file.
 - Data directories via Go's standard per-OS config/cache locations where appropriate; `~/.rho/` as the user-facing home.

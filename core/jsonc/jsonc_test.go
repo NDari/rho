@@ -177,13 +177,13 @@ enabled = ["read", "bash"]
 func TestConvertTOML(t *testing.T) {
 	dir := t.TempDir()
 	src, dst := filepath.Join(dir, "config.toml"), filepath.Join(dir, "config.jsonc")
-	if ok, err := ConvertTOML(src, dst); ok || err != nil {
+	if ok, err := ConvertTOML(src, dst, nil); ok || err != nil {
 		t.Fatalf("no source: %v, %v", ok, err)
 	}
 	if err := os.WriteFile(src, []byte("theme = \"nord\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := ConvertTOML(src, dst); !ok || err != nil {
+	if ok, err := ConvertTOML(src, dst, nil); !ok || err != nil {
 		t.Fatalf("convert: %v, %v", ok, err)
 	}
 	data, _ := os.ReadFile(dst)
@@ -207,7 +207,7 @@ func TestConvertTOML(t *testing.T) {
 	if err := os.WriteFile(src, []byte("theme = \"dracula\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := ConvertTOML(src, dst); ok || err != nil {
+	if ok, err := ConvertTOML(src, dst, nil); ok || err != nil {
 		t.Fatalf("second convert: %v, %v", ok, err)
 	}
 	if again, _ := os.ReadFile(dst); string(again) != string(data) {

@@ -243,7 +243,7 @@ func convertLegacy(dir string) []string {
 	files, _ := filepath.Glob(filepath.Join(dir, "*.toml"))
 	for _, f := range files {
 		dst := strings.TrimSuffix(f, ".toml") + Ext
-		ok, err := jsonc.ConvertTOML(f, dst)
+		ok, err := jsonc.ConvertTOML(f, dst, nil)
 		switch {
 		case err != nil:
 			warnings = append(warnings, fmt.Sprintf("%s is no longer read, and converting it failed: %v", f, err))

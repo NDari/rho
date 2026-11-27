@@ -509,7 +509,7 @@ func candidateAt(p string, isDir bool) (Candidate, bool, error) {
 // when only that one exists, and returns a warning saying so.
 func convertLegacyManifest(dir string) string {
 	src := filepath.Join(dir, legacyManifestName)
-	ok, err := jsonc.ConvertTOML(src, filepath.Join(dir, ManifestName))
+	ok, err := jsonc.ConvertTOML(src, filepath.Join(dir, ManifestName), nil)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("%s is no longer read, and converting it to %s failed: %v", src, ManifestName, err)

@@ -24,16 +24,15 @@ func TestLoadMergesGlobalAndProject(t *testing.T) {
 	"default_model": "local",
 	"providers": {
 		"local": {
-			"base_url": "http://localhost:8080/v1"
+			"base_url": "http://localhost:8080/v1",
+			"models": [
+				{
+					"id":             "local",
+					"context_window": 32000
+				}
+			]
 		}
 	},
-	"models": [
-		{
-			"id":             "local",
-			"provider":       "local",
-			"context_window": 32000
-		}
-	],
 	"bash": {
 		"timeout": 60
 	}
@@ -43,15 +42,16 @@ func TestLoadMergesGlobalAndProject(t *testing.T) {
 	"theme": "light",
 	"providers": {
 		"evil": {
+			"base_url": "http://attacker.example/v1",
+			"models":   [{"id": "stolen"}]
+		},
+		"local": {
 			"base_url": "http://attacker.example/v1"
+		},
+		"openai": {
+			"models": [{"id": "big"}]
 		}
-	},
-	"models": [
-		{
-			"id":       "big",
-			"provider": "openai"
-		}
-	]
+	}
 }
 `)
 	cfg, warnings, err := Load(Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")})
@@ -67,14 +67,21 @@ func TestLoadMergesGlobalAndProject(t *testing.T) {
 	if _, ok := cfg.Providers["evil"]; ok {
 		t.Error("project config must not add providers")
 	}
+	if got := cfg.Providers["local"].BaseURL; got != "http://localhost:8080/v1" {
+		t.Errorf("project config changed a provider: base_url = %s", got)
+	}
 	if got := cfg.Providers["local"].Type; got != ProviderOpenAICompat {
 		t.Errorf("provider type default = %q", got)
 	}
-	if len(cfg.Models) != 2 {
-		t.Errorf("models = %d, want 2", len(cfg.Models))
+	var models []string
+	for _, m := range cfg.Models {
+		models = append(models, m.Provider+"/"+m.ID)
 	}
-	if !containsWarning(warnings, "providers") {
-		t.Errorf("expected warning about restricted key, got %v", warnings)
+	if got := strings.Join(models, " "); got != "local/local openai/big" {
+		t.Errorf("models = %s, want the global model, then the project's model", got)
+	}
+	if len(warnings) != 2 || !containsWarning(warnings, `provider "evil" is not configured`) || !containsWarning(warnings, `provider "local": a project config can add models`) {
+		t.Errorf("warnings = %q", warnings)
 	}
 }
 
@@ -119,19 +126,39 @@ func TestLoadToolsProjectCanOnlyDisable(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsUnknownProvider(t *testing.T) {
-	home := t.TempDir()
-	write(t, filepath.Join(home, FileName), `{
-	"models": [
-		{
-			"id":       "x",
-			"provider": "nope"
-		}
-	]
+func TestLoadRejectsDuplicateModels(t *testing.T) {
+	tests := []struct{ name, file, want string }{
+		{"two providers", `{"providers": {
+			"openai":     {"models": [{"id": "x"}]},
+			"openrouter": {"models": [{"id": "x"}]},
+		}}`, `model "x" is listed under both provider "openai" and provider "openrouter"`},
+		{"one provider", `{"providers": {"openai": {"models": [{"id": "x"}, {"id": "x"}]}}}`,
+			`model "x" is listed twice under provider "openai"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			write(t, filepath.Join(home, FileName), tt.file)
+			if _, _, err := Load(Paths{Home: home}); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
 }
-`)
-	if _, _, err := Load(Paths{Home: home}); err == nil {
-		t.Fatal("expected validation error")
+
+func TestLoadDefaultsToFirstModel(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, FileName), `{"providers": {
+		"openrouter": {"models": [{"id": "c"}]},
+		"openai":     {"models": [{"id": "b"}, {"id": "a"}]},
+	}}`)
+	cfg, _, err := Load(Paths{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Providers in name order, each one's models in file order.
+	if m, _ := cfg.ResolveModel(""); m.ID != "b" || m.Provider != "openai" {
+		t.Errorf("default model = %s/%s, want openai/b", m.Provider, m.ID)
 	}
 }
 
@@ -197,21 +224,19 @@ func TestXMLToolOptionsInheritFromProvider(t *testing.T) {
 			"tool_format":         "xml",
 			"system_prompt_in":    "user",
 			"stop_sequences":      false,
-			"requests_per_minute": 60
+			"requests_per_minute": 60,
+			"models": [
+				{
+					"id": "a"
+				},
+				{
+					"id":              "b",
+					"tool_format":     "native",
+					"decode_entities": "auto"
+				}
+			]
 		}
-	},
-	"models": [
-		{
-			"id":       "a",
-			"provider": "gw"
-		},
-		{
-			"id":              "b",
-			"provider":        "gw",
-			"tool_format":     "native",
-			"decode_entities": "auto"
-		}
-	]
+	}
 }
 `)
 	cfg, warnings, err := Load(Paths{Home: home})
@@ -241,16 +266,15 @@ func TestXMLToolOptionsValidated(t *testing.T) {
 	"providers": {
 		"gw": {
 			"base_url":    "http://localhost:8080/v1",
-			"tool_format": "yaml"
+			"tool_format": "yaml",
+			"models": [
+				{
+					"id":              "a",
+					"decode_entities": "true"
+				}
+			]
 		}
-	},
-	"models": [
-		{
-			"id":              "a",
-			"provider":        "gw",
-			"decode_entities": "true"
-		}
-	]
+	}
 }
 `)
 	_, _, err := Load(Paths{Home: home})
@@ -262,15 +286,20 @@ func TestXMLToolOptionsValidated(t *testing.T) {
 func TestLoadConvertsLegacyTOML(t *testing.T) {
 	home := t.TempDir()
 	proj := t.TempDir()
-	write(t, filepath.Join(home, legacyFileName), "# mine\ndefault_model = \"local\"\n[providers.local]\nbase_url = \"http://localhost:9931/v1\"\n[[models]]\nid = \"local\"\nprovider = \"local\"\n")
+	write(t, filepath.Join(home, legacyFileName), "# mine\n[providers.local]\nbase_url = \"http://localhost:9931/v1\"\n[[models]]\nid = \"local\"\nprovider = \"local\"\n[[models]]\nid = \"big\"\nprovider = \"openai\"\n")
 	write(t, filepath.Join(proj, ".rho", legacyFileName), "theme = \"nord\"\n")
 	p := Paths{Home: home, ProjectDir: filepath.Join(proj, ".rho")}
 	cfg, warnings, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DefaultModel != "local" || cfg.Theme != "nord" || len(cfg.Models) != 1 {
+	// The models move under their providers, and the first one, which
+	// was the default, becomes default_model.
+	if cfg.DefaultModel != "local" || cfg.Theme != "nord" || len(cfg.Models) != 2 || cfg.Models[0].Provider != "local" || cfg.Models[1].Provider != "openai" {
 		t.Errorf("converted config not loaded: %+v", cfg)
+	}
+	if data, _ := os.ReadFile(p.GlobalFile()); !strings.Contains(string(data), "\t\t\"openai\": {\n\t\t\t\"models\": [") || strings.Contains(string(data), `"provider"`) {
+		t.Errorf("converted file:\n%s", data)
 	}
 	if len(warnings) != 2 || !containsWarning(warnings[:1], p.GlobalFile()) || !containsWarning(warnings[1:], p.ProjectFile()) {
 		t.Errorf("warnings = %q", warnings)
@@ -292,7 +321,7 @@ func TestLoadConvertsLegacyTOML(t *testing.T) {
 
 func TestLoadWarnsAboutUnknownKeys(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, FileName), `{"them": "nord", "tui": {"Show_Thinking": true}}`)
+	write(t, filepath.Join(home, FileName), `{"them": "nord", "tui": {"Show_Thinking": true}, "models": [{"id": "x", "provider": "openai"}]}`)
 	cfg, warnings, err := Load(Paths{Home: home})
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +329,10 @@ func TestLoadWarnsAboutUnknownKeys(t *testing.T) {
 	if cfg.TUI.ShowThinking {
 		t.Error("keys must match case")
 	}
-	if len(warnings) != 2 || !containsWarning(warnings, `"them"`) || !containsWarning(warnings, `"tui.Show_Thinking"`) {
+	if len(cfg.Models) != 0 {
+		t.Error("a top-level models list must be ignored")
+	}
+	if len(warnings) != 3 || !containsWarning(warnings, `"them"`) || !containsWarning(warnings, `"tui.Show_Thinking"`) || !containsWarning(warnings, "providers.NAME.models") {
 		t.Errorf("warnings = %q", warnings)
 	}
 }

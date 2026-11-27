@@ -1,14 +1,14 @@
 # Configuration
 
-Rho reads `~/.rho/config.jsonc` (global) and `.rho/config.jsonc` in the project (the nearest directory with `.git`, or the working directory). Project settings override global ones, except for keys that could redirect your API keys or run code: **`providers` and `bash.shell` are only honored in the global config**.
+Rho reads `~/.rho/config.jsonc` (global) and `.rho/config.jsonc` in the project (the nearest directory with `.git`, or the working directory). Project settings override global ones, except for keys that could redirect your API keys or run code: **providers and `bash.shell` are only honored in the global config**. A project config can add models to a provider configured globally (or a built-in one), but not add a provider or change one's other settings.
 
 The files are JSONC: JSON that also allows `//` and `/* */` comments and trailing commas. Keys are case-sensitive, and Rho warns about a key it doesn't know.
 
 Set `RHO_HOME` to use a directory other than `~/.rho`. `rho init` creates `~/.rho/config.jsonc` with a starting configuration for a local server (it never replaces an existing file).
 
-In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.jsonc`, keeping the file's comments (Rho formats the file as it saves it). `reasoning_effort` applies to the current model and is saved in its `models` entry (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
+In the TUI, `/config` changes common settings without editing the file: Up/Down select a setting and Enter cycles it through its usual values (`/config bash.timeout 45` sets any value). The change applies at once and is saved to `~/.rho/config.jsonc`, keeping the file's comments (Rho formats the file as it saves it). `reasoning_effort` applies to the current model and is saved in its entry in its provider's `models` (`default` removes it); for a model that isn't in the global file, it changes only for the session. A value set in the project config still wins the next time Rho starts.
 
-Earlier versions of Rho used TOML files. When it finds a `config.toml` with no `config.jsonc` next to it, it writes `config.jsonc` from it once, warns, and from then on reads only `config.jsonc`. It does the same for TOML themes in `~/.rho/themes/` and `rho-extension.toml` manifests. Comments in the old files are not carried over, and the old files are left in place for you to delete.
+Earlier versions of Rho used TOML files. When it finds a `config.toml` with no `config.jsonc` next to it, it writes `config.jsonc` from it once, warns, and from then on reads only `config.jsonc`. Its `[[models]]` entries move under their providers, and when the file had no `default_model`, it is set to the first model, which was the default. It does the same for TOML themes in `~/.rho/themes/` and `rho-extension.toml` manifests. Comments in the old files are not carried over, and the old files are left in place for you to delete.
 
 ## Updates
 
@@ -28,31 +28,33 @@ Rho asks GitHub for the latest release at most once a day, when the TUI or the G
 		// llama.cpp's llama-server listens on port 9931 by default (older versions: 8080).
 		"local": {
 			"base_url": "http://localhost:9931/v1",
+			"models": [
+				{
+					"id":                "local",       // the name you use in Rho (--model, /model)
+					"name":              "qwen3-coder", // the model name sent to the server (defaults to id)
+					"context_window":    65536,         // local servers often don't report this; set it
+					"max_output":        8192,
+					"supports_thinking": true,
+				},
+			],
+		},
+		// A built-in provider (see Providers) needs only its models. Pricing is for
+		// cost tracking (US dollars per million tokens; the numbers here are
+		// placeholders, use your provider's prices).
+		"openai": {
+			"models": [
+				{
+					"id":               "hosted",
+					"name":             "provider-model-name",
+					"context_window":   200000,
+					"max_output":       32000,
+					"supports_images":  true,
+					"reasoning_effort": "medium",
+					"pricing":          {"input": 1.0, "output": 5.0, "cache_read": 0.1},
+				},
+			],
 		},
 	},
-
-	"models": [
-		{
-			"id":                "local",       // the name you use in Rho (--model, /model)
-			"name":              "qwen3-coder", // the model name sent to the server (defaults to id)
-			"provider":          "local",
-			"context_window":    65536,         // local servers often don't report this; set it
-			"max_output":        8192,
-			"supports_thinking": true,
-		},
-		// A hosted model, with pricing for cost tracking (US dollars per million
-		// tokens; the numbers here are placeholders, use your provider's prices)
-		{
-			"id":               "hosted",
-			"name":             "provider-model-name",
-			"provider":         "openai",
-			"context_window":   200000,
-			"max_output":       32000,
-			"supports_images":  true,
-			"reasoning_effort": "medium",
-			"pricing":          {"input": 1.0, "output": 5.0, "cache_read": 0.1},
-		},
-	],
 
 	"bash": {
 		"timeout":     120, // default timeout in seconds
@@ -117,6 +119,7 @@ For example, to also offer the search tools in normal sessions:
 | `debug_log` | a file that receives one JSON line per request with the exact payload and the response; it holds whole conversations, so leave it off normally |
 | `stream_idle_timeout` | seconds a response may go without data (including the wait for the first data, while the server reads the prompt) before the request counts as stalled and is retried; 0, the default, means 300, and a negative value turns the check off. Raise it for slow local servers that take minutes to read long prompts |
 | `tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences` | defaults for this provider's models, see below |
+| `models` | the models used through this provider, see Models |
 
 Built-in providers you can use without configuring them (set the API key variable):
 
@@ -127,6 +130,22 @@ Built-in providers you can use without configuring them (set the API key variabl
 | `gemini` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
 
 Without an entry in `models` you can still use any model as `provider/name`, e.g. `rho --model openrouter/qwen/qwen3-coder`. Ad-hoc models assume a 128k context window.
+
+## Models
+
+Each provider lists its models in `models`:
+
+| Field | Meaning |
+|---|---|
+| `id` | the name you use in Rho (`--model`, `/model`, `default_model`); it must be unique across all providers |
+| `name` | the model name sent to the API (defaults to `id`) |
+| `context_window`, `max_output` | token limits (default 128000 and 16384); local servers often don't report the context window, so set it |
+| `supports_images`, `supports_thinking` | what the model can do |
+| `reasoning_effort` | `low`, `medium` or `high`, for models that support it |
+| `pricing` | US dollars per million tokens (`input`, `output`, `cache_read`, `cache_write`), for cost tracking |
+| `tool_format`, `system_prompt_in`, `decode_entities`, `stop_sequences` | override the provider's, see below |
+
+`default_model` picks the model for new sessions. Without it, Rho uses the first model of the first provider by name.
 
 ## Models without native tool calling
 

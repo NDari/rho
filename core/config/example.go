@@ -13,16 +13,15 @@ const Example = `{
 	"default_model": "local",
 	"providers": {
 		"local": {
-			"base_url": "http://localhost:9931/v1"
+			"base_url": "http://localhost:9931/v1",
+			"models": [
+				{
+					"id":             "local",
+					"context_window": 65536
+				}
+			]
 		}
-	},
-	"models": [
-		{
-			"id":             "local",
-			"provider":       "local",
-			"context_window": 65536
-		}
-	]
+	}
 }
 `
 

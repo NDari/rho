@@ -12,15 +12,20 @@ import (
 func TestSaveSetting(t *testing.T) {
 	models := "{\n" +
 		"\t\"default_model\": \"b\",\n" +
-		"\t\"models\": [\n" +
-		"\t\t{\"id\": \"a\", \"provider\": \"p\"},\n" +
-		"\t\t// the second one\n" +
-		"\t\t{\n" +
-		"\t\t\t\"id\":               \"b\", // mine\n" +
-		"\t\t\t\"provider\":         \"p\",\n" +
-		"\t\t\t\"reasoning_effort\": \"low\",\n" +
+		"\t\"providers\": {\n" +
+		"\t\t\"p\": {\n" +
+		"\t\t\t\"base_url\": \"http://localhost:9931/v1\",\n" +
+		"\t\t\t\"models\": [\n" +
+		"\t\t\t\t{\"id\": \"a\", \"max_output\": 100},\n" +
+		"\t\t\t\t// the second one\n" +
+		"\t\t\t\t{\n" +
+		"\t\t\t\t\t\"id\":               \"b\", // mine\n" +
+		"\t\t\t\t\t\"max_output\":       200,\n" +
+		"\t\t\t\t\t\"reasoning_effort\": \"low\",\n" +
+		"\t\t\t\t},\n" +
+		"\t\t\t],\n" +
 		"\t\t},\n" +
-		"\t],\n" +
+		"\t},\n" +
 		"}\n"
 	tests := []struct {
 		name, in, key, model, value string
@@ -48,12 +53,12 @@ func TestSaveSetting(t *testing.T) {
 		{name: "replace per-model", in: models, key: "reasoning_effort", model: "b", value: "high",
 			want: strings.Replace(models, `"low"`, `"high"`, 1)},
 		{name: "add per-model", in: models, key: "reasoning_effort", model: "a", value: "medium",
-			want: strings.Replace(models, `{"id": "a", "provider": "p"}`, `{"id": "a", "provider": "p", "reasoning_effort": "medium"}`, 1)},
+			want: strings.Replace(models, `{"id": "a", "max_output": 100}`, `{"id": "a", "max_output": 100, "reasoning_effort": "medium"}`, 1)},
 		{name: "remove per-model (optional, empty)", in: models, key: "reasoning_effort", model: "b", value: "",
 			want: strings.Replace(strings.Replace(strings.Replace(models,
-				"\t\t\t\"reasoning_effort\": \"low\",\n", "", 1),
-				`"id":               "b"`, `"id":       "b"`, 1),
-				`"provider":         "p"`, `"provider": "p"`, 1)},
+				"\t\t\t\t\t\"reasoning_effort\": \"low\",\n", "", 1),
+				`"id":               "b"`, `"id":         "b"`, 1),
+				`"max_output":       200`, `"max_output": 200`, 1)},
 		{name: "model not in file", in: models, key: "reasoning_effort", model: "c", value: "high", err: ErrModelNotInFile},
 	}
 	for _, tt := range tests {

@@ -77,6 +77,24 @@ func (m Meta) IsDefined(key ...string) bool {
 	return true
 }
 
+// Keys returns the keys of the object at the key path, sorted, or nil
+// when the file set no object there.
+func (m Meta) Keys(key ...string) []string {
+	cur := m.tree
+	for _, k := range key {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = obj[k]
+	}
+	obj, ok := cur.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return sortedKeys(obj)
+}
+
 // Undecoded returns the keys that match no field, as dotted paths
 // ("tui.colour"), in a stable order.
 func (m Meta) Undecoded() []string { return m.unknown }

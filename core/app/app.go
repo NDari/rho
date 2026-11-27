@@ -372,7 +372,7 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	err = config.SaveSetting(path, s, model, s.Value(cfg, model))
 	switch {
 	case errors.Is(err, config.ErrModelNotInFile):
-		note = "changed for this session only: model " + model + " has no entry in the models list of " + path
+		note = "changed for this session only: model " + model + " is not listed under any provider in " + path
 	case err != nil:
 		return false, "", err
 	default:

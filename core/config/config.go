@@ -32,12 +32,14 @@ type Config struct {
 	ThemeDark  string              `json:"theme_dark"`
 	ThemeLight string              `json:"theme_light"`
 	Providers  map[string]Provider `json:"providers"`
-	Models     []Model             `json:"models"`
-	Bash       Bash                `json:"bash"`
-	TUI        TUI                 `json:"tui"`
-	Compaction Compaction          `json:"compaction"`
-	Extensions Extensions          `json:"extensions"`
-	Tools      Tools               `json:"tools"`
+	// Models lists the models of every provider (providers.NAME.models),
+	// global ones first, each file's providers in name order.
+	Models     []Model    `json:"-"`
+	Bash       Bash       `json:"bash"`
+	TUI        TUI        `json:"tui"`
+	Compaction Compaction `json:"compaction"`
+	Extensions Extensions `json:"extensions"`
+	Tools      Tools      `json:"tools"`
 	// MaxRetries is the number of retries for transient provider errors.
 	MaxRetries int `json:"max_retries"`
 	// UpdateCheck lets Rho look for new releases once a day (default true).
@@ -80,6 +82,10 @@ type Provider struct {
 	SystemPromptIn string `json:"system_prompt_in"`
 	DecodeEntities string `json:"decode_entities"`
 	StopSequences  *bool  `json:"stop_sequences"`
+
+	// Models are the models used through this provider. Load moves them
+	// to Config.Models.
+	Models []Model `json:"models"`
 }
 
 // Tool formats.
@@ -93,8 +99,9 @@ type Model struct {
 	// ID is the name used inside Rho (e.g. with --model or /model).
 	ID string `json:"id"`
 	// Name is the model name sent to the API. Defaults to ID.
-	Name             string   `json:"name"`
-	Provider         string   `json:"provider"`
+	Name string `json:"name"`
+	// Provider is the provider the model is listed under.
+	Provider         string   `json:"-"`
 	ContextWindow    int      `json:"context_window"`
 	MaxOutput        int      `json:"max_output"`
 	SupportsImages   bool     `json:"supports_images"`
@@ -336,7 +343,9 @@ func Load(p Paths) (Config, []string, error) {
 
 // restrictedProjectKeys may only be set in the global config, so a cloned
 // repository can't redirect API keys, run commands or turn tools back on.
-var restrictedProjectKeys = []string{"providers", "bash.shell", "tools.enabled"}
+// A project may add models to a configured provider, but not change the
+// provider itself.
+var restrictedProjectKeys = []string{"bash.shell", "tools.enabled"}
 
 func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error {
 	data, err := os.ReadFile(path)
@@ -352,6 +361,10 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	for _, k := range md.Undecoded() {
+		if k == "models" {
+			*warnings = append(*warnings, fmt.Sprintf("%s: models now go under their provider (providers.NAME.models); the top-level models list is ignored", path))
+			continue
+		}
 		*warnings = append(*warnings, fmt.Sprintf("%s: unknown key %q", path, k))
 	}
 	defined := func(key ...string) bool {
@@ -389,20 +402,39 @@ func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		listed := map[string]string{} // model id -> provider, in this file
 		for _, n := range names {
 			np := file.Providers[n]
-			if base, ok := cfg.Providers[n]; ok {
-				np = mergeProvider(base, np, func(k string) bool { return md.IsDefined("providers", n, k) })
+			models := np.Models
+			np.Models = nil
+			if project {
+				if _, ok := cfg.Providers[n]; !ok {
+					*warnings = append(*warnings, fmt.Sprintf("%s: provider %q is not configured in the global config, and a project config cannot add one; ignored", path, n))
+					continue
+				}
+				if slices.ContainsFunc(md.Keys("providers", n), func(k string) bool { return k != "models" }) {
+					*warnings = append(*warnings, fmt.Sprintf("%s: provider %q: a project config can add models to it but not change its other settings; those are ignored", path, n))
+				}
+			} else {
+				if base, ok := cfg.Providers[n]; ok {
+					np = mergeProvider(base, np, func(k string) bool { return md.IsDefined("providers", n, k) })
+				}
+				if np.Type == "" {
+					np.Type = ProviderOpenAICompat
+				}
+				cfg.Providers[n] = np
 			}
-			if np.Type == "" {
-				np.Type = ProviderOpenAICompat
+			for _, m := range models {
+				if prev, ok := listed[m.ID]; ok && m.ID != "" {
+					if prev == n {
+						return fmt.Errorf("%s: model %q is listed twice under provider %q", path, m.ID, n)
+					}
+					return fmt.Errorf("%s: model %q is listed under both provider %q and provider %q", path, m.ID, prev, n)
+				}
+				listed[m.ID] = n
+				m.Provider = n
+				cfg.Models = upsertModel(cfg.Models, m)
 			}
-			cfg.Providers[n] = np
-		}
-	}
-	if defined("models") {
-		for _, m := range file.Models {
-			cfg.Models = upsertModel(cfg.Models, m)
 		}
 	}
 	if defined("bash", "timeout") {
@@ -595,10 +627,11 @@ func (m Model) withDefaults() Model {
 }
 
 // ErrNoModel is returned when no model is configured or given.
-var ErrNoModel = errors.New("no model configured: set default_model or models in " + FileName + ", or pass --model provider/name")
+var ErrNoModel = errors.New("no model configured: add one to a provider's models in " + FileName + ", or pass --model provider/name")
 
 // ResolveModel finds a model by id. A spec of the form "provider/name" that
-// doesn't match a configured id creates an ad-hoc model with defaults.
+// doesn't match a configured id creates an ad-hoc model with defaults. An
+// empty spec means default_model, or else the first configured model.
 func (c Config) ResolveModel(spec string) (Model, error) {
 	if spec == "" {
 		spec = c.DefaultModel

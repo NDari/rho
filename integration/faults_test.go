@@ -114,10 +114,11 @@ func newEnvWithProviderExtra(t *testing.T, extra string, replies ...replay.Reply
 	}
 	path := e.home + "/config.jsonc"
 	cfg := readFile(t, path)
-	if !strings.Contains(cfg, `"local": {"base_url": `) {
+	const local = "\"local\": {\n\t\t\t\"base_url\": "
+	if !strings.Contains(cfg, local) {
 		t.Fatal("the config has no local provider to extend")
 	}
-	cfg = strings.Replace(cfg, `"local": {"base_url": `, `"local": {`+extra+`, "base_url": `, 1)
+	cfg = strings.Replace(cfg, local, local[:len(local)-len(`"base_url": `)]+extra+`, "base_url": `, 1)
 	e.write(path, cfg)
 	return e
 }
