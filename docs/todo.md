@@ -140,7 +140,51 @@ Benchmarks: `go test -run '^$' -bench . ./core/ext/yaegihost/ ./core/ext/` (the 
 - **Hooks end to end:** a small round trip costs 38 µs for a Go extension and 32 µs for a compiled one, mostly the process boundary. `before_request` with 100k tokens costs 6.2 ms (Go) against 3.9 ms (compiled); most of that gap is the host converting messages through JSON twice more each way (`yaegihost/host.go`), not interpretation.
 - **Against real requests** (local qwen sessions: median 4.9 s per request, about 59 tokens per second), today's hooks cost under 1% of a request, and a middleware call per streamed token would be about 0.3% of the time between tokens.
 
-Next steps from this: drop the host's extra JSON passes (internal, no API change); warn about ranging over strings in `extensions.md` and report it to Yaegi; native helpers in `yaegihost.Symbols` for loops over every rune or byte (a token estimator, a text walker); batch streamed chunks for middleware. Comparing with Sobek (a JavaScript interpreter) would only change the interpreted-loop numbers; estimated at half a day as a scratch test, on hold.
+Next steps from this: drop the host's extra JSON passes (internal, no API change); warn about ranging over strings in `extensions.md` and report it to Yaegi; native helpers in `yaegihost.Symbols` for loops over every rune or byte (a token estimator, a text walker); batch streamed chunks for middleware.
+
+### Extension runtimes: Yaegi, TypeScript on goja, executables (to explore)
+
+Every extension feature works over JSON-RPC, so executable extensions can already do everything Go source extensions can. Yaegi is a convenience: no toolchain, a typed `rho` package, notification handlers that cannot deadlock, and source that a trust approval can be read against. `--mode rpc` does not use it at all. The question is whether a third runtime, TypeScript bundled with esbuild and run by goja (both pure Go, so the binary stays static), would add anything. The numbers for goja and esbuild come from the spike below; the other goja points are from its documentation.
+
+| | Yaegi (today) | TypeScript with esbuild and goja | Executable (today) |
+|---|---|---|---|
+| Libraries | Go standard library only; the host stages just the extension's files, so no third-party modules | Pure-JS npm packages esbuild can bundle from a local `node_modules`; nothing needing Node built-ins or native addons | Anything, in any language, native code included |
+| Files, network, processes | Yes, through the standard library | Only what Rho exposes as bindings | Yes |
+| Concurrency | Goroutines | One thread per runtime; async needs an event loop from Rho | The language's own |
+| Isolation | Separate process, full user permissions | Can be a real sandbox, and a runaway script can be stopped (`Runtime.Interrupt`) | Separate process, full user permissions; can run in a container or as another user |
+| What the user installs | Nothing | Nothing (esbuild is built in), unless bundling npm packages | The extension's runtime |
+| Author API | The `rho` package | `.d.ts` typings to write; esbuild strips types without checking them | Raw JSON-RPC; no SDKs yet |
+| Hook round trip | 38 µs | 1.2 µs in process; out of process, presumably about the same as the others | 32 µs compiled |
+| Extension's own loops | 5 to 90 times slower than compiled Go | 130 to 240 times slower than compiled Go (interpreted, no JIT) | Native, or V8's JIT for Node |
+
+Only possible with each:
+
+- **Executables:** native libraries and other ecosystems (Python ML, native tree-sitter, database drivers), full native speed, and running with other privileges than Rho.
+- **Yaegi:** the full Go standard library with no toolchain, at compiled speed for library calls, in Rho's own language.
+- **TypeScript on goja:** a capability-based sandbox (an extension can do only what Rho exposes), which could let restricted project extensions load without full trust; in-process hooks that cost far less than a process round trip; stopping a stuck hook without stopping Rho (in-process Yaegi has no equivalent); and familiarity for authors coming from pi, whose extensions are TypeScript (they would still need porting, since they use pi's and Node's APIs).
+
+Costs: two dependencies adding 9.8 MB to the stripped binary (about what Yaegi costs; see the spike); a binding layer, typings and an event loop to write and keep up; the sandbox is only as good as the API exposed to it; and run in process, a bug in goja or the bindings can still crash Rho (a host process avoids that but gives up most of the speed). Per-token cost alone is not a reason: the measurements above put a middleware call per streamed token over JSON-RPC at about 0.3% of the time between tokens.
+
+Spike, 2026-11-25 (scratch code, not kept): the `benchwork` workloads ported to TypeScript, bundled by esbuild v0.28.2 (target ES2017) and run in goja (a pseudo-version from 2026-11-25), on one Linux machine. Times per call, multiples against compiled Go:
+
+| Workload | Compiled Go | Yaegi | goja |
+|---|---|---|---|
+| Stream scan, 4-byte chunks | 0.19 ms | 0.83 ms (4.4x) | 1.23 ms (6.6x) |
+| Token estimate, 100k tokens, ranging over the string | 0.72 ms | 971 ms (the quadratic range) | 176 ms (243x) |
+| Token estimate, 100k tokens, the fast loop (`[]rune` in Go, `charCodeAt` in JS) | 1.47 ms | 132 ms (90x) | 198 ms (135x) |
+| Redact, 100k tokens (regexp) | 14.7 ms | 15.6 ms | 4.0 ms (3.7 times faster than Go's `regexp`) |
+| Rewrite messages, 100k tokens | 0.11 ms | 0.67 ms (6x) | 2.7 ms (25x) |
+| JSON decode and encode, 100k tokens | 3.75 ms | 3.33 ms | 6.26 ms (1.7x) |
+
+- **Hooks:** a small hook called in process costs 1.2 µs (converting the event in, calling, exporting the response), against 32 to 38 µs for a process round trip. `before_request` with 100k tokens, JSON in and out inside goja, takes 10.1 ms.
+- **Go values work as they are:** Go maps passed to goja unconverted (`ToValue`) cost only 10 to 40% more than plain JS objects, so an in-process host would not need JSON.
+- **Load:** esbuild bundles the file in 0.7 ms and Yaegi loads the Go version in 2.0 ms. goja's load took 23 ms, all of it from one regexp: `\S` with the `i` flag takes 23 ms to compile, while other patterns take 13 to 34 µs. Worth a note to extension authors, or a fix upstream.
+- **Correctness and control:** the ports give the same results as the Go workloads, `\p{L}` with the `u` flag included. `Runtime.Interrupt` stopped an endless loop after 50 ms, and the runtime worked normally afterwards.
+- **Binary size** (stripped, `CGO_ENABLED=0`): 66.3 MB today, 76.1 MB with goja and esbuild linked in (+9.8 MB, +15%), and 55.9 MB without Yaegi (Yaegi is 10.4 MB). The build stays statically linked, and esbuild to goja ran inside it.
+
+So speed decides little between the two interpreters, except that goja makes in-process hooks about 30 times cheaper and is much better at regexps. Swapping Yaegi for goja and esbuild would leave the binary about the same size.
+
+Deciding question: is a sandbox for extensions wanted, or is in-process speed needed for something specific? If neither, Yaegi plus executables already covers every capability.
 
 ### Changes, highest value and lowest impact first
 
@@ -190,6 +234,14 @@ These drive Rho from outside:
 
 - **Go programs can embed `core/app` today**, as the GUI does, but that API is not documented as stable.
 - **Other languages use RPC mode** (done): `rho --mode rpc` speaks JSON-RPC on stdio, with the command API as requests and the event stream as notifications ([rpc.md](rpc.md)). A bot or plugin starts `rho` as a child process.
+
+### Frontends on the core: a shared command layer (planned), a stable Go API (later)
+
+Anyone can build a frontend on the core today: nothing in `core/` imports a frontend, the GUI is a separate module built only on `core/app`, `core/agent`, `core/events` and helpers, and a new frontend supplies an `events.Sink` and an `ext.UI`. Two things make it harder than it should be.
+
+**Shared command layer (planned).** Slash commands are written once per frontend: about 22 in `tui/commands.go`, and the GUI's equivalents as methods in `gui/bridge/bridge.go`. They can drift apart, and a new frontend rewires each one. A command registry in core (name, description, arguments, handler) would let the TUI, the GUI, RPC mode and extensions run the same commands, and RPC clients would get commands like `/tree`, `/fork` and `/export` without a protocol method for each. Interactive commands (the model picker, tree navigation) return data for the frontend to render, and ask the user through an interface like `ext.UI` when they need a choice. A contained refactor with no change for users; the two existing frontends show whether it works.
+
+**A stable Go API (later, not now).** Rho is pre-1.0 and `core/` changes often, so `core/app` makes no stability promise, and RPC mode stays the stable way to embed Rho. When an outside Go frontend needs one, promise a small facade package instead of freezing `core/`: starting the core, the commands, the event types and the UI interface, under semver. The command layer keeps that facade small.
 
 ### Design change: profiles
 
