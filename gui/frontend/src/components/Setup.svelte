@@ -11,12 +11,14 @@
     onopen,
     onconfig,
     oncreate,
+    onsettings,
   }: {
     info: StartupInfo;
     onretry: () => Promise<string>;
     onopen: () => Promise<string>;
     onconfig: () => Promise<string>;
     oncreate: () => Promise<string>;
+    onsettings: () => void;
   } = $props();
 
   const example = $derived(info.example.trimEnd());
@@ -57,6 +59,7 @@
   <div class="actions">
     {#if info.config_exists}
       <button class="primary" onclick={() => void run(onretry)}>Try again</button>
+      <button onclick={onsettings}>Open the settings</button>
       <button onclick={() => void run(onconfig)}>Open the config file</button>
     {:else}
       <button class="primary" onclick={() => void run(oncreate)}>Create the config file with this example</button>

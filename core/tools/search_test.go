@@ -236,3 +236,38 @@ func TestSelect(t *testing.T) {
 		})
 	}
 }
+
+func TestGitIgnored(t *testing.T) {
+	root := t.TempDir()
+	for name, data := range map[string]string{
+		".git/HEAD":         "ref: refs/heads/main\n",
+		".gitignore":        "/private/\n",
+		".ignore":           ".rho/\n", // git doesn't read it
+		"sub/.gitignore":    "*.local\n",
+		"private/a.jsonc":   "",
+		".rho/config.jsonc": "",
+		"sub/x.local":       "",
+	} {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, want := range map[string]bool{
+		"private/a.jsonc":   true,
+		".rho/config.jsonc": false,
+		"sub/x.local":       true,
+		"sub/y.jsonc":       false,
+	} {
+		in, got := GitIgnored(filepath.Join(root, path))
+		if !in || got != want {
+			t.Errorf("%s: in repo %v, ignored %v, want ignored %v", path, in, got, want)
+		}
+	}
+	if in, _ := GitIgnored(filepath.Join(t.TempDir(), "a")); in {
+		t.Error("a directory outside a repository counts as in one")
+	}
+}

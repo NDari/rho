@@ -41,6 +41,9 @@ type View struct {
 	// models (with defaults filled in) under it. Unset optional values are
 	// null; Field.Default gives them.
 	Effective map[string]any `json:"effective"`
+	// Defaults is the built-in config as JSON values: what applies when
+	// neither file sets a key.
+	Defaults map[string]any `json:"defaults"`
 	// Builtin names the built-in providers.
 	Builtin  []string `json:"builtin"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -65,6 +68,7 @@ func LoadView(p Paths) View {
 		v.Error = err.Error()
 	}
 	v.Effective = cfg.tree()
+	v.Defaults = Defaults().tree()
 	v.Builtin = slices.Sorted(maps.Keys(Defaults().Providers))
 	return v
 }
@@ -259,7 +263,7 @@ func checkChange(p Paths, path string, before, after []byte, existed bool) error
 	var problems []string
 	for _, e := range newErrs {
 		if !slices.Contains(oldErrs, e) {
-			problems = append(problems, e)
+			problems = append(problems, strings.TrimPrefix(e, path+": "))
 		}
 	}
 	for _, w := range newWarnings {

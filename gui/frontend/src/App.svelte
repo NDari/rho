@@ -13,6 +13,8 @@
   import Dialog, { type DialogSpec } from "./components/Dialog.svelte";
   import SearchBar from "./components/SearchBar.svelte";
   import Setup from "./components/Setup.svelte";
+  import Settings from "./components/Settings.svelte";
+  import Sidebar from "./components/Sidebar.svelte";
   import UpdatePrompt from "./components/UpdatePrompt.svelte";
 
   interface UIRequest {
@@ -50,7 +52,7 @@
     { name: "copy", description: "copy the last answer to the clipboard [all]" },
     { name: "export", description: "save the conversation as an HTML page [file]" },
     { name: "theme", description: "choose the color theme, previewed as you move [name]" },
-    { name: "config", description: "change and save settings [key value]" },
+    { name: "config", description: "open the settings, or set one [key value]" },
     { name: "extensions", description: "list extensions and turn them on or off" },
     { name: "reload", description: "restart extensions and reload context files" },
     { name: "help", description: "show keys and commands" },
@@ -79,6 +81,45 @@
   // update is a newer version that can be installed ("" for none).
   let update = $state("");
   let searchBar: ReturnType<typeof SearchBar> | undefined = $state();
+  let settingsOpen = $state(false);
+
+  // The sidebar's visibility is remembered in this browser profile only.
+  function stored(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+  let sidebar = $state(stored("rho.sidebar") !== "hidden");
+  function toggleSidebar() {
+    sidebar = !sidebar;
+    try {
+      localStorage.setItem("rho.sidebar", sidebar ? "shown" : "hidden");
+    } catch {
+      // not remembered
+    }
+  }
+
+  // closeSettings closes the settings; on the start-up screen it tries to
+  // start Rho again with what was saved.
+  async function closeSettings() {
+    settingsOpen = false;
+    if (startup) {
+      const err = await retry();
+      if (err) startup = { ...startup, error: err };
+      return;
+    }
+    refocus();
+  }
+
+  // settingsSaved picks up a change saved in the settings.
+  async function settingsSaved(keys: string[]) {
+    if (startup) return;
+    await store.refreshState();
+    if (keys.some((k) => k.startsWith("theme"))) await loadThemes();
+    if (keys.includes("tui.show_thinking")) store.showThinking = !!store.state?.show_thinking;
+  }
 
   // Themes and the theme settings come from Rho and are shared with the
   // TUI; "system" follows the system between theme_dark and theme_light.
@@ -295,7 +336,8 @@
         return;
       case "config":
         if (!idle(name)) return;
-        await configCommand(args);
+        if (args) await configCommand(args);
+        else settingsOpen = true;
         return;
       case "extensions":
         if (!store.state?.extensions) {
@@ -585,44 +627,14 @@
     return true;
   }
 
+  // configCommand sets one setting: /config KEY VALUE.
   async function configCommand(args: string) {
-    if (args) {
-      const sp = args.indexOf(" ");
-      if (sp < 0) {
-        store.notice("error", "Usage: /config KEY VALUE");
-        return;
-      }
-      await setSetting(args.slice(0, sp), args.slice(sp + 1).trim());
+    const sp = args.indexOf(" ");
+    if (sp < 0) {
+      store.notice("error", "Usage: /config KEY VALUE, or /config alone for the settings");
       return;
     }
-    const settings = (await call(Bridge.Settings())) ?? [];
-    const model = store.state?.model ?? "";
-    pick({
-      title: "Config",
-      hint: "Enter changes the value · Esc close · /config KEY VALUE sets any value",
-      items: settings.map((s) => ({
-        title: `${s.key} = ${shown(s.value)}`,
-        detail: s.description + (s.per_model ? ` (${model})` : ""),
-        value: s.key,
-      })),
-      onpick: async (it) => {
-        const s = settings.find((x) => x.key === it.value)!;
-        if (["theme", "theme_dark", "theme_light"].includes(s.key)) {
-          themePicker(s.key, () => void configCommand(""));
-          return;
-        }
-        const choices = s.kind === "bool" ? ["true", "false"] : (s.choices ?? []);
-        if (choices.length === 0) {
-          prompt(s.key, s.description, s.value, (v) => void setSetting(s.key, v).then(() => configCommand("")));
-          return;
-        }
-        pick({
-          title: s.key,
-          items: choices.map((c) => ({ title: shown(c), value: c, detail: c === s.value ? "current" : "", current: c === s.value })),
-          onpick: (c) => void setSetting(s.key, c.value).then(() => configCommand("")),
-        });
-      },
-    });
+    await setSetting(args.slice(0, sp), args.slice(sp + 1).trim());
   }
 
   async function extensionsPicker() {
@@ -656,7 +668,7 @@
   }
 
   function globalKey(e: KeyboardEvent) {
-    if (picker || dialog || startup) return;
+    if (picker || dialog || startup || settingsOpen) return;
     if ((e.ctrlKey || e.metaKey) && e.key === "f") {
       openSearch();
       e.preventDefault();
@@ -749,10 +761,29 @@
     onopen={() => openFolder("")}
     onconfig={openConfig}
     oncreate={createConfig}
+    onsettings={() => (settingsOpen = true)}
   />
 {:else}
+<div class="app">
+{#if sidebar}
+  <Sidebar
+    version={store.sessionsVersion}
+    busy={store.busy}
+    cwd={store.state?.cwd ?? ""}
+    onnew={() => void runCommand("/new")}
+    onresume={(p) => {
+      if (idle("resume")) void call(Bridge.Resume(p));
+    }}
+    onopen={() => void runCommand("/open")}
+    onsettings={() => (settingsOpen = true)}
+    oncollapse={toggleSidebar}
+  />
+{/if}
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <main onclick={linkClick}>
+  {#if !sidebar}
+    <button class="show-sidebar" onclick={toggleSidebar} title="Show the sidebar">›</button>
+  {/if}
   {#if search && content && scroller}
     <SearchBar bind:this={searchBar} root={content} {scroller} initial={search.initial} onclose={closeSearch} />
   {/if}
@@ -800,6 +831,11 @@
     onmodel={() => void runCommand("/model")}
   />
 </main>
+</div>
+{/if}
+
+{#if settingsOpen}
+  <Settings onclose={() => void closeSettings()} onsaved={(k) => void settingsSaved(k)} />
 {/if}
 
 {#if picker}
@@ -825,11 +861,28 @@
 {/if}
 
 <style>
+  .app {
+    height: 100%;
+    display: flex;
+  }
   main {
     position: relative;
     height: 100%;
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+  .show-sidebar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    border: none;
+    background: none;
+    color: var(--fg-muted);
+    font-size: 16px;
+    padding: 0 6px;
   }
   .scroller {
     flex: 1;

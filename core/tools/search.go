@@ -30,6 +30,8 @@ type walker struct {
 	// root is the repository root, or the search directory outside one.
 	root  string
 	cache map[string][]gitignore.Pattern
+	// gitOnly skips .ignore files, which git doesn't read.
+	gitOnly bool
 }
 
 func newWalker(dir string) *walker {
@@ -74,7 +76,9 @@ func (w *walker) patterns(dir string) []gitignore.Pattern {
 	}
 	domain := w.parts(dir)
 	ps = append(ps, readIgnoreFile(filepath.Join(dir, ".gitignore"), domain)...)
-	ps = append(ps, readIgnoreFile(filepath.Join(dir, ".ignore"), domain)...)
+	if !w.gitOnly {
+		ps = append(ps, readIgnoreFile(filepath.Join(dir, ".ignore"), domain)...)
+	}
 	w.cache[dir] = ps
 	return ps
 }
@@ -95,6 +99,25 @@ func readIgnoreFile(name string, domain []string) []gitignore.Pattern {
 		ps = append(ps, gitignore.ParsePattern(line, domain))
 	}
 	return ps
+}
+
+// GitIgnored reports whether path is inside a git repository and, if so,
+// whether git ignores it (by .gitignore files, its parent directories
+// included, or .git/info/exclude). It doesn't run git, so a file that is
+// already tracked counts as ignored when a pattern matches it.
+func GitIgnored(path string) (inRepo, ignored bool) {
+	w := &walker{root: repoRoot(filepath.Dir(path)), cache: map[string][]gitignore.Pattern{}, gitOnly: true}
+	if _, err := os.Stat(filepath.Join(w.root, ".git")); err != nil {
+		return false, false
+	}
+	parts := w.parts(path)
+	for i := range parts {
+		p := filepath.Join(append([]string{w.root}, parts[:i+1]...)...)
+		if w.ignored(p, i < len(parts)-1) {
+			return true, true
+		}
+	}
+	return true, false
 }
 
 func (w *walker) ignored(p string, isDir bool) bool {

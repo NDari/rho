@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -602,60 +601,6 @@ func (b *Bridge) Copy(all bool) (bool, error) {
 // Export saves the conversation as an HTML page at path (relative to the
 // project folder; empty: rho-<session>.html there) and returns the file.
 func (b *Bridge) Export(path string) (string, error) { return b.core().ExportHTML(path) }
-
-// SettingInfo describes a setting that can change while Rho runs.
-type SettingInfo struct {
-	Key         string   `json:"key"`
-	Description string   `json:"description"`
-	Value       string   `json:"value"`
-	Choices     []string `json:"choices,omitempty"`
-	// Kind is "string", "int" or "bool".
-	Kind     string `json:"kind"`
-	PerModel bool   `json:"per_model,omitempty"`
-	Optional bool   `json:"optional,omitempty"`
-}
-
-// guiSettings leaves out settings that only affect the TUI.
-func guiSetting(key string) bool {
-	return !strings.HasPrefix(key, "tui.") || key == "tui.show_thinking"
-}
-
-// Settings lists the settings the GUI can change.
-func (b *Bridge) Settings() []SettingInfo {
-	cfg, model := b.core().Agent.Config(), b.core().Agent.Model().ID
-	var out []SettingInfo
-	for _, s := range config.Settings {
-		if !guiSetting(s.Key) {
-			continue
-		}
-		choices := s.Choices
-		switch s.Key {
-		case "default_model":
-			choices = nil
-			for _, m := range cfg.Models {
-				choices = append(choices, m.ID)
-			}
-		case "theme":
-			set, _ := theme.Load(b.core().Paths.Home)
-			choices = append([]string{theme.System}, set.Names()...)
-		case "theme_dark", "theme_light":
-			set, _ := theme.Load(b.core().Paths.Home)
-			choices = set.Names()
-		}
-		kind := "string"
-		switch s.Kind {
-		case config.KindInt:
-			kind = "int"
-		case config.KindBool:
-			kind = "bool"
-		}
-		out = append(out, SettingInfo{
-			Key: s.Key, Description: s.Description, Value: s.Value(cfg, model),
-			Choices: choices, Kind: kind, PerModel: s.PerModel, Optional: s.Optional,
-		})
-	}
-	return out
-}
 
 // ThemeInfo is a theme the GUI can show.
 type ThemeInfo struct {

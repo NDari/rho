@@ -45,6 +45,8 @@ export class Store {
   followUps: string[] = $state([]);
   showThinking = $state(false);
   expandAll = $state(false);
+  /** Changes when the session list may have changed. */
+  sessionsVersion = $state(0);
   /** Text to put back into the composer (rewind, leftover queue). */
   draft: string | null = $state(null);
 
@@ -306,9 +308,11 @@ export class Store {
         break;
       case "session_changed":
         void this.loadTranscript();
+        this.sessionsVersion++;
         break;
       case "turn_end":
         this.busy = false;
+        this.sessionsVersion++;
         if (this.cur) {
           endThinking(this.cur);
           this.cur.streaming = false;

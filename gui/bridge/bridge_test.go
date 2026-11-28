@@ -253,22 +253,6 @@ func TestExtensionPrompts(t *testing.T) {
 	}
 }
 
-func TestSettingsLeaveOutTUIOnlyKeys(t *testing.T) {
-	b, _ := newTestBridge(t)
-	keys := map[string]bool{}
-	for _, s := range b.Settings() {
-		keys[s.Key] = true
-	}
-	if !keys["theme"] || !keys["theme_dark"] || keys["tui.mouse_select"] || !keys["tui.show_thinking"] || !keys["max_retries"] {
-		t.Errorf("settings = %v", keys)
-	}
-	for _, s := range b.Settings() {
-		if s.Key == "theme" && (len(s.Choices) != 18 || s.Choices[0] != "system") {
-			t.Errorf("theme choices = %v", s.Choices)
-		}
-	}
-}
-
 func TestThemes(t *testing.T) {
 	b, _ := newTestBridge(t)
 	th := b.Themes()

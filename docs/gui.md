@@ -68,11 +68,26 @@ The window works like the TUI:
 - **Enter** sends, **Shift+Enter** or **Alt+Enter** adds a line.
 - While the agent works, **Enter** steers it (interrupts after the current tool), **Alt+Enter** queues a follow-up and **Esc** (or the Stop button) cancels.
 - Type `/` for commands: `/model`, `/new`, `/open`, `/resume`, `/rewind`, `/fork`, `/tree`, `/aside`, `/back`, `/compact`, `/context`, `/label`, `/copy`, `/export`, `/theme`, `/config`, `/extensions`, `/reload`, `/help` and `/quit`, plus prompt templates and extension commands. **Tab** completes a command.
+- The sidebar lists this project's sessions, newest first; click one to resume it. **New session** is at the top and **Settings** at the bottom. The arrow next to New session hides the sidebar.
 - `@path` attaches a file, as in the TUI; typing `@` completes file names. **Esc** hides a completion.
 - **Ctrl+F** finds text in the conversation (**Enter** and **Shift+Enter** move between matches). Collapsed tool output is not searched; **Ctrl+O** expands it.
 - Click a tool card's header to expand or collapse it. **Ctrl+O** expands all of them, **Ctrl+T** shows the model's thinking.
 - `/theme` lists the themes and shows each one as you move through the list (or hover it); Enter saves it, Esc puts back the one you had. The `theme` setting is shared with the TUI; `system` follows the system's light or dark mode with `theme_light` and `theme_dark`. See [Themes](configuration.md#themes).
 - Links in answers open in your browser.
+
+## Settings
+
+**Settings** in the sidebar (or `/config`) changes everything in the config files with forms: the default model, retries, themes, tools, compaction, extensions, the terminal's settings, and the providers with their models. `/config KEY VALUE` still sets one value directly.
+
+- **Global** edits `~/.rho/config.jsonc`, which applies everywhere. **This project** edits the project's `.rho/config.jsonc`, which wins over it. When git doesn't ignore the project file, a note says that changes may be shared with everyone who works on the repository.
+- Each field shows, greyed out, the value that applies when the file doesn't set it. **Use the default** (or **Use the global value**) removes it from the file. When the project overrides a global value, the global field says so.
+- A change is saved as soon as you make it, or with **Save** in a provider's or model's form. Only what changed is written, so the file's comments stay, and the open session picks up the change at once. Extensions you turn on or off start or stop on `/reload`.
+- Under **Providers**, each card shows a provider's API, URL, models and whether its API key variable is set. Open one to change it, rename it (its models move with it), remove it, or use **Test connection**, which asks the server which models it offers. **Add a model** can fill itself in from that list; Anthropic's API also gives the context window, output limit and whether the model thinks and reads images. Built-in providers (`openai`, `openrouter`, `gemini`, `anthropic`) only need models; changing their settings overrides the built-in ones, and **Reset to built-in** removes the override.
+- In a project, provider settings are read-only, and so are the shell and the list of built-in tools: a repository can't redirect your API keys or run a program of its choice. A project can add models to a provider and turn tools off.
+- A change Rho would refuse to load (a model ID used twice, a default model that doesn't exist, a provider without a URL) is not saved, and the form says why. If the file changed on disk since the window read it, reload and try again.
+- The API key itself is best kept in the environment variable the provider names. Variables set only in your shell's startup files don't reach programs started from the desktop: set the variable in your desktop session's environment (on Linux, a file in `~/.config/environment.d/`, then log in again), or start `rho-gui` from a terminal.
+- **Open the file** opens the config file in your editor, for what the forms don't cover, such as key bindings.
+- When Rho can't start (for example, no model is configured yet), the start-up screen has **Open the settings**; closing them tries to start again.
 
 ## Building from source
 

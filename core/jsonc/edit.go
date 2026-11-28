@@ -98,6 +98,9 @@ func patchFor(v *hujson.Value, op Op) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if string(b) == "{}" {
+		b = []byte("{\n}") // so keys added to it later go on lines of their own
+	}
 	return append(out, fmt.Sprintf(`{"op": "add", "path": %s, "value": %s}`, quote(ptr), b)), nil
 }
 
