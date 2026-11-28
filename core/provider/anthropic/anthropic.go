@@ -86,6 +86,27 @@ func New(o Options) *Provider {
 // Name implements provider.Provider.
 func (p *Provider) Name() string { return p.name }
 
+// ListModels implements provider.ModelLister.
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ServerModel, error) {
+	var out []provider.ServerModel
+	pager := p.client.Models.ListAutoPaging(ctx, sdk.ModelListParams{})
+	for pager.Next() {
+		m := pager.Current()
+		out = append(out, provider.ServerModel{
+			ID: m.ID, DisplayName: m.DisplayName,
+			ContextWindow: int(m.MaxInputTokens), MaxOutput: int(m.MaxTokens),
+			// A server that only imitates the API leaves these out.
+			Capabilities: m.JSON.Capabilities.Valid(),
+			Thinking:     m.Capabilities.Thinking.Supported,
+			Images:       m.Capabilities.ImageInput.Supported,
+		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, classify(err)
+	}
+	return out, nil
+}
+
 // Stream implements provider.Provider.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (provider.Response, error) {
 	params, err := p.buildParams(req)

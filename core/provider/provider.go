@@ -73,6 +73,26 @@ type Provider interface {
 	Stream(ctx context.Context, req Request, onEvent func(StreamEvent)) (Response, error)
 }
 
+// ServerModel is a model a server offers (see ModelLister). Only ID is
+// always known.
+type ServerModel struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+	// ContextWindow and MaxOutput are 0 when the server doesn't say.
+	ContextWindow int `json:"context_window,omitempty"`
+	MaxOutput     int `json:"max_output,omitempty"`
+	// Capabilities reports whether Thinking and Images are known.
+	Capabilities bool `json:"capabilities,omitempty"`
+	Thinking     bool `json:"thinking,omitempty"`
+	Images       bool `json:"images,omitempty"`
+}
+
+// ModelLister is implemented by providers that can list the models their
+// server offers.
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]ServerModel, error)
+}
+
 // ErrorKind classifies provider errors.
 type ErrorKind int
 

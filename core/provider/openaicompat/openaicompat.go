@@ -105,6 +105,23 @@ func New(o Options) *Provider {
 // Name implements provider.Provider.
 func (p *Provider) Name() string { return p.name }
 
+// ListModels implements provider.ModelLister.
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ServerModel, error) {
+	return listModels(ctx, p.client)
+}
+
+func listModels(ctx context.Context, client openai.Client) ([]provider.ServerModel, error) {
+	var out []provider.ServerModel
+	pager := client.Models.ListAutoPaging(ctx)
+	for pager.Next() {
+		out = append(out, provider.ServerModel{ID: pager.Current().ID})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, classify(err)
+	}
+	return out, nil
+}
+
 // Stream implements provider.Provider.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (provider.Response, error) {
 	params, err := p.buildParams(req)

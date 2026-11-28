@@ -2,9 +2,11 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +51,52 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}
+	p, err := build(name, pc)
+	if err != nil {
+		return nil, err
+	}
+	if pc.RequestsPerMinute > 0 || pc.TokensPerMinute > 0 {
+		p = ratelimit.Wrap(p, ratelimit.New(ratelimit.Limits{Requests: pc.RequestsPerMinute, Tokens: pc.TokensPerMinute}))
+	}
+	r.providers[name] = p
+	return p, nil
+}
+
+// SetConfig switches to a new configuration (after the config file was
+// edited). Providers whose settings changed or that are gone are built
+// again on their next use; the others, and their rate limits, are kept.
+func (r *Registry) SetConfig(cfg config.Config) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name := range r.providers {
+		old, had := r.cfg.Providers[name]
+		cur, has := cfg.Providers[name]
+		if had && has && reflect.DeepEqual(old, cur) {
+			continue
+		}
+		if had { // not one registered with Set
+			delete(r.providers, name)
+		}
+	}
+	r.cfg = cfg
+}
+
+// ListModels asks the server of a provider configured as pc which models
+// it offers, for trying settings before they are saved.
+func ListModels(ctx context.Context, name string, pc config.Provider) ([]provider.ServerModel, error) {
+	p, err := build(name, pc)
+	if err != nil {
+		return nil, err
+	}
+	l, ok := p.(provider.ModelLister)
+	if !ok {
+		return nil, fmt.Errorf("provider %q can't list its models", name)
+	}
+	return l.ListModels(ctx)
+}
+
+// build creates the provider pc describes, without rate limits.
+func build(name string, pc config.Provider) (provider.Provider, error) {
 	key := pc.APIKey
 	if key == "" && pc.APIKeyEnv != "" {
 		key = os.Getenv(pc.APIKeyEnv)
@@ -80,10 +128,6 @@ func (r *Registry) Get(name string) (provider.Provider, error) {
 	default:
 		return nil, fmt.Errorf("provider %q: unsupported type %q", name, pc.Type)
 	}
-	if pc.RequestsPerMinute > 0 || pc.TokensPerMinute > 0 {
-		p = ratelimit.Wrap(p, ratelimit.New(ratelimit.Limits{Requests: pc.RequestsPerMinute, Tokens: pc.TokensPerMinute}))
-	}
-	r.providers[name] = p
 	return p, nil
 }
 

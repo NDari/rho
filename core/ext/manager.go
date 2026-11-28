@@ -417,7 +417,10 @@ func (m *Manager) timeout() time.Duration {
 	if m.testTimeout > 0 {
 		return m.testTimeout
 	}
-	if t := m.o.Config.Extensions.Timeout; t > 0 {
+	m.mu.Lock()
+	t := m.o.Config.Extensions.Timeout
+	m.mu.Unlock()
+	if t > 0 {
 		return time.Duration(t) * time.Second
 	}
 	return 30 * time.Second
@@ -1132,7 +1135,18 @@ func (m *Manager) RunCommand(ctx context.Context, name, args string) error {
 
 // ToolDisabled reports whether tools.disabled names the tool.
 func (m *Manager) ToolDisabled(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return slices.Contains(m.o.Config.Tools.Disabled, name)
+}
+
+// SetConfig switches to a new configuration (after the config file was
+// edited). The call timeout and tools.disabled apply at once;
+// extensions.disabled applies when the extensions next start (/reload).
+func (m *Manager) SetConfig(cfg config.Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.o.Config = cfg
 }
 
 // Describe returns a human-readable status report.

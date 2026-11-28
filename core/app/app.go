@@ -69,6 +69,8 @@ type App struct {
 	// only because bash is not offered, which extension tools may replace.
 	builtin   []tools.Tool
 	autoTools []string
+	// toolsFlag is Options.Tools, which replaces tools.enabled.
+	toolsFlag []string
 }
 
 // New loads configuration and opens (or creates) a session.
@@ -100,7 +102,7 @@ func New(o Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &App{Config: cfg, Paths: paths, Registry: registry.New(cfg), Warnings: warnings, Version: o.Version, builtin: builtin, autoTools: auto}
+	a := &App{Config: cfg, Paths: paths, Registry: registry.New(cfg), Warnings: warnings, Version: o.Version, builtin: builtin, autoTools: auto, toolsFlag: o.Tools}
 
 	sess, err := a.openSession(o)
 	if err != nil {
@@ -389,6 +391,61 @@ func (a *App) SetSetting(key, value string) (saved bool, note string, err error)
 	a.Config = cfg
 	a.Agent.SetConfig(cfg)
 	return saved, note, nil
+}
+
+// EditConfig makes the edits to the global or project config file (see
+// config.EditFile) and applies the result to this run. The note is set
+// when the current model is no longer configured.
+func (a *App) EditConfig(project bool, version string, edits []config.Edit) (note string, err error) {
+	if a.Agent.Busy() {
+		return "", agent.ErrBusy
+	}
+	for _, e := range edits {
+		if v, ok := e.Value.(string); ok && e.Kind == config.EditSet {
+			if err := a.checkTheme(e.Key, v); err != nil {
+				return "", err
+			}
+		}
+	}
+	if err := config.EditFile(a.Paths, project, version, edits); err != nil {
+		return "", err
+	}
+	return a.ReloadConfig()
+}
+
+// ReloadConfig reads the config files again and applies them to this run:
+// settings, providers, models and tools. The current model keeps its
+// settings from the new config; the note is set when it is gone from it.
+// Extensions turned on or off in extensions.disabled start or stop on the
+// next /reload.
+func (a *App) ReloadConfig() (note string, err error) {
+	cfg, _, err := config.Load(a.Paths)
+	if err != nil {
+		return "", err
+	}
+	if a.toolsFlag != nil {
+		cfg.Tools.Enabled = a.toolsFlag
+	}
+	builtin, auto, err := tools.Select(cfg.Tools.Enabled, cfg.Tools.Disabled)
+	if err != nil {
+		return "", err
+	}
+	a.Config = cfg
+	a.Registry.SetConfig(cfg)
+	a.Agent.SetConfig(cfg)
+	a.builtin, a.autoTools = builtin, auto
+	if a.Ext != nil {
+		a.Ext.SetConfig(cfg)
+		a.toolNotices(a.refreshTools())
+	} else {
+		a.Agent.SetTools(builtin)
+	}
+	if id := a.Agent.Model().ID; !strings.Contains(id, "/") {
+		if _, err := cfg.ResolveModel(id); err != nil {
+			note = fmt.Sprintf("model %s is no longer configured; this session keeps using it until you pick another", id)
+		}
+	}
+	return note, nil
 }
 
 // SetExtensionEnabled starts or stops one extension and saves the choice

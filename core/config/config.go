@@ -326,20 +326,16 @@ const legacyFileName = "config.toml"
 // Load reads the global and project config files and merges them over the
 // defaults. Warnings describe ignored or discouraged settings.
 func Load(p Paths) (Config, []string, error) {
-	cfg := Defaults()
 	var warnings []string
-
-	files := []string{p.GlobalFile()}
-	if project := p.ProjectFile(); project != "" {
-		files = append(files, project)
-	}
-	for i, f := range files {
+	for _, f := range p.files() {
 		if w := ConvertLegacy(f); w != "" {
 			warnings = append(warnings, w)
 		}
-		if err := mergeFile(&cfg, f, i > 0, &warnings); err != nil {
-			return cfg, warnings, err
-		}
+	}
+	cfg, w, err := load(p, os.ReadFile)
+	warnings = append(warnings, w...)
+	if err != nil {
+		return cfg, warnings, err
 	}
 	for name, prov := range cfg.Providers {
 		if prov.APIKey != "" {
@@ -349,20 +345,42 @@ func Load(p Paths) (Config, []string, error) {
 	return cfg, warnings, cfg.Validate()
 }
 
+// files returns the global config file and the project's, if any.
+func (p Paths) files() []string {
+	files := []string{p.GlobalFile()}
+	if project := p.ProjectFile(); project != "" {
+		files = append(files, project)
+	}
+	return files
+}
+
+// load merges the config files, read with read, over the defaults. The
+// warnings describe settings that are ignored.
+func load(p Paths, read func(string) ([]byte, error)) (Config, []string, error) {
+	cfg := Defaults()
+	var warnings []string
+	for i, f := range p.files() {
+		data, err := read(f)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return cfg, warnings, fmt.Errorf("read %s: %w", f, err)
+		}
+		if err := mergeFile(&cfg, f, data, i > 0, &warnings); err != nil {
+			return cfg, warnings, err
+		}
+	}
+	return cfg, warnings, nil
+}
+
 // restrictedProjectKeys may only be set in the global config, so a cloned
 // repository can't redirect API keys, run commands or turn tools back on.
 // A project may add models to a configured provider, but not change the
 // provider itself.
 var restrictedProjectKeys = []string{"bash.shell", "tools.enabled"}
 
-func mergeFile(cfg *Config, path string, project bool, warnings *[]string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
+func mergeFile(cfg *Config, path string, data []byte, project bool, warnings *[]string) error {
 	var file Config
 	md, err := jsonc.Decode(data, &file)
 	if err != nil {

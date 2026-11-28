@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -208,8 +209,12 @@ func (a *Agent) SetHooks(h Hooks) {
 func (a *Agent) SetTools(ts []tools.Tool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if !slices.EqualFunc(toolSpecs(a.tools), toolSpecs(ts), func(x, y provider.ToolSpec) bool {
+		return x.Name == y.Name && x.Description == y.Description && bytes.Equal(x.Parameters, y.Parameters)
+	}) {
+		a.prompts = nil
+	}
 	a.tools = ts
-	a.prompts = nil
 }
 
 // SetSkills replaces the skills list (for /reload). The next request

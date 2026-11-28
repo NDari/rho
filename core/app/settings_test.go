@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,40 @@ func whileBusy(t *testing.T, a *App, fn func()) {
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Errorf("turn ended with %v, want context.Canceled", err)
+	}
+}
+
+func TestEditConfig(t *testing.T) {
+	a := testApp(t, `{"providers": {"openai": {"models": [{"id": "openai/test-model"}]}}}`, "", false)
+	edit := func(edits ...config.Edit) (string, error) {
+		t.Helper()
+		return a.EditConfig(false, config.LoadView(a.Paths).Global.Version, edits)
+	}
+	if _, err := edit(
+		config.Edit{Kind: config.EditProvider, Name: "local", Fields: map[string]any{"base_url": "http://localhost:9931/v1"}},
+		config.Edit{Kind: config.EditModel, Provider: "local", Index: -1, Fields: map[string]any{"id": "m", "context_window": 4096.0}},
+		config.Edit{Kind: config.EditSet, Key: "tools.disabled", Value: []any{"bash"}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := a.Agent.Config().ResolveModel("m"); err != nil || m.ContextWindow != 4096 {
+		t.Errorf("new model = %+v, %v", m, err)
+	}
+	if _, err := a.Registry.Get("local"); err != nil {
+		t.Errorf("new provider: %v", err)
+	}
+	if slices.Contains(a.Agent.ActiveTools(), "bash") {
+		t.Errorf("bash is still offered: %v", a.Agent.ActiveTools())
+	}
+	if _, err := edit(config.Edit{Kind: config.EditSet, Key: "theme", Value: "no-such-theme"}); err == nil || !strings.Contains(err.Error(), "unknown theme") {
+		t.Errorf("unknown theme: %v", err)
+	}
+	if err := a.Agent.SetModel("m"); err != nil {
+		t.Fatal(err)
+	}
+	note, err := edit(config.Edit{Kind: config.EditDeleteModel, Provider: "local", Index: 0})
+	if err != nil || !strings.Contains(note, "no longer configured") {
+		t.Errorf("deleting the current model: note %q, err %v", note, err)
 	}
 }
 

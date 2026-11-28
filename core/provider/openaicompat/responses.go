@@ -34,6 +34,11 @@ func NewResponses(o Options) *ResponsesProvider {
 // Name implements provider.Provider.
 func (p *ResponsesProvider) Name() string { return p.name }
 
+// ListModels implements provider.ModelLister.
+func (p *ResponsesProvider) ListModels(ctx context.Context) ([]provider.ServerModel, error) {
+	return listModels(ctx, p.client)
+}
+
 // Stream implements provider.Provider.
 func (p *ResponsesProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (provider.Response, error) {
 	var resp provider.Response

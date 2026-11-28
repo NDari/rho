@@ -116,6 +116,39 @@ func TestSet(t *testing.T) {
 	}
 }
 
+func TestApply(t *testing.T) {
+	in := "{\n\t\"providers\": {\n\t\t// local\n\t\t\"a\": {\n\t\t\t\"base_url\": \"x\", // the server\n\t\t\t\"models\": [\n\t\t\t\t// first\n\t\t\t\t{\"id\": \"m\"},\n\t\t\t],\n\t\t},\n\t},\n}\n"
+	tests := []struct {
+		name string
+		ops  []Op
+		want string
+	}{
+		{name: "rename keeps comments", ops: []Op{{From: []string{"providers", "a"}, Path: []string{"providers", "b"}}},
+			want: "{\n\t\"providers\": {\n\t\t// local\n\t\t\"b\": {\n\t\t\t\"base_url\": \"x\", // the server\n\t\t\t\"models\": [\n\t\t\t\t// first\n\t\t\t\t{\"id\": \"m\"},\n\t\t\t],\n\t\t},\n\t},\n}\n"},
+		{name: "append to a new list", ops: []Op{{Path: []string{"providers", "c", "models", "-"}, Value: map[string]any{"id": "n"}}},
+			want: "{\n\t\"providers\": {\n\t\t// local\n\t\t\"a\": {\n\t\t\t\"base_url\": \"x\", // the server\n\t\t\t\"models\": [\n\t\t\t\t// first\n\t\t\t\t{\"id\": \"m\"},\n\t\t\t],\n\t\t},\n\t\t\"c\": {\n\t\t\t\"models\": [\n\t\t\t\t{\"id\": \"n\"},\n\t\t\t],\n\t\t},\n\t},\n}\n"},
+		{name: "move a model, then change it", ops: []Op{
+			{From: []string{"providers", "a", "models", "0"}, Path: []string{"providers", "c", "models", "-"}},
+			{Path: []string{"providers", "c", "models", "0", "id"}, Value: "n"},
+		}, want: "{\n\t\"providers\": {\n\t\t// local\n\t\t\"a\": {\n\t\t\t\"base_url\": \"x\", // the server\n\t\t\t\"models\":   [],\n\t\t},\n\t\t\"c\": {\n\t\t\t\"models\": [\n\t\t\t\t// first\n\t\t\t\t{\"id\": \"n\"},\n\t\t\t],\n\t\t},\n\t},\n}\n"},
+		{name: "nothing to do", ops: []Op{{Path: []string{"x"}}}, want: in},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Apply([]byte(in), tt.ops...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("got\n%s\nwant\n%s", got, tt.want)
+			}
+		})
+	}
+	if _, err := Apply([]byte(in), Op{From: []string{"providers", "z"}, Path: []string{"providers", "y"}}); err == nil {
+		t.Error("moving a missing value should fail")
+	}
+}
+
 func TestFromTOML(t *testing.T) {
 	in := `# comment
 default_model = "local"
