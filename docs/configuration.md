@@ -279,6 +279,8 @@ A role that neither the theme nor its base sets is worked out from the others: `
 
 Use `/context` to see exactly what is sent to the model and what each part costs.
 
+The system prompt is built from these files on a session's first request and then kept, so the start of every request stays the same and the provider's prompt cache keeps working. Edits to `AGENTS.md`, `SYSTEM.md` or a skill, including ones the model makes, take effect after `/reload`, after compaction, or in the next session. Switching model or session, or changing the tools, also rebuilds it.
+
 `--no-project-context` ignores every file in this table that comes from the project (the `.rho/` directory and `AGENTS.md` files) and the project's `.rho/config.jsonc`, for running on a checkout you don't trust. `--system-file <file>` replaces the system prompt and `--append-system-file <file>` adds to it, without putting anything in the project. For example, a read-only pull request reviewer in CI:
 
 ```bash

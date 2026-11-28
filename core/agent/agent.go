@@ -130,6 +130,13 @@ type Agent struct {
 	// toolOverride, when not nil, replaces the configured tool set (see
 	// SetActiveTools).
 	toolOverride []string
+	// prompts holds the system prompts built so far, by promptKey. A
+	// prompt is built once and reused, so edits to AGENTS.md or the
+	// date changing don't alter the request prefix, which would void the
+	// provider's prompt cache and drop earlier thinking blocks. It is
+	// cleared when the prefix changes anyway: compaction, a model or
+	// session switch, new tools, and /reload (SetSkills).
+	prompts map[string]prompt.Built
 
 	busy      bool
 	cancel    context.CancelCauseFunc
@@ -202,13 +209,16 @@ func (a *Agent) SetTools(ts []tools.Tool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.tools = ts
+	a.prompts = nil
 }
 
-// SetSkills replaces the skills list.
+// SetSkills replaces the skills list (for /reload). The next request
+// rebuilds the system prompt, rereading AGENTS.md and the other files.
 func (a *Agent) SetSkills(s []prompt.Skill) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.skills = s
+	a.prompts = nil
 }
 
 // Tools returns the full tool set.
@@ -277,6 +287,7 @@ func (a *Agent) SetSession(s *session.Session) error {
 	}
 	old := a.sess
 	a.sess = s
+	a.prompts = nil
 	a.mu.Unlock()
 	if old != nil && old != s {
 		_ = old.Close()
@@ -345,6 +356,7 @@ func (a *Agent) SetModel(id string) error {
 	}
 	a.mu.Lock()
 	a.model = m
+	a.prompts = nil
 	a.mu.Unlock()
 	a.emit(events.ModelChanged{Model: m.ID})
 	a.emitUsage(a.Session().BuildContext(), provider.Usage{})
@@ -877,10 +889,7 @@ func (a *Agent) requestFor(msgs []provider.Message, aside bool) (provider.Reques
 func (a *Agent) requestWith(msgs []provider.Message, aside bool, ts []tools.Tool) (provider.Request, error) {
 	model := a.Model()
 	specs := toolSpecs(ts)
-	a.mu.Lock()
-	skills := a.skills
-	a.mu.Unlock()
-	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: aside, SystemFile: a.systemFile, AppendFiles: a.appendFiles})
+	sys, err := a.systemPrompt(specs, aside)
 	if err != nil {
 		return provider.Request{}, err
 	}
@@ -894,6 +903,42 @@ func (a *Agent) requestWith(msgs []provider.Message, aside bool, ts []tools.Tool
 		SupportsImages:  model.SupportsImages,
 		Thinking:        model.SupportsThinking,
 	}, nil
+}
+
+// systemPrompt returns the system prompt for the tools specs, building it
+// the first time it is asked for (see Agent.prompts).
+func (a *Agent) systemPrompt(specs []provider.ToolSpec, aside bool) (prompt.Built, error) {
+	key := promptKey(specs, aside)
+	a.mu.Lock()
+	b, ok := a.prompts[key]
+	skills := a.skills
+	a.mu.Unlock()
+	if ok {
+		return b, nil
+	}
+	b, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: aside, SystemFile: a.systemFile, AppendFiles: a.appendFiles})
+	if err != nil {
+		return b, err
+	}
+	a.mu.Lock()
+	if a.prompts == nil {
+		a.prompts = map[string]prompt.Built{}
+	}
+	a.prompts[key] = b
+	a.mu.Unlock()
+	return b, nil
+}
+
+// promptKey identifies a system prompt by the tools it lists and whether
+// it is for a side conversation.
+func promptKey(specs []provider.ToolSpec, aside bool) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%t", aside)
+	for _, s := range specs {
+		sb.WriteString("\x00")
+		sb.WriteString(s.Name)
+	}
+	return sb.String()
 }
 
 // RepairToolPairs makes sure every tool call has a result and every result
@@ -1308,6 +1353,11 @@ func (a *Agent) compact(ctx context.Context, reason string) error {
 	if err != nil {
 		return err
 	}
+	// The kept turns now follow a summary, so the prefix changed anyway:
+	// pick up edits to AGENTS.md and the other files.
+	a.mu.Lock()
+	a.prompts = nil
+	a.mu.Unlock()
 	ncv := sess.BuildContext()
 	after := a.EstimateContext(ncv)
 	a.emit(events.CompactionEnd{EntryID: e.ID, TokensBefore: before, TokensAfter: after})
@@ -1485,10 +1535,7 @@ func (a *Agent) ContextReport() (ContextReport, error) {
 		specs[i] = t.Spec()
 		toolTokens += prompt.EstimateTokens(specs[i].Name + specs[i].Description + string(specs[i].Parameters))
 	}
-	a.mu.Lock()
-	skills := a.skills
-	a.mu.Unlock()
-	sys, err := prompt.Build(a.paths, prompt.Options{Tools: specs, Skills: skills, Aside: cv.Aside, SystemFile: a.systemFile, AppendFiles: a.appendFiles})
+	sys, err := a.systemPrompt(specs, cv.Aside)
 	if err != nil {
 		return ContextReport{}, err
 	}

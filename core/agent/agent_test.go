@@ -493,6 +493,53 @@ func TestCompactionReusesConversationPrefix(t *testing.T) {
 	}
 }
 
+// TestSystemPromptIsKeptUntilThePrefixChanges checks that an edit to
+// AGENTS.md, here by the model itself, leaves the system prompt alone (so
+// the provider's prompt cache and thinking blocks stay valid) until
+// /reload or compaction.
+func TestSystemPromptIsKeptUntilThePrefixChanges(t *testing.T) {
+	has := func(want string) func(provider.Request) {
+		return func(r provider.Request) {
+			t.Helper()
+			if !strings.Contains(r.System, want) {
+				t.Errorf("system prompt lacks %q", want)
+			}
+		}
+	}
+	fp := fake.New("fake",
+		fake.Step{Calls: []fake.Call{{Name: "write", Args: map[string]string{"path": "AGENTS.md", "content": "rule two\n"}}}, Check: has("rule one")},
+		fake.Step{Text: "done", Check: has("rule one")},
+		fake.Step{Text: "again", Check: has("rule one")},
+		fake.Step{Text: "reloaded", Check: has("rule two")},
+		fake.Step{Text: "SUMMARY", Check: has("rule two")},
+		fake.Step{Text: "compacted", Check: has("rule three")},
+	)
+	a, _, dir := newTestAgent(t, fp)
+	agents := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(agents, []byte("rule one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, p := range []string{"edit it", "next"} {
+		if err := a.Run(ctx, provider.UserText(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.SetSkills(nil) // what /reload does
+	if err := a.Run(ctx, provider.UserText("after reload")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agents, []byte("rule three\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Compact(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Run(ctx, provider.UserText("after compaction")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCompactionFallsBackToTranscript(t *testing.T) {
 	for name, step := range map[string]fake.Step{
 		"tool call": {Calls: []fake.Call{{Name: "read", Args: map[string]string{"path": "x"}}}},
